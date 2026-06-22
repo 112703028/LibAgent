@@ -7,7 +7,7 @@ from sqlalchemy import select
 from library_agent.config import get_settings
 from library_agent.db.models import Citation, Course
 from library_agent.db.session import SessionLocal
-from library_agent.integrations.nccu_syllabus import fetch_syllabus
+from library_agent.integrations.nccu_syllabus import fetch_syllabus, fetch_student_number
 from library_agent.prompts.discoverer_prompts import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE
 from library_agent.state import AgentState, BookCitation
 

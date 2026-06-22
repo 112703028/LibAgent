@@ -1,7 +1,9 @@
-import math
+import json
 
+from openai import OpenAI
 from sqlalchemy import delete, select
 
+from library_agent.config import get_settings
 from library_agent.db.models import (
     Citation,
     Course,
@@ -10,53 +12,52 @@ from library_agent.db.models import (
     VerifiedBook as VerifiedBookDB,
 )
 from library_agent.db.session import SessionLocal
+from library_agent.integrations.nccu_syllabus import fetch_student_number
+from library_agent.prompts.recommender_prompts import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE
 from library_agent.state import AgentState, HoldingStatus, PurchasePriority
 
+_settings = get_settings()
+_client = OpenAI(api_key=_settings.openai_api_key)
 
-def _compute(
+_STATUS_DESC = {
+    HoldingStatus.OWNED_EBOOK: "已有電子書",
+    HoldingStatus.OWNED_PHYSICAL: "已有實體書",
+    HoldingStatus.PARTIAL: "書目記錄存在但無實體館藏",
+    HoldingStatus.MISSING: "館藏不存在",
+}
+
+
+def _llm_compute(
     status: HoldingStatus,
     is_required: bool,
     enrolled: int,
     current_copies: int,
+    title: str,
+    course_name: str,
 ) -> tuple[PurchasePriority, int, str]:
-    """回傳 (priority, suggested_copies, rationale)。"""
-
-    if status == HoldingStatus.OWNED_EBOOK:
-        return PurchasePriority.SKIP, 0, "已有電子書，無需採購實體書"
-
-    # 計算這門課需要幾冊：指定用書每 10 人 1 冊，選用書每 20 人 1 冊
-    ratio = 10 if is_required else 20
-    if enrolled > 0:
-        copies_needed = max(1, math.ceil(enrolled / ratio))
-    else:
-        copies_needed = 2 if is_required else 1
-
-    book_type = "指定用書" if is_required else "選用書"
-
-    if status == HoldingStatus.OWNED_PHYSICAL:
-        if current_copies >= copies_needed:   # 實體書館藏充足->跳過
-            return (
-                PurchasePriority.SKIP,
-                0,
-                f"{book_type}，選課 {enrolled} 人，館藏 {current_copies} 冊已足夠",
-            )
-        shortfall = copies_needed - current_copies
-        return (
-            PurchasePriority.LOW,
-            shortfall,
-            f"{book_type}，選課 {enrolled} 人，現有 {current_copies} 冊，建議補充 {shortfall} 冊",
-        )
-
-    # MISSING 或 PARTIAL
-    priority = PurchasePriority.HIGH if is_required else PurchasePriority.MEDIUM
-    missing_reason = (
-        "書目記錄存在但無實體館藏" if status == HoldingStatus.PARTIAL else "館藏不存在"
+    user_prompt = USER_PROMPT_TEMPLATE.format(
+        title=title,
+        course_name=course_name,
+        book_type="指定用書" if is_required else "選用書",
+        is_required_str="必讀" if is_required else "選讀",
+        status_desc=_STATUS_DESC.get(status, status.value),
+        current_copies=current_copies,
+        enrolled=enrolled if enrolled > 0 else "不明",
     )
-    return (
-        priority,
-        copies_needed,
-        f"{book_type}，選課 {enrolled} 人，{missing_reason}，建議採購 {copies_needed} 冊",
+    response = _client.chat.completions.create(
+        model="gpt-4o-mini",
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0,
     )
+    data = json.loads(response.choices[0].message.content)
+    priority = PurchasePriority(data["priority"].lower())
+    suggested_copies = int(data["suggested_copies"])
+    rationale = str(data["rationale"])
+    return priority, suggested_copies, rationale
 
 
 def _process_one(
@@ -65,11 +66,19 @@ def _process_one(
     course: Course,
 ) -> tuple[PurchasePriority, int, str]:
     status = HoldingStatus(holding.status)
-    return _compute(
+    raw = fetch_student_number(course.course_id, course.semester)
+    try:
+        enrolled = int(raw) if raw is not None else 0
+    except (ValueError, TypeError):
+        enrolled = 0
+
+    return _llm_compute(
         status=status,
         is_required=citation.is_required,
-        enrolled=course.enrolled_count or 0,
+        enrolled=enrolled,
         current_copies=holding.holdings_count,
+        title=citation.title,
+        course_name=course.course_name,
     )
 
 
