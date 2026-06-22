@@ -80,10 +80,14 @@ def _save_to_db(syllabi: list[RawSyllabus]) -> None:
         session.commit()
 
 
-def crawler_node(_state: AgentState) -> AgentState:
+def crawler_node(state: AgentState) -> AgentState:
     syllabi = _dedup([s for path in sorted(DATA_DIR.glob("*.xlsx")) for s in _load_xlsx(path)])
+    limit = state.get("limit")
+    if limit:
+        syllabi = syllabi[:limit]
     _save_to_db(syllabi)
-    return {"syllabi": syllabi}
+    course_ids = [s.course_id for s in syllabi] if limit else None
+    return {"syllabi": syllabi, "course_ids": course_ids}
 
 
 if __name__ == "__main__":

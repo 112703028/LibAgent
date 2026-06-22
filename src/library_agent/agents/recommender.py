@@ -85,13 +85,17 @@ def _process_one(
 def recommender_node(_state: AgentState) -> AgentState:
     errors: list[str] = []
 
+    course_ids = _state.get("course_ids")
     with SessionLocal() as session:
-        rows = session.execute(
+        q = (
             select(HoldingCheckDB, Citation, Course)
             .join(VerifiedBookDB, VerifiedBookDB.id == HoldingCheckDB.verified_book_id)
             .join(Citation, Citation.id == VerifiedBookDB.citation_id)
             .join(Course, Course.course_id == Citation.course_id)
-        ).all()
+        )
+        if course_ids:
+            q = q.where(Citation.course_id.in_(course_ids))
+        rows = session.execute(q).all()
 
     total = len(rows)
     counts = {p: 0 for p in PurchasePriority}

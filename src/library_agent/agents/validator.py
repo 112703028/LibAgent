@@ -203,8 +203,12 @@ def validator_node(state: AgentState) -> AgentState:
     human_review_queue: list[BookCitation] = []
     errors: list[str] = []
 
+    course_ids = state.get("course_ids")
     with SessionLocal() as session:
-        citations = session.scalars(select(Citation)).all()
+        q = select(Citation)
+        if course_ids:
+            q = q.where(Citation.course_id.in_(course_ids))
+        citations = session.scalars(q).all()
 
     cache = _build_cache()
     print(f"  cache: {len(cache)} 筆已驗證書目可複用")

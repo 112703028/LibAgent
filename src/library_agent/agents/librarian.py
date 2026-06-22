@@ -4,6 +4,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
 
 from library_agent.db.models import HoldingCheck as HoldingCheckDB
+from library_agent.db.models import Recommendation as RecommendationDB
 from library_agent.db.models import VerifiedBook as VerifiedBookDB
 from library_agent.db.session import SessionLocal
 from library_agent.integrations.alma import check_holding
@@ -58,9 +59,16 @@ def _check_one(vb: VerifiedBookDB) -> HoldingCheck:
 
 def _save_to_db(holding: HoldingCheck, verified_book_id: int) -> None:
     with SessionLocal() as session:
-        session.execute(
-            delete(HoldingCheckDB).where(HoldingCheckDB.verified_book_id == verified_book_id)
-        )
+        existing_ids = list(session.scalars(
+            select(HoldingCheckDB.id).where(HoldingCheckDB.verified_book_id == verified_book_id)
+        ))
+        if existing_ids:
+            session.execute(
+                delete(RecommendationDB).where(RecommendationDB.holding_id.in_(existing_ids))
+            )
+            session.execute(
+                delete(HoldingCheckDB).where(HoldingCheckDB.verified_book_id == verified_book_id)
+            )
         session.add(HoldingCheckDB(
             verified_book_id=verified_book_id,
             status=holding.status.value,
@@ -75,10 +83,15 @@ def librarian_node(state: AgentState) -> AgentState:
     errors: list[str] = []
 
     # 從資料庫一次讀出所有 verified_books。.all() 把 iterator 一次全部轉成 list，存在記憶體裡。這樣後面就可以先關掉 with session，迴圈再慢慢處理，不會佔著資料庫連線。
+    course_ids = state.get("course_ids")
     with SessionLocal() as session:
-        verified_books = session.scalars(
-            select(VerifiedBookDB).options(selectinload(VerifiedBookDB.citation))  # selectinload 讓 SQLAlchemy 預先把相關聯的 CitationDB 物件一起讀出來，避免後面迴圈裡每次存取 vb.citation 時又發一次查詢（N+1 問題）
-        ).all()
+        from library_agent.db.models import Citation as CitationDB
+        q = select(VerifiedBookDB).options(selectinload(VerifiedBookDB.citation))
+        if course_ids:
+            q = q.join(CitationDB, CitationDB.id == VerifiedBookDB.citation_id).where(
+                CitationDB.course_id.in_(course_ids)
+            )
+        verified_books = session.scalars(q).all()
 
     total = len(verified_books)
     for i, vb in enumerate(verified_books, 1):

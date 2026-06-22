@@ -126,9 +126,13 @@ def _needs_parsing(session, course: Course) -> bool:
 def parser_node(state: AgentState) -> AgentState:
     all_citations: list[BookCitation] = []
     errors: list[str] = []
+    course_ids = state.get("course_ids")
 
     with SessionLocal() as session:
-        courses = session.scalars(select(Course)).all()
+        q = select(Course)
+        if course_ids:
+            q = q.where(Course.course_id.in_(course_ids))
+        courses = session.scalars(q).all()
 
     total = len(courses)
     for i, course in enumerate(courses, 1):

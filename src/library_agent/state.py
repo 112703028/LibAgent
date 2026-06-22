@@ -85,3 +85,5 @@ class AgentState(TypedDict, total=False):
     recommendations: Annotated[list[PurchaseRecommendation], _merge]
     human_review_queue: Annotated[list[BookCitation], _merge]
     errors: Annotated[list[str], _merge]
+    limit: int | None  # 測試用：限制課程筆數
+    course_ids: list[str] | None  # crawler 傳給下游的課程 ID 清單（limit 時使用）
