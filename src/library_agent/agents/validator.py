@@ -9,7 +9,8 @@ from library_agent.config import get_settings
 from library_agent.db.models import Citation
 from library_agent.db.models import VerifiedBook as VerifiedBookDB
 from library_agent.db.session import SessionLocal
-from library_agent.integrations.google_books import lookup
+from library_agent.integrations.google_books import lookup as google_lookup
+from library_agent.integrations.loc import lookup as loc_lookup
 from library_agent.integrations.alma import check_holding
 from library_agent.state import AgentState, BookCitation, VerifiedBook
 
@@ -65,15 +66,15 @@ def _validate_one(citation: BookCitation) -> VerifiedBook:
     if _is_chinese(citation.title):
         return _validate_alma(citation, low_confidence)
     else:
-        return _validate_google_books(citation, low_confidence)
+        return _validate_english(citation, low_confidence)
 
 
-def _validate_google_books(citation: BookCitation, low_confidence: bool) -> VerifiedBook:
-    book_info = lookup(
-        title=citation.title,
-        authors=citation.authors,
-        isbn=citation.isbn,
-    )
+def _validate_english(citation: BookCitation, low_confidence: bool) -> VerifiedBook:
+    kwargs = dict(title=citation.title, authors=citation.authors, isbn=citation.isbn)
+
+    # LOC 優先（無配額限制）；伺服器不穩定時 loc_lookup 會回傳 None
+    book_info = loc_lookup(**kwargs) or google_lookup(**kwargs)
+
     if book_info:
         return VerifiedBook(
             citation=citation,

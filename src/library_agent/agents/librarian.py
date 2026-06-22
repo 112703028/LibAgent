@@ -1,6 +1,7 @@
 import json
 
 from sqlalchemy import delete, select
+from sqlalchemy.orm import selectinload
 
 from library_agent.db.models import HoldingCheck as HoldingCheckDB
 from library_agent.db.models import VerifiedBook as VerifiedBookDB
@@ -76,7 +77,7 @@ def librarian_node(state: AgentState) -> AgentState:
     # 從資料庫一次讀出所有 verified_books。.all() 把 iterator 一次全部轉成 list，存在記憶體裡。這樣後面就可以先關掉 with session，迴圈再慢慢處理，不會佔著資料庫連線。
     with SessionLocal() as session:
         verified_books = session.scalars(
-            select(VerifiedBookDB)
+            select(VerifiedBookDB).options(selectinload(VerifiedBookDB.citation))  # selectinload 讓 SQLAlchemy 預先把相關聯的 CitationDB 物件一起讀出來，避免後面迴圈裡每次存取 vb.citation 時又發一次查詢（N+1 問題）
         ).all()
 
     total = len(verified_books)
