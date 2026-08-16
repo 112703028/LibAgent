@@ -1,4 +1,5 @@
 from langgraph.graph import END, START, StateGraph
+from sqlalchemy import select
 
 from library_agent.agents.crawler import crawler_node
 from library_agent.agents.discoverer import discoverer_node
@@ -6,16 +7,31 @@ from library_agent.agents.librarian import librarian_node
 from library_agent.agents.parser import parser_node
 from library_agent.agents.recommender import recommender_node
 from library_agent.agents.validator import validator_node
+from library_agent.db.models import Citation
+from library_agent.db.models import VerifiedBook as VerifiedBookDB
+from library_agent.db.session import SessionLocal
 from library_agent.state import AgentState
 
 
 def _human_review_node(state: AgentState) -> AgentState:
-    queue = state.get("human_review_queue", [])
-    if not queue:
+    """從 DB 讀出被 validator 標記為 requires_human_review 的書目並列出。
+    資料來源是 DB（single source of truth），因此獨立重跑 / resume 也能正確列出目前的待審 backlog。"""
+    course_ids = state.get("course_ids")
+    with SessionLocal() as session:
+        q = (
+            select(Citation.course_id, Citation.title, Citation.confidence)
+            .join(VerifiedBookDB, VerifiedBookDB.citation_id == Citation.id)
+            .where(VerifiedBookDB.requires_human_review.is_(True))
+        )
+        if course_ids:
+            q = q.where(Citation.course_id.in_(course_ids))
+        rows = session.execute(q).all()
+
+    if not rows:
         return {}
-    print(f"\n需要人工審核的書目（{len(queue)} 筆）：")
-    for book in queue:
-        print(f"  [{book.course_id}] {book.title}  confidence={book.confidence:.2f}")
+    print(f"\n需要人工審核的書目（{len(rows)} 筆）：")
+    for course_id, title, confidence in rows:
+        print(f"  [{course_id}] {title}  confidence={confidence:.2f}")
     return {}
 
 

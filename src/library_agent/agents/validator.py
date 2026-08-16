@@ -34,6 +34,7 @@ def _build_cache() -> dict[str, _CacheEntry]:
     """從 DB 讀出已成功驗證的書，以 isbn / title 為 key 建立查找表。
     同一本書被多門課引用時，第二筆以後直接命中 cache，不打 API。"""
     cache: dict[str, _CacheEntry] = {}
+
     with SessionLocal() as session:
         rows = session.execute(
             select(
@@ -47,6 +48,7 @@ def _build_cache() -> dict[str, _CacheEntry]:
             .join(VerifiedBookDB, VerifiedBookDB.citation_id == Citation.id)
             .where(VerifiedBookDB.verified == True)  # noqa: E712
         ).all()
+
     for row in rows:
         entry = _CacheEntry(
             canonical_title=row.canonical_title,
@@ -120,40 +122,30 @@ def _validate_alma(citation: BookCitation, low_confidence: bool) -> VerifiedBook
     )
 
 
-def _save_to_db(verified: VerifiedBook, citation_id: int) -> None:
-    with SessionLocal() as session:
-        session.execute(
-            delete(VerifiedBookDB).where(VerifiedBookDB.citation_id == citation_id)
-        )
-        session.add(VerifiedBookDB(
-            citation_id=citation_id,
-            canonical_title=verified.canonical_title,
-            canonical_authors=json.dumps(verified.canonical_authors, ensure_ascii=False),
-            isbn_13=verified.isbn_13,
-            source=verified.source,
-            verified=verified.verified,
-            requires_human_review=verified.requires_human_review,
-        ))
-        session.commit()
-
-
-def _already_validated(citation_id: int) -> bool:
-    """只跳過真的成功（verified=True）的紀錄；MISS / not_found 會重試"""
-    with SessionLocal() as session:
-        existing = session.scalars(
-            select(VerifiedBookDB).where(
-                VerifiedBookDB.citation_id == citation_id,
-                VerifiedBookDB.verified == True,  # noqa: E712
-            )
-        ).first()
-        return existing is not None
+def _stage_save(session, verified: VerifiedBook, citation_id: int) -> None:
+    """把單筆寫入暫存進「外部傳入的」session（先刪再寫），不 commit。
+    由呼叫端（validator_node 主執行緒）統一分批 commit（B1）。"""
+    session.execute(
+        delete(VerifiedBookDB).where(VerifiedBookDB.citation_id == citation_id)
+    )
+    session.add(VerifiedBookDB(
+        citation_id=citation_id,
+        canonical_title=verified.canonical_title,
+        canonical_authors=json.dumps(verified.canonical_authors, ensure_ascii=False),
+        isbn_13=verified.isbn_13,
+        source=verified.source,
+        verified=verified.verified,
+        requires_human_review=verified.requires_human_review,
+    ))
 
 
 def _process_one(
     c: Citation,
     cache: dict[str, _CacheEntry],
+    done_ids: set[int],
 ) -> tuple[VerifiedBook | None, str | None, bool]:
-    if _already_validated(c.id):
+    # 只跳過真的成功（verified=True）的紀錄；MISS / not_found 不在 done_ids 內，會重試。
+    if c.id in done_ids:
         return None, None, False
 
     citation = BookCitation(
@@ -188,36 +180,42 @@ def _process_one(
                 verified=True,
                 requires_human_review=low_confidence,
             )
-            _save_to_db(verified, c.id)
             return verified, None, True   # True = cache hit
         else:
             verified = _validate_one(citation)
-            _save_to_db(verified, c.id)
             return verified, None, False  # False = API call
     except Exception as e:
         return None, f"[validator] {c.id} {c.title}: {e}", False
 
 
 def validator_node(state: AgentState) -> AgentState:
-    all_verified: list[VerifiedBook] = []
-    human_review_queue: list[BookCitation] = []
     errors: list[str] = []
 
     course_ids = state.get("course_ids")
     with SessionLocal() as session:
-        q = select(Citation)
+        q = select(Citation)  # 產生一個「SELECT * FROM citation」的查詢物件
         if course_ids:
             q = q.where(Citation.course_id.in_(course_ids))
         citations = session.scalars(q).all()
+
+        # A：一次撈出「已成功驗證」的 citation_id 集合，取代每筆一次的 _already_validated
+        done_ids = set(session.scalars(
+            select(VerifiedBookDB.citation_id).where(VerifiedBookDB.verified.is_(True))
+        ).all())
 
     cache = _build_cache()
     print(f"  cache: {len(cache)} 筆已驗證書目可複用")
 
     total = len(citations)
     done = 0
+    written = 0
+    _BATCH = 200
 
-    with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as executor:
-        futures = {executor.submit(_process_one, c, cache): c for c in citations}
+    # B1：worker 只做 I/O（查 cache / 打 API）並回傳結果；DB 寫入全部收到主執行緒，
+    # 用「同一個」session 分批 commit（Session 非 thread-safe，只有主執行緒能寫）。
+    with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as executor, SessionLocal() as session:
+        futures = {executor.submit(_process_one, c, cache, done_ids): c for c in citations}  # executor.submit(func, *args)：把函式丟進執行緒池執行，立刻回傳一個 Future 物件（代表「未來會完成的結果」）。
+
         for future in as_completed(futures):
             done += 1
             c = futures[future]
@@ -235,6 +233,12 @@ def validator_node(state: AgentState) -> AgentState:
             elif verified is None:
                 print(f"  SKIP  [{done:>5}/{total}] {c.title}")
             else:
+                # 主執行緒寫入（先刪再寫），每 _BATCH 筆才 commit 一次
+                _stage_save(session, verified, c.id)
+                written += 1
+                if written % _BATCH == 0:
+                    session.commit()
+
                 if from_cache:
                     status = "CACHE"
                 elif verified.verified:
@@ -242,15 +246,10 @@ def validator_node(state: AgentState) -> AgentState:
                 else:
                     status = "MISS "
                 print(f"  {status} [{done:>5}/{total}] {c.title}")
-                all_verified.append(verified)
-                if verified.requires_human_review:
-                    human_review_queue.append(verified.citation)
 
-    return {
-        "verified_books": all_verified,
-        "human_review_queue": human_review_queue,
-        "errors": errors,
-    }
+        session.commit()  # 收尾：把最後不足一批的寫入 commit
+
+    return {"errors": errors}
 
 
 if __name__ == "__main__":
@@ -267,12 +266,15 @@ if __name__ == "__main__":
         ).all()
 
     print(f"測試 {len(unvalidated)} 筆未驗證書目")
-    for c in unvalidated:
-        verified, error, from_cache = _process_one(c, cache)
-        if error:
-            print(f"  ERROR  {c.title} → {error}")
-        elif verified is None:
-            print(f"  SKIP   {c.title}")
-        else:
-            status = "CACHE" if from_cache else ("OK   " if verified.verified else "MISS ")
-            print(f"  {status}  {c.title}")
+    with SessionLocal() as session:
+        for c in unvalidated:
+            verified, error, from_cache = _process_one(c, cache, set())
+            if error:
+                print(f"  ERROR  {c.title} → {error}")
+            elif verified is None:
+                print(f"  SKIP   {c.title}")
+            else:
+                _stage_save(session, verified, c.id)
+                status = "CACHE" if from_cache else ("OK   " if verified.verified else "MISS ")
+                print(f"  {status}  {c.title}")
+        session.commit()

@@ -59,16 +59,23 @@ def _check_one(vb: VerifiedBookDB) -> HoldingCheck:
 
 def _save_to_db(holding: HoldingCheck, verified_book_id: int) -> None:
     with SessionLocal() as session:
+
+        # 步驟 1：先查出這本書在 holding_checks 的 id
         existing_ids = list(session.scalars(
             select(HoldingCheckDB.id).where(HoldingCheckDB.verified_book_id == verified_book_id)
         ))
         if existing_ids:
+            # 步驟 2：先把 recommendations 裡指向這些 id 的資料刪掉（請房客搬走）
             session.execute(
                 delete(RecommendationDB).where(RecommendationDB.holding_id.in_(existing_ids))
             )
+
+            # 步驟 3：再刪 holding_checks（拆房間）
             session.execute(
                 delete(HoldingCheckDB).where(HoldingCheckDB.verified_book_id == verified_book_id)
             )
+
+        # 步驟 4：寫入新的 holding_check   
         session.add(HoldingCheckDB(
             verified_book_id=verified_book_id,
             status=holding.status.value,
@@ -79,7 +86,6 @@ def _save_to_db(holding: HoldingCheck, verified_book_id: int) -> None:
 
 
 def librarian_node(state: AgentState) -> AgentState:
-    all_holdings: list[HoldingCheck] = []
     errors: list[str] = []
 
     # 從資料庫一次讀出所有 verified_books。.all() 把 iterator 一次全部轉成 list，存在記憶體裡。這樣後面就可以先關掉 with session，迴圈再慢慢處理，不會佔著資料庫連線。
@@ -100,19 +106,20 @@ def librarian_node(state: AgentState) -> AgentState:
             holding = _check_one(vb)
             _save_to_db(holding, vb.id)
             print(f"  {holding.status.value:<20} {label}")
-            all_holdings.append(holding)
         except Exception as e:
             errors.append(f"[librarian] {vb.id} {vb.canonical_title}: {e}")
             print(f"  ERROR                {label}  → {e}")
 
-    return {"holdings": all_holdings, "errors": errors}
+    return {"errors": errors}
 
 
 if __name__ == "__main__":
     result = librarian_node({})
     from collections import Counter
-    counts = Counter(h.status.value for h in result["holdings"])
-    print("\n館藏統計：")
+    with SessionLocal() as session:
+        statuses = session.scalars(select(HoldingCheckDB.status)).all()
+    counts = Counter(statuses)
+    print("\n館藏統計（DB 全量）：")
     for status, count in sorted(counts.items()):
         print(f"  {status:<20} {count} 筆")
     if result["errors"]:

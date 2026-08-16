@@ -87,9 +87,11 @@ def crawler_node(state: AgentState) -> AgentState:
         syllabi = syllabi[:limit]
     _save_to_db(syllabi)
     course_ids = [s.course_id for s in syllabi] if limit else None
-    return {"syllabi": syllabi, "course_ids": course_ids}
+    return {"course_ids": course_ids}
 
 
 if __name__ == "__main__":
-    result = crawler_node({})
-    print(f"共載入 {len(result['syllabi'])} 門課程")
+    crawler_node({})
+    with SessionLocal() as session:
+        n = len(session.scalars(select(Course.course_id)).all())
+    print(f"DB 共 {n} 門課程")

@@ -8,8 +8,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    llm_provider: Literal["anthropic", "openai", "local"] = "anthropic"
-    llm_model: str = "claude-opus-4-7"
+    llm_provider: Literal["anthropic", "openai", "local"] = "openai"
+    llm_model: str = "gpt-4o"
     anthropic_api_key: str | None = None
     openai_api_key: str | None = None
 

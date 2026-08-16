@@ -114,17 +114,13 @@ def _save_citations(course_id: str, citations: list[BookCitation]) -> None:
 
 _PLACEHOLDER = {"tbd", "n/a", "na", "none", "待補", "待定", ""}
 
-def _needs_parsing(session, course: Course) -> bool:
+def _needs_parsing(course: Course, parsed_ids: set[str]) -> bool:
     if course.raw_content.strip().lower() in _PLACEHOLDER:
         return False
-    existing = session.scalars(
-        select(Citation).where(Citation.course_id == course.course_id)
-    ).first()
-    return existing is None
+    return course.course_id not in parsed_ids
 
 
 def parser_node(state: AgentState) -> AgentState:
-    all_citations: list[BookCitation] = []
     errors: list[str] = []
     course_ids = state.get("course_ids")
 
@@ -134,24 +130,25 @@ def parser_node(state: AgentState) -> AgentState:
             q = q.where(Course.course_id.in_(course_ids))
         courses = session.scalars(q).all()
 
+        # A：一次撈出「已有書目」的 course_id 集合，取代每門課一次的 _needs_parsing 查詢
+        parsed_ids = set(session.scalars(select(Citation.course_id).distinct()).all())
+
     total = len(courses)
     for i, course in enumerate(courses, 1):
         label = f"[{i:>4}/{total}] {course.course_id} {course.course_name} {course.instructor}（{course.semester}）"
-        with SessionLocal() as session:
-            if not _needs_parsing(session, course):
-                print(f"  SKIP  {label}")
-                continue
+        if not _needs_parsing(course, parsed_ids):
+            print(f"  SKIP  {label}")
+            continue
         try:
             citations = _parse_one(course)
             _save_citations(course.course_id, citations)
             print(f"  OK    {label}  → {len(citations)} 筆書目")
-            all_citations.extend(citations)
         except Exception as e:
             errors.append(f"[parser] {course.course_id}: {e}")
             print(f"  ERROR {label}  → {e}")
             traceback.print_exc()
 
-    return {"citations": all_citations, "errors": errors}
+    return {"errors": errors}
 
 if __name__ == "__main__":
     import sys
@@ -162,6 +159,7 @@ if __name__ == "__main__":
 
     with SessionLocal() as session:
         courses = session.scalars(select(Course)).all()
+        parsed_ids = set(session.scalars(select(Citation.course_id).distinct()).all())
 
     if _TEST_LIMIT:
         courses = courses[:_TEST_LIMIT]
@@ -169,10 +167,9 @@ if __name__ == "__main__":
     total = len(courses)
     for i, course in enumerate(courses, 1):
         label = f"[{i:>4}/{total}] {course.course_id} {course.course_name} {course.instructor}（{course.semester}）"
-        with SessionLocal() as session:
-            if not _needs_parsing(session, course):
-                print(f"  SKIP  {label}")
-                continue
+        if not _needs_parsing(course, parsed_ids):
+            print(f"  SKIP  {label}")
+            continue
         try:
             citations = _parse_one(course)
             _save_citations(course.course_id, citations)

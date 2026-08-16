@@ -5,7 +5,7 @@ from pypdf import PdfReader
 
 _TIMEOUT = 10.0
 
-def fetch_student_number(course_id: str, semester: str):
+def fetch_student_number(course_id: str, semester: str) -> str | None:
     base_id = course_id[:6]   # "000351"
     gop     = course_id[6:8]  # "02"
     s       = course_id[8]    # "1"
@@ -20,20 +20,20 @@ def fetch_student_number(course_id: str, semester: str):
         response = client.get(url)
         response.raise_for_status()
 
-    soup = BeautifulSoup(response.text, "html.parser") 
-    h4_tag = soup.find('h4', string="預收人數")
+    soup = BeautifulSoup(response.text, "html.parser")
 
-    if h4_tag:
-        # 2. 找到 <h4> 附近的 <div class="icon"> 或是直接找 <i>
-        # 這裡我們往上回溯到父層，再往下找 <i>
-        parent_div = h4_tag.find_parent('div')
-        target_i = parent_div.find('i', class_='sylview-icontextB')
-    
-    if target_i:
-        student_number = target_i.text.strip()
-        return student_number
-    
-    return None
+    # 找「預收人數」的 <h4>，往上回溯到父層 <div>，再往下找標示人數的 <i>。
+    # 任何一步找不到就回 None（頁面改版 / 查無此課 / 該課不顯示人數），呼叫端會退回 0。
+    h4_tag = soup.find('h4', string="預收人數")
+    if h4_tag is None:
+        return None
+    parent_div = h4_tag.find_parent('div')
+    if parent_div is None:
+        return None
+    target_i = parent_div.find('i', class_='sylview-icontextB')
+    if target_i is None:
+        return None
+    return target_i.text.strip()
 
 def fetch_syllabus(course_id: str, semester: str):
     base_id = course_id[:6]   # "000351"
