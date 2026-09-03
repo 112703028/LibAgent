@@ -21,7 +21,7 @@ def _human_review_node(state: AgentState) -> AgentState:
         q = (
             select(Citation.course_id, Citation.title, Citation.confidence)
             .join(VerifiedBookDB, VerifiedBookDB.citation_id == Citation.id)
-            .where(VerifiedBookDB.requires_human_review.is_(True))
+            .where(VerifiedBookDB.review_status == "pending")
         )
         if course_ids:
             q = q.where(Citation.course_id.in_(course_ids))

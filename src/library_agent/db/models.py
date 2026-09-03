@@ -65,6 +65,8 @@ class VerifiedBook(Base):
     source: Mapped[str] = mapped_column(String(50))               # google_books | nla
     verified: Mapped[bool] = mapped_column(Boolean, default=False)
     requires_human_review: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 人工審核決定：None（不需/未產生）/ pending / approved / rejected
+    review_status: Mapped[str | None] = mapped_column(String(20))
 
     citation: Mapped["Citation"] = relationship(back_populates="verified_book")
     holding: Mapped["HoldingCheck | None"] = relationship(back_populates="verified_book")

@@ -12,7 +12,7 @@ from library_agent.prompts.discoverer_prompts import SYSTEM_PROMPT, USER_PROMPT_
 from library_agent.state import AgentState, BookCitation
 
 _settings = get_settings()
-_client = OpenAI(api_key=_settings.openai_api_key)
+_client = OpenAI(api_key=_settings.openai_api_key, base_url=_settings.openai_base_url)
 
 _AI_CONFIDENCE_CAP = 0.75
 

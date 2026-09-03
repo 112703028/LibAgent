@@ -2,16 +2,18 @@ import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy import delete
 
 from library_agent.config import get_settings
 from library_agent.db.models import Citation
+from library_agent.db.models import HoldingCheck as HoldingCheckDB
+from library_agent.db.models import Recommendation as RecommendationDB
 from library_agent.db.models import VerifiedBook as VerifiedBookDB
 from library_agent.db.session import SessionLocal
 from library_agent.integrations.google_books import lookup as google_lookup
 from library_agent.integrations.loc import lookup as loc_lookup
-from library_agent.integrations.alma import check_holding
+from library_agent.integrations.nla import lookup as nla_lookup
 from library_agent.state import AgentState, BookCitation, VerifiedBook
 
 
@@ -66,7 +68,7 @@ def _validate_one(citation: BookCitation) -> VerifiedBook:
     low_confidence = citation.confidence < _settings.human_review_confidence_threshold
 
     if _is_chinese(citation.title):
-        return _validate_alma(citation, low_confidence)
+        return _validate_chinese(citation, low_confidence)
     else:
         return _validate_english(citation, low_confidence)
 
@@ -98,25 +100,27 @@ def _validate_english(citation: BookCitation, low_confidence: bool) -> VerifiedB
     )
 
 
-def _validate_alma(citation: BookCitation, low_confidence: bool) -> VerifiedBook:
-    result = check_holding(isbn=citation.isbn, title=citation.title)
-    if result.found:
+def _validate_chinese(citation: BookCitation, low_confidence: bool) -> VerifiedBook:
+    # 中文書走 NCL / NBINet 做「存在性驗證」（權威書目來源）；
+    # 「政大有沒有收藏」是館藏問題，由 librarian 另查 Alma。
+    book_info = nla_lookup(title=citation.title, authors=citation.authors, isbn=citation.isbn)
+    if book_info:
         return VerifiedBook(
             citation=citation,
-            canonical_title=citation.title,
-            canonical_authors=citation.authors,
-            isbn_13=citation.isbn or result.mms_id,
-            source="alma",
+            canonical_title=book_info.canonical_title or citation.title,
+            canonical_authors=book_info.canonical_authors or citation.authors,
+            isbn_13=citation.isbn or book_info.isbn_13,
+            source=book_info.source,
             verified=True,
             requires_human_review=low_confidence,
         )
-    # Alma 查不到：書可能存在但政大沒收藏，仍視為待確認
+    # NCL 查不到：可能是冷門書/建檔延遲，標為待確認交人工審核
     return VerifiedBook(
         citation=citation,
         canonical_title=citation.title,
         canonical_authors=citation.authors,
         isbn_13=citation.isbn,
-        source="alma_not_found",
+        source="ncl_not_found",
         verified=False,
         requires_human_review=True,
     )
@@ -124,7 +128,28 @@ def _validate_alma(citation: BookCitation, low_confidence: bool) -> VerifiedBook
 
 def _stage_save(session, verified: VerifiedBook, citation_id: int) -> None:
     """把單筆寫入暫存進「外部傳入的」session（先刪再寫），不 commit。
-    由呼叫端（validator_node 主執行緒）統一分批 commit（B1）。"""
+    由呼叫端（validator_node 主執行緒）統一分批 commit（B1）。
+
+    MISS/not_found 的書每次重跑都會被 retry（見 _process_one），但下游 librarian
+    對所有 verified_books（不分 verified 真偽）都會建 holding_check，
+    recommender 再建 recommendation。若舊的 verified_books 已被下游引用，
+    直接 DELETE 會撞 FK 約束，所以要比照 librarian._save_to_db 由下往上 cascade：
+    recommendations → holding_checks → verified_books，才能刪掉舊列重寫。
+    """
+    old_id = session.scalar(
+        select(VerifiedBookDB.id).where(VerifiedBookDB.citation_id == citation_id)
+    )
+    if old_id is not None:
+        holding_ids = list(session.scalars(
+            select(HoldingCheckDB.id).where(HoldingCheckDB.verified_book_id == old_id)
+        ))
+        if holding_ids:
+            session.execute(
+                delete(RecommendationDB).where(RecommendationDB.holding_id.in_(holding_ids))
+            )
+            session.execute(
+                delete(HoldingCheckDB).where(HoldingCheckDB.verified_book_id == old_id)
+            )
     session.execute(
         delete(VerifiedBookDB).where(VerifiedBookDB.citation_id == citation_id)
     )
@@ -136,6 +161,7 @@ def _stage_save(session, verified: VerifiedBook, citation_id: int) -> None:
         source=verified.source,
         verified=verified.verified,
         requires_human_review=verified.requires_human_review,
+        review_status="pending" if verified.requires_human_review else None,
     ))
 
 
@@ -198,9 +224,15 @@ def validator_node(state: AgentState) -> AgentState:
             q = q.where(Citation.course_id.in_(course_ids))
         citations = session.scalars(q).all()
 
-        # A：一次撈出「已成功驗證」的 citation_id 集合，取代每筆一次的 _already_validated
+        # A：一次撈出「不需再處理」的 citation_id 集合，取代每筆一次的 _already_validated：
+        #   已成功驗證(verified=True)，或已被人工審核處理(approved/rejected) → 都不重跑。
         done_ids = set(session.scalars(
-            select(VerifiedBookDB.citation_id).where(VerifiedBookDB.verified.is_(True))
+            select(VerifiedBookDB.citation_id).where(
+                or_(
+                    VerifiedBookDB.verified.is_(True),
+                    VerifiedBookDB.review_status.in_(("approved", "rejected")),
+                )
+            )
         ).all())
 
     cache = _build_cache()
