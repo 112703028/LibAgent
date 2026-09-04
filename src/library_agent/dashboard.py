@@ -7,6 +7,8 @@ FastAPI 服務，讀既有 DB 呈現缺口分析：KPI 概覽、採購優先級�
 技能的 status palette，並以文字標籤 + 數值確保辨識不依賴顏色。
 """
 import html
+import threading
+import time
 
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
@@ -202,6 +204,17 @@ h1 {{ font-size:22px; margin:0 0 4px; }}
 .sub {{ color:var(--text-secondary); font-size:13px; margin-bottom:20px; }}
 h2 {{ font-size:15px; margin:0 0 12px; color:var(--text-secondary); }}
 .card {{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 18px; margin-bottom:16px; }}
+.runbar {{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; }}
+.runbtn {{ font:inherit; font-size:14px; font-weight:600; padding:8px 18px; border-radius:8px; cursor:pointer;
+  border:1px solid var(--border); background:var(--text-primary); color:var(--surface); }}
+.runbtn:disabled {{ opacity:.45; cursor:not-allowed; }}
+.limitlbl {{ font-size:13px; color:var(--text-secondary); }}
+.limitlbl input {{ font:inherit; width:112px; padding:5px 8px; border:1px solid var(--border); border-radius:6px; margin-left:4px; }}
+.runstatus {{ font-size:13px; font-weight:600; color:var(--text-secondary); }}
+.runstatus.running {{ color:var(--warning); }}
+.runstatus.done {{ color:#0ca30c; }}
+.runstatus.error {{ color:var(--critical); }}
+.counts {{ font-size:12.5px; color:var(--muted); font-variant-numeric:tabular-nums; }}
 .kpi-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin-bottom:16px; }}
 .kpi {{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px 16px; }}
 .kpi .val {{ font-size:30px; font-weight:700; letter-spacing:-.5px; }}
@@ -234,7 +247,14 @@ ul.pending li {{ padding:6px 0; border-bottom:1px solid var(--gridline); font-si
 .pmeta {{ color:var(--muted); font-size:12px; }}
 </style></head><body><div class="wrap">
 <h1>圖書館採購決策儀表板</h1>
-<div class="sub">缺口分析 · 唯讀 · 資料來自當下資料庫</div>
+<div class="sub">缺口分析 · 資料來自當下資料庫</div>
+
+<div class="card runbar">
+  <button id="runbtn" class="runbtn">▶ 執行 pipeline</button>
+  <label class="limitlbl">限制筆數 <input id="limit" type="number" min="1" placeholder="留空 = 全跑"></label>
+  <span id="runstatus" class="runstatus">—</span>
+  <span id="counts" class="counts"></span>
+</div>
 
 <div class="kpi-grid">{_kpi_tiles(data["kpis"])}</div>
 
@@ -265,6 +285,30 @@ document.querySelectorAll('.fbtn').forEach(function(b){{
     }});
   }});
 }});
+
+const _el = id => document.getElementById(id);
+async function _poll() {{
+  try {{
+    const d = await (await fetch('/status')).json();
+    const c = d.counts;
+    _el('counts').textContent =
+      `課程 ${{c.courses}} · 書目 ${{c.citations}} · 已驗證 ${{c.verified}} · 館藏 ${{c.holdings}} · 建議 ${{c.recommendations}}`;
+    const label = {{idle:'閒置中', running:`執行中… ${{d.elapsed||0}}s`, done:`完成（${{d.elapsed||0}}s）`, error:'錯誤：'+(d.error||'')}};
+    _el('runstatus').textContent = label[d.status] || d.status;
+    _el('runstatus').className = 'runstatus ' + d.status;
+    _el('runbtn').disabled = (d.status === 'running');
+    if (d.status === 'running') setTimeout(_poll, 3000);
+  }} catch (e) {{ _el('runstatus').textContent = '無法連線'; }}
+}}
+_el('runbtn').onclick = async () => {{
+  const lim = _el('limit').value.trim();
+  if (!lim && !confirm('未填限制筆數＝全跑剩下所有課程，可能需要數小時。確定要執行嗎？')) return;
+  const q = lim ? ('?limit=' + encodeURIComponent(lim)) : '';
+  _el('runbtn').disabled = true;
+  await fetch('/run' + q, {{method:'POST'}});
+  _poll();
+}};
+_poll();
 </script>
 </body></html>"""
 
@@ -272,3 +316,79 @@ document.querySelectorAll('.fbtn').forEach(function(b){{
 @app.get("/", response_class=HTMLResponse)
 def index() -> str:
     return _render(_load_data())
+
+
+# ---------- 執行 pipeline + 進度 ----------
+
+_run_lock = threading.Lock()
+_run_state: dict = {"status": "idle", "started_at": None, "finished_at": None, "error": None, "run_id": None}
+
+
+def _run_pipeline(run_id: str, limit: int | None) -> None:
+    from library_agent.graph import build_graph
+    try:
+        build_graph(run_id).invoke({"limit": limit} if limit else {})
+        status, error = "done", None
+    except Exception as e:  # 背景執行緒的例外要自己接，否則靜默消失
+        status, error = "error", str(e)[:500]
+    with _run_lock:
+        _run_state.update(status=status, finished_at=time.time(), error=error)
+
+
+@app.post("/run")
+def start_run(limit: int | None = None) -> dict:
+    """在背景執行緒啟動整條 pipeline。limit=None 全跑；一次只准一個。"""
+    from library_agent.graph import _init_run
+
+    with _run_lock:
+        if _run_state["status"] == "running":
+            return {"ok": False, "message": "pipeline 已在執行中"}
+        run_id = str(time.time())
+        _init_run(run_id)
+        _run_state.update(status="running", started_at=time.time(), finished_at=None, error=None, run_id=run_id)
+    threading.Thread(target=_run_pipeline, args=(run_id, limit), daemon=True).start()
+    return {"ok": True}
+
+
+@app.get("/status")
+def status() -> dict:
+    """回傳執行狀態 + 各表即時筆數（agent 邊跑邊寫，筆數就邊長 → 當進度用）+ 各節點狀態。"""
+    from library_agent.db.models import PipelineNodeRun
+    from library_agent.graph import NODE_NAMES
+
+    with _run_lock:
+        st = dict(_run_state)
+    with SessionLocal() as s:
+        counts = {
+            "courses": s.scalar(select(func.count()).select_from(Course)) or 0,
+            "citations": s.scalar(select(func.count()).select_from(Citation)) or 0,
+            "verified": s.scalar(select(func.count()).select_from(VerifiedBook)) or 0,
+            "holdings": s.scalar(select(func.count()).select_from(HoldingCheck)) or 0,
+            "recommendations": s.scalar(select(func.count()).select_from(Recommendation)) or 0,
+        }
+        node_rows = {}
+        if st["run_id"]:
+            rows = s.execute(
+                select(PipelineNodeRun.node_name, PipelineNodeRun.status,
+                       PipelineNodeRun.started_at, PipelineNodeRun.finished_at)
+                .where(PipelineNodeRun.run_id == st["run_id"])
+                .order_by(PipelineNodeRun.id.desc())
+            ).all()
+            for node_name, node_status, started_at, finished_at in rows:
+                if node_name not in node_rows:  # 每個節點只取最新一筆（id desc 已排序）
+                    node_rows[node_name] = (node_status, started_at, finished_at)
+
+    nodes = []
+    now = time.time()
+    for name in NODE_NAMES:
+        node_status, started_at, finished_at = node_rows.get(name, ("pending", None, None))
+        elapsed = None
+        if started_at:
+            end = finished_at.timestamp() if finished_at else now
+            elapsed = round(end - started_at.timestamp())
+        nodes.append({"name": name, "status": node_status, "elapsed": elapsed})
+
+    elapsed = None
+    if st["started_at"]:
+        elapsed = round((st["finished_at"] or time.time()) - st["started_at"])
+    return {"status": st["status"], "elapsed": elapsed, "error": st["error"], "counts": counts, "nodes": nodes}
