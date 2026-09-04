@@ -9,9 +9,11 @@ FastAPI 服務，讀既有 DB 呈現缺口分析：KPI 概覽、採購優先級�
 import html
 import threading
 import time
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, or_, select
 
 from library_agent.db.models import (
@@ -24,6 +26,7 @@ from library_agent.db.models import (
 from library_agent.db.session import SessionLocal
 
 app = FastAPI(title="Library Agent 採購決策儀表板")
+app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 
 # (key, 顯示名稱, 顏色)  顏色取自 dataviz status palette
 _PRIORITY_META = [
@@ -189,6 +192,7 @@ def _render(data: dict) -> str:
     return f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>採購決策儀表板</title>
+<script src="/static/mermaid.min.js"></script>
 <style>
 :root {{
   color-scheme: light;                /* 強制淺色，不隨 OS 深色模式變黑 */
@@ -256,6 +260,23 @@ ul.pending li {{ padding:6px 0; border-bottom:1px solid var(--gridline); font-si
   <span id="counts" class="counts"></span>
 </div>
 
+<div class="card">
+  <h2>Pipeline 進度</h2>
+  <pre class="mermaid" id="flowchart">
+flowchart LR
+    crawler[crawler]
+    parser[parser]
+    discoverer[discoverer]
+    validator[validator]
+    librarian[librarian]
+    human_review[human_review]
+    recommender[recommender]
+    crawler --> parser --> discoverer --> validator
+    validator --> librarian --> recommender
+    validator --> human_review
+  </pre>
+</div>
+
 <div class="kpi-grid">{_kpi_tiles(data["kpis"])}</div>
 
 <div class="charts">
@@ -275,6 +296,21 @@ ul.pending li {{ padding:6px 0; border-bottom:1px solid var(--gridline); font-si
 </div>
 </div>
 <script>
+mermaid.initialize({{ startOnLoad: true, theme: 'neutral', securityLevel: 'loose' }});
+
+const _NODE_COLOR = {{ pending: '#898781', running: '#fab219', done: '#0ca30c', error: '#d03b3b' }};
+
+function _updateFlowchart(nodes) {{
+  const svg = document.querySelector('#flowchart svg');
+  if (!svg) return;  // Mermaid 尚未完成首次渲染
+  nodes.forEach(function(n) {{
+    const g = svg.querySelector(`[id*="flowchart-${{n.name}}-"]`);
+    if (!g) return;
+    const shape = g.querySelector('rect, polygon, .node-bkg') || g.querySelector('*');
+    if (shape) shape.style.fill = _NODE_COLOR[n.status] || _NODE_COLOR.pending;
+  }});
+}}
+
 document.querySelectorAll('.fbtn').forEach(function(b){{
   b.addEventListener('click', function(){{
     document.querySelectorAll('.fbtn').forEach(x=>x.classList.remove('active'));
@@ -297,6 +333,7 @@ async function _poll() {{
     _el('runstatus').textContent = label[d.status] || d.status;
     _el('runstatus').className = 'runstatus ' + d.status;
     _el('runbtn').disabled = (d.status === 'running');
+    if (d.nodes) _updateFlowchart(d.nodes);
     if (d.status === 'running') setTimeout(_poll, 3000);
   }} catch (e) {{ _el('runstatus').textContent = '無法連線'; }}
 }}
