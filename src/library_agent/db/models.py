@@ -65,6 +65,8 @@ class VerifiedBook(Base):
     source: Mapped[str] = mapped_column(String(50))               # google_books | nla
     verified: Mapped[bool] = mapped_column(Boolean, default=False)
     requires_human_review: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 人工審核決定：None（不需/未產生）/ pending / approved / rejected
+    review_status: Mapped[str | None] = mapped_column(String(20))
 
     citation: Mapped["Citation"] = relationship(back_populates="verified_book")
     holding: Mapped["HoldingCheck | None"] = relationship(back_populates="verified_book")
@@ -99,3 +101,15 @@ class Recommendation(Base):
     )
 
     holding: Mapped["HoldingCheck"] = relationship(back_populates="recommendation")
+
+# Pipeline 執行時每個節點的即時狀態（供 dashboard 流程圖顯示進度）
+class PipelineNodeRun(Base):
+    __tablename__ = "pipeline_node_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    node_name: Mapped[str] = mapped_column(String(50), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)  # pending | running | done | error
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error: Mapped[str | None] = mapped_column(Text)

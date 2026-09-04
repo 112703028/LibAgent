@@ -3,7 +3,7 @@ import csv
 import sys
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from library_agent.db.models import (
     Citation,
@@ -31,6 +31,8 @@ def _fetch_report_rows() -> list[dict]:
             .join(HoldingCheck, HoldingCheck.id == Recommendation.holding_id)
             .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id)
             .join(Citation, Citation.id == VerifiedBook.citation_id)
+            .where(or_(VerifiedBook.review_status.is_(None),
+                       VerifiedBook.review_status != "rejected"))
             .order_by(Recommendation.priority, Course.course_name)
         ).all()
 
@@ -121,6 +123,58 @@ def report(output: str | None = None) -> None:
         _write_csv(rows, output)
 
 
+def review() -> None:
+    """人工審核：逐筆處理 review_status='pending' 的書目。
+    核准/退回會寫回 DB；修正書名會刪掉舊驗證結果，下次 run 自動重新驗證。"""
+    with SessionLocal() as session:
+        rows = session.execute(
+            select(VerifiedBook, Citation, Course)
+            .join(Citation, Citation.id == VerifiedBook.citation_id)
+            .join(Course, Course.course_id == Citation.course_id)
+            .where(VerifiedBook.review_status == "pending")
+            .order_by(Course.course_name)
+        ).all()
+
+        if not rows:
+            print("目前沒有待審書目。")
+            return
+
+        print(f"待審 {len(rows)} 筆。每筆指令：(a)核准 (r)退回 (e)修正書名 (s)跳過 (q)離開\n")
+        for vb, cit, course in rows:
+            reason = "低信心" if vb.verified else f"查無此書（{vb.source}）"
+            print(f"[{course.course_name}] {cit.title}")
+            print(f"  信心={cit.confidence:.2f}  來源={vb.source}  verified={vb.verified}  原因={reason}")
+            ans = input("  > ").strip().lower()
+            if ans == "q":
+                break
+            elif ans == "a":
+                vb.review_status = "approved"
+                print("  ✓ 已核准\n")
+            elif ans == "r":
+                vb.review_status = "rejected"
+                print("  ✗ 已退回（下游將排除）\n")
+            elif ans == "e":
+                new_title = input("  新書名 > ").strip()
+                if new_title:
+                    cit.title = new_title
+                    session.delete(vb)  # 刪掉舊驗證結果 → 下次 run 會重新驗證
+                    print("  ↻ 已更新書名，下次 run 會重新驗證\n")
+                else:
+                    print("  （未輸入，跳過）\n")
+            else:
+                print("  … 跳過\n")
+        session.commit()
+    print("審核完成。")
+
+
+def dashboard(host: str = "127.0.0.1", port: int = 8000) -> None:
+    import uvicorn
+
+    from library_agent.dashboard import app
+    print(f"採購決策儀表板：http://{host}:{port}  （Ctrl+C 結束）")
+    uvicorn.run(app, host=host, port=port)
+
+
 def cli() -> None:
     parser = argparse.ArgumentParser(description="圖書館採購決策支援系統")
     sub = parser.add_subparsers(dest="command")
@@ -131,6 +185,12 @@ def cli() -> None:
     report_cmd = sub.add_parser("report", help="輸出採購建議報表")
     report_cmd.add_argument("--output", "-o", default=None, help="儲存為 CSV 檔案路徑")
 
+    sub.add_parser("review", help="人工審核待處理書目（pending）")
+
+    dash_cmd = sub.add_parser("dashboard", help="啟動視覺化採購決策儀表板")
+    dash_cmd.add_argument("--host", default="127.0.0.1")
+    dash_cmd.add_argument("--port", type=int, default=8000)
+
     args = parser.parse_args()
 
     if args.command == "run":
@@ -138,6 +198,10 @@ def cli() -> None:
         report()
     elif args.command == "report":
         report(output=args.output)
+    elif args.command == "review":
+        review()
+    elif args.command == "dashboard":
+        dashboard(host=args.host, port=args.port)
     else:
         parser.print_help()
         sys.exit(1)

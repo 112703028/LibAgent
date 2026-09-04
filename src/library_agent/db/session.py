@@ -6,7 +6,11 @@ from library_agent.config import get_settings
 _settings = get_settings()
 
 # engine 是跟 PostgreSQL 的連線池，整個程式共用一個
-engine = create_engine(_settings.database_url, echo=False)
+engine = create_engine(
+    _settings.database_url,
+    echo=False,
+    connect_args={"connect_timeout": 10},  # 連不到就快速報錯，不要無聲卡死
+)
 
 # SessionLocal 是工廠，每次要操作 DB 時呼叫 SessionLocal() 產生一個 session
 # autocommit=False：不自動提交，你要手動 session.commit() 才會寫入 DB

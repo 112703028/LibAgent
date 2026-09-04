@@ -1,0 +1,201 @@
+<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">
+<style>
+@page { size: A4; margin: 18mm; }
+body { font-family: "Microsoft JhengHei","Noto Sans CJK TC",sans-serif; line-height:1.65;
+       color:#1a1a1a; font-size:11pt; }
+h1 { font-size:20pt; border-bottom:3px solid #2c3e50; padding-bottom:6px; }
+h2 { font-size:15pt; margin-top:22px; border-bottom:1px solid #ccc; padding-bottom:4px; color:#2c3e50; }
+h3 { font-size:12.5pt; margin-top:16px; color:#34495e; }
+table { border-collapse:collapse; width:100%; margin:10px 0; font-size:10pt; }
+th,td { border:1px solid #bbb; padding:6px 9px; text-align:left; vertical-align:top; }
+th { background:#f0f3f6; }
+code { background:#f4f4f4; padding:1px 4px; border-radius:3px; font-size:9.5pt; }
+pre { background:#f6f8fa; padding:10px; border-radius:5px; overflow:auto; }
+pre code { background:none; padding:0; }
+hr { border:none; border-top:1px solid #ddd; margin:18px 0; }
+</style></head><body>
+<h1>Library Agent 開發進度報告</h1>
+<p><strong>專案</strong>：AI 代理人驅動之課程大綱分析與館藏採購決策輔助系統（政大圖書館）
+<strong>報告日期</strong>：2026-08-25
+<strong>對應提案</strong>：《基於 AI 代理人框架之自動化課綱分析與採購決策》（洪承理、廖國廷）</p>
+<hr />
+<h2>一、專案概述</h2>
+<p>本系統以 <strong>LangGraph</strong> 編排的多代理人流程，將課程大綱中的指定/參考書目自動化：解析 → 驗證 → 館藏查核 → 產生具優先級的採購建議，並保留人工覆核環節。管線階段：</p>
+<pre><code>crawler → parser → discoverer → validator →（librarian ∥ human_review）→ recommender → 報表
+</code></pre>
+<p>資料以 PostgreSQL 持久化；每個代理人皆可獨立重跑（冪等：先刪再寫）。</p>
+<hr />
+<h2>二、對照提案之完成度</h2>
+<table>
+<thead>
+<tr>
+<th>提案元件</th>
+<th>現況</th>
+<th>狀態</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>爬蟲代理人（爬 qrysub、多格式、robots/禮貌延遲、掃描檔 OCR）</td>
+<td>目前以本地 <code>data/*.xlsx</code> 為資料來源（單機載入）</td>
+<td>⚠️ 部分（依現況以檔案匯入取代線上爬取）</td>
+</tr>
+<tr>
+<td>解析代理人（LLM 抽書目、別稱→正式書名）</td>
+<td><code>parser.py</code>，含「恐龍書→Operating System Concepts」提示</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>驗證代理人（權威書目庫存在性驗證、過濾 AI 幻覺）</td>
+<td>英文→ LOC + Google Books；中文→ <strong>NCL / NBINet</strong></td>
+<td>✅</td>
+</tr>
+<tr>
+<td>館員代理人（查館藏，實體/電子）</td>
+<td><code>librarian.py</code>，Alma <strong>SRU</strong>（AVA/AVE）</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>決議代理人（缺口 + 修課人數 → 優先級清單）</td>
+<td><code>recommender.py</code>，LLM 綜合判斷</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>例外攔截 / 人工覆核（低信心、疑似幻覺）</td>
+<td><code>review_status</code> + <code>library-agent review</code> CLI</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>PostgreSQL 結構化存儲</td>
+<td>ORM + Alembic migration</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>視覺化採購決策儀表板（Phase 4）</td>
+<td>目前為文字/CSV 報表</td>
+<td>❌ 未做</td>
+</tr>
+</tbody>
+</table>
+<p><strong>五個核心代理人的主流程皆已打通</strong>（含人工覆核）；主要未完成項為「視覺化儀表板」與「線上爬蟲」。</p>
+<hr />
+<h2>三、本階段完成之改進</h2>
+<h3>A. 正確性修復</h3>
+<table>
+<thead>
+<tr>
+<th>項目</th>
+<th>說明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>LLM 預設設定</td>
+<td>預設 model/provider 原為 Claude 名稱卻用 OpenAI client → 修正為 <code>openai</code> / <code>gpt-4o</code>（config 與 <code>.env.example</code>），避免新環境開箱即壞</td>
+</tr>
+<tr>
+<td><code>fetch_student_number</code></td>
+<td>修正 <code>UnboundLocalError</code>（頁面結構不符時會崩）→ 改 early-return、逐步 None 防護</td>
+</tr>
+</tbody>
+</table>
+<h3>B. 架構收斂</h3>
+<table>
+<thead>
+<tr>
+<th>項目</th>
+<th>說明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>兩套 source-of-truth</td>
+<td>移除 write-only 的 state channel，<code>AgentState</code> 僅保留控制流（<code>limit</code>/<code>course_ids</code>）與 <code>errors</code>；領域資料一律以 DB 為單一真相來源；<code>human_review</code> 改為讀 DB（可獨立重跑）</td>
+</tr>
+</tbody>
+</table>
+<h3>C. 效能</h3>
+<table>
+<thead>
+<tr>
+<th>項目</th>
+<th>說明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>N+1 讀取（#11-A）</td>
+<td>validator/parser/discoverer 的「做過沒」逐筆查詢 → 開頭一次撈成集合、記憶體判斷。每 node 由 <code>1+N</code> 次往返降為固定 1 次</td>
+</tr>
+<tr>
+<td>併寫（#11-B1）</td>
+<td>validator 的 worker 只做 I/O、不碰 DB；DB 寫入集中主執行緒單一 session、每 200 筆 commit。session 由 <code>N</code> 降為 <code>1</code>，並解除提高並行度的限制</td>
+</tr>
+<tr>
+<td>修課人數（#8+#12）</td>
+<td>recommender 原本每本書同步打一次 HTTP 抓人數 → 改為每門課只解析一次（先讀 <code>Course.enrolled_count</code>，沒有才打一次並寫回）；<code>enrolled_count</code> 由死欄位變成跨執行快取。重跑後 0 次 HTTP</td>
+</tr>
+</tbody>
+</table>
+<h3>D. 功能</h3>
+<table>
+<thead>
+<tr>
+<th>項目</th>
+<th>說明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>真正的人工覆核（#6）</td>
+<td>新增 <code>verified_books.review_status</code>（migration <code>b2f4a1c9d3e7</code>）；validator 對低信心/查無之書標 <code>pending</code>；新增 <code>library-agent review</code> CLI（核准 / 退回 / 修正書名 / 跳過）；退回者於後續推薦與報表排除；修正書名者下次執行自動重新驗證</td>
+</tr>
+<tr>
+<td>中文書 NCL 驗證</td>
+<td>新增 <code>integrations/nla.py</code>，串接 <strong>NBINet SRU</strong>（<code>886NCL_NBINET</code>）做中文書「存在性驗證」，取代原本以 NCCU Alma 代理（Alma 專責館藏查核）。可正確驗證「政大未收藏但確實存在」之中文書</td>
+</tr>
+</tbody>
+</table>
+<h3>E. 品質</h3>
+<table>
+<thead>
+<tr>
+<th>項目</th>
+<th>說明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>測試（#15）</td>
+<td>原 <code>tests/</code> 全空 → 新增 <strong>29 個單元測試</strong>（純函式，不依賴 DB/網路/LLM）：書名清理正則、民國年轉換、館藏狀態映射、人數快取、skip 判定、MARCXML 解析等。<code>pytest</code> 直接可跑</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>四、技術驗證</h2>
+<ul>
+<li><strong>單元測試</strong>：<code>pytest</code> → <strong>29 passed</strong>（涵蓋上述各模組核心純函式）。</li>
+<li><strong>NCL/NBINet 端點實測</strong>：ISBN <code>9789570533439</code> 命中且 ISBN 吻合；書名查詢命中；不存在書名正確回 MISS。</li>
+<li><strong>資料庫遷移</strong>：<code>review_status</code> 欄位已套用（<code>alembic_version = b2f4a1c9d3e7</code>）；<code>review</code> 流程於交易內驗證三段行為（列出 pending / 排除 rejected / done_ids 納入 approved）。</li>
+</ul>
+<hr />
+<h2>五、尚未完成與後續建議</h2>
+<h3>對應提案之主要缺口</h3>
+<ol>
+<li><strong>視覺化採購決策儀表板（Phase 4）</strong>：目前為文字/CSV 報表。依賴 <code>fastapi</code> / <code>uvicorn</code> 已在專案中但尚未使用，建議據此開發 Web 儀表板呈現缺口分析。</li>
+<li><strong>線上爬蟲</strong>：現以本地 xlsx 匯入取代；若日後需線上爬取 <code>qrysub.nccu.edu.tw</code>，需補 robots.txt 遵循、禮貌性延遲，以及掃描檔 OCR。</li>
+<li><strong>跨校相似課程推薦</strong>：提案列為「未來效益」，尚未開始。</li>
+</ol>
+<h3>程式品質待整理（低風險）</h3>
+<ul>
+<li>discoverer 的 <code>year</code> 未經民國年轉換（與 parser 不一致）。</li>
+<li>外鍵欄位未建索引；<code>z3950.py</code> / <code>utils/logging.py</code> / <code>scripts/run_pipeline.py</code> 為空 stub；<code>langchain-*</code>、<code>pymarc</code>、<code>structlog</code> 等未使用依賴可清理；文件（CLAUDE.md）部分描述與現況漂移。</li>
+</ul>
+<hr />
+<h2>附錄：技術備註</h2>
+<ul>
+<li><strong>NCL / NBINet SRU 端點</strong>：<code>https://nbinet.alma.exlibrisgroup.com/view/sru/886NCL_NBINET</code>（Ex Libris SRU，MARCXML，與 Alma/LOC 同格式）。</li>
+<li><strong>Z39.50</strong>：提案所述「Z39.50 或 API」以 <strong>SRU（Z39.50 over HTTP）</strong> 實現即可，無需原生 Z39.50 協定（避開 YAZ/PyZ3950 依賴）。</li>
+<li>提案假設之 <code>openapi.ncl.edu.tw</code> 經測試無法解析（已於 config 改為正確之 NBINet SRU）。</li>
+<li>提案提及以 LLM「自動補完 ISBN」，本系統刻意<strong>不由 LLM 生成 ISBN</strong>，改由權威 API 供給，以杜絕幻覺造成之採購錯誤。</li>
+</ul></body></html>

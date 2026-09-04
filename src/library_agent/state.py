@@ -63,27 +63,13 @@ class HoldingCheck(BaseModel):
     matched_edition: str | None = None
 
 
-class PurchaseRecommendation(BaseModel):
-    course_id: str
-    course_name: str
-    book: VerifiedBook
-    holding: HoldingCheck
-    priority: PurchasePriority
-    suggested_copies: int = 1
-    rationale: str = ""
-
-
 def _merge(left: list, right: list) -> list:
     return left + right
 
 
 class AgentState(TypedDict, total=False):
-    syllabi: Annotated[list[RawSyllabus], _merge]
-    citations: Annotated[list[BookCitation], _merge]
-    verified_books: Annotated[list[VerifiedBook], _merge]
-    holdings: Annotated[list[HoldingCheck], _merge]
-    recommendations: Annotated[list[PurchaseRecommendation], _merge]
-    human_review_queue: Annotated[list[BookCitation], _merge]
+    # 領域資料一律存 DB（single source of truth）；
+    # state 只保留控制流（limit / course_ids）與跨節點彙整的 errors。
     errors: Annotated[list[str], _merge]
     limit: int | None  # 測試用：限制課程筆數
     course_ids: list[str] | None  # crawler 傳給下游的課程 ID 清單（limit 時使用）

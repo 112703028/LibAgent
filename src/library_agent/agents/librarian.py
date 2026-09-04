@@ -1,4 +1,5 @@
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
@@ -9,6 +10,8 @@ from library_agent.db.models import VerifiedBook as VerifiedBookDB
 from library_agent.db.session import SessionLocal
 from library_agent.integrations.alma import check_holding
 from library_agent.state import AgentState, BookCitation, HoldingCheck, HoldingStatus, VerifiedBook
+
+_MAX_WORKERS = 4  # 對 NCCU Alma SRU 客氣一點；每本書 check_holding 內部最多還會查 3 次
 
 
 def _to_status(result) -> HoldingStatus:
@@ -57,29 +60,42 @@ def _check_one(vb: VerifiedBookDB) -> HoldingCheck:
     )
 
 
-def _save_to_db(holding: HoldingCheck, verified_book_id: int) -> None:
-    with SessionLocal() as session:
-        existing_ids = list(session.scalars(
-            select(HoldingCheckDB.id).where(HoldingCheckDB.verified_book_id == verified_book_id)
-        ))
-        if existing_ids:
-            session.execute(
-                delete(RecommendationDB).where(RecommendationDB.holding_id.in_(existing_ids))
-            )
-            session.execute(
-                delete(HoldingCheckDB).where(HoldingCheckDB.verified_book_id == verified_book_id)
-            )
-        session.add(HoldingCheckDB(
-            verified_book_id=verified_book_id,
-            status=holding.status.value,
-            holdings_count=holding.holdings_count,
-            alma_mms_id=holding.alma_mms_id,
-        ))
-        session.commit()
+def _process_one(vb: VerifiedBookDB) -> tuple[int, HoldingCheck | None, str | None]:
+    """跑在 worker 執行緒：打 Alma、建 HoldingCheck，不碰 DB。
+    vb 的 citation 已由 selectinload 預載，worker 內存取不會觸發 lazy DB 查詢。
+    例外用 return 回報，不 raise，避免一筆拖垮整個 ThreadPoolExecutor。"""
+    try:
+        return vb.id, _check_one(vb), None
+    except Exception as e:
+        return vb.id, None, f"[librarian] {vb.id} {vb.canonical_title}: {e}"
+
+
+def _stage_save(session, holding: HoldingCheck, verified_book_id: int) -> None:
+    """把單筆寫入暫存進「外部傳入的」session，不 commit（由 librarian_node 主執行緒分批 commit）。
+    覆寫前由下往上 cascade：recommendations → holding_checks，才能重寫。"""
+    # 步驟 1：先查出這本書在 holding_checks 的 id
+    existing_ids = list(session.scalars(
+        select(HoldingCheckDB.id).where(HoldingCheckDB.verified_book_id == verified_book_id)
+    ))
+    if existing_ids:
+        # 步驟 2：先把 recommendations 裡指向這些 id 的資料刪掉（請房客搬走）
+        session.execute(
+            delete(RecommendationDB).where(RecommendationDB.holding_id.in_(existing_ids))
+        )
+        # 步驟 3：再刪 holding_checks（拆房間）
+        session.execute(
+            delete(HoldingCheckDB).where(HoldingCheckDB.verified_book_id == verified_book_id)
+        )
+    # 步驟 4：寫入新的 holding_check
+    session.add(HoldingCheckDB(
+        verified_book_id=verified_book_id,
+        status=holding.status.value,
+        holdings_count=holding.holdings_count,
+        alma_mms_id=holding.alma_mms_id,
+    ))
 
 
 def librarian_node(state: AgentState) -> AgentState:
-    all_holdings: list[HoldingCheck] = []
     errors: list[str] = []
 
     # 從資料庫一次讀出所有 verified_books。.all() 把 iterator 一次全部轉成 list，存在記憶體裡。這樣後面就可以先關掉 with session，迴圈再慢慢處理，不會佔著資料庫連線。
@@ -94,25 +110,40 @@ def librarian_node(state: AgentState) -> AgentState:
         verified_books = session.scalars(q).all()
 
     total = len(verified_books)
-    for i, vb in enumerate(verified_books, 1):
-        label = f"[{i:>4}/{total}] {vb.canonical_title}"
-        try:
-            holding = _check_one(vb)
-            _save_to_db(holding, vb.id)
-            print(f"  {holding.status.value:<20} {label}")
-            all_holdings.append(holding)
-        except Exception as e:
-            errors.append(f"[librarian] {vb.id} {vb.canonical_title}: {e}")
-            print(f"  ERROR                {label}  → {e}")
+    done = 0
+    written = 0
+    _BATCH = 100
 
-    return {"holdings": all_holdings, "errors": errors}
+    # worker 併發打 Alma（_process_one，不碰 DB）；主執行緒用單一 session
+    # 依完成順序收結果、_stage_save 暫存、每 _BATCH 筆 commit 一次。
+    with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as executor, SessionLocal() as session:
+        futures = {executor.submit(_process_one, vb): vb for vb in verified_books}
+        for future in as_completed(futures):
+            done += 1
+            vb = futures[future]
+            vb_id, holding, error = future.result()
+            label = f"[{done:>5}/{total}] {vb.canonical_title}"
+            if error:
+                errors.append(error)
+                print(f"  ERROR                {label}  → {error}")
+                continue
+            _stage_save(session, holding, vb_id)
+            written += 1
+            print(f"  {holding.status.value:<20} {label}")
+            if written % _BATCH == 0:
+                session.commit()
+        session.commit()  # 收尾
+
+    return {"errors": errors}
 
 
 if __name__ == "__main__":
     result = librarian_node({})
     from collections import Counter
-    counts = Counter(h.status.value for h in result["holdings"])
-    print("\n館藏統計：")
+    with SessionLocal() as session:
+        statuses = session.scalars(select(HoldingCheckDB.status)).all()
+    counts = Counter(statuses)
+    print("\n館藏統計（DB 全量）：")
     for status, count in sorted(counts.items()):
         print(f"  {status:<20} {count} 筆")
     if result["errors"]:

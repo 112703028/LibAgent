@@ -12,7 +12,7 @@ from library_agent.prompts.discoverer_prompts import SYSTEM_PROMPT, USER_PROMPT_
 from library_agent.state import AgentState, BookCitation
 
 _settings = get_settings()
-_client = OpenAI(api_key=_settings.openai_api_key)
+_client = OpenAI(api_key=_settings.openai_api_key, base_url=_settings.openai_base_url)
 
 _AI_CONFIDENCE_CAP = 0.75
 
@@ -24,13 +24,9 @@ def _existing_titles(course_id: str) -> list[str]:
         ).all())
 
 
-def _needs_discovery(course_id: str) -> bool:
+def _needs_discovery(course_id: str, has_citations: set[str]) -> bool:
     """只處理 parser 完全沒抓到書目的課程。"""
-    with SessionLocal() as session:
-        existing = session.scalars(
-            select(Citation).where(Citation.course_id == course_id)
-        ).first()
-    return existing is None
+    return course_id not in has_citations
 
 
 def _discover_one(course: Course) -> list[BookCitation]:
@@ -95,7 +91,6 @@ def _save_citations(citations: list[BookCitation]) -> None:
 
 
 def discoverer_node(state: AgentState) -> AgentState:
-    all_citations: list[BookCitation] = []
     errors: list[str] = []
     course_ids = state.get("course_ids")
 
@@ -105,12 +100,15 @@ def discoverer_node(state: AgentState) -> AgentState:
             q = q.where(Course.course_id.in_(course_ids))
         courses = session.scalars(q).all()
 
+        # A：一次撈出「已有書目」的 course_id 集合，取代每門課一次的 _needs_discovery 查詢
+        has_citations = set(session.scalars(select(Citation.course_id).distinct()).all())
+
     total = len(courses)
     for i, course in enumerate(courses, 1):
         label = f"[{i:>4}/{total}] {course.course_id} {course.course_name}"
 
         # 如果課程已經有推薦書目就跳過
-        if not _needs_discovery(course.course_id):
+        if not _needs_discovery(course.course_id, has_citations):
             print(f"  SKIP  {label}")
             continue
         try:
@@ -118,7 +116,6 @@ def discoverer_node(state: AgentState) -> AgentState:
             if citations:
                 _save_citations(citations)
                 print(f"  OK    {label}  → {len(citations)} 筆推薦書目")
-                all_citations.extend(citations)
             else:
                 print(f"  EMPTY {label}  （課綱無足夠內容）")
         except Exception as e:
@@ -126,7 +123,7 @@ def discoverer_node(state: AgentState) -> AgentState:
             print(f"  ERROR {label}  → {e}")
             traceback.print_exc()
 
-    return {"citations": all_citations, "errors": errors}
+    return {"errors": errors}
 
 
 if __name__ == "__main__":
