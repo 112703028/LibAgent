@@ -406,24 +406,18 @@ def status() -> dict:
         node_rows = {}
         if st["run_id"]:
             rows = s.execute(
-                select(PipelineNodeRun.node_name, PipelineNodeRun.status,
-                       PipelineNodeRun.started_at, PipelineNodeRun.finished_at)
+                select(PipelineNodeRun.node_name, PipelineNodeRun.status)
                 .where(PipelineNodeRun.run_id == st["run_id"])
                 .order_by(PipelineNodeRun.id.desc())
             ).all()
-            for node_name, node_status, started_at, finished_at in rows:
+            for node_name, node_status in rows:
                 if node_name not in node_rows:  # 每個節點只取最新一筆（id desc 已排序）
-                    node_rows[node_name] = (node_status, started_at, finished_at)
+                    node_rows[node_name] = node_status
 
     nodes = []
-    now = time.time()
     for name in NODE_NAMES:
-        node_status, started_at, finished_at = node_rows.get(name, ("pending", None, None))
-        elapsed = None
-        if started_at:
-            end = finished_at.timestamp() if finished_at else now
-            elapsed = round(end - started_at.timestamp())
-        nodes.append({"name": name, "status": node_status, "elapsed": elapsed})
+        node_status = node_rows.get(name, "pending")
+        nodes.append({"name": name, "status": node_status})
 
     elapsed = None
     if st["started_at"]:

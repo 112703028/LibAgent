@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from library_agent.graph import NODE_NAMES, _init_run, _mark_status
+from library_agent.graph import NODE_NAMES, _init_run, _mark_status, _with_tracking
 
 
 class _FakeQuery:
@@ -74,3 +74,39 @@ def test_init_run_writes_pending_for_all_nodes(monkeypatch):
     assert len(fake.added) == len(NODE_NAMES)
     assert all(row.status == "pending" for row in fake.added)
     assert [row.node_name for row in fake.added] == NODE_NAMES
+
+
+def test_with_tracking_success_marks_running_then_done(monkeypatch):
+    fake = _FakeSession()
+    monkeypatch.setattr("library_agent.graph.SessionLocal", lambda: fake)
+
+    def fn(state):
+        return {"result": "ok"}
+
+    wrapped = _with_tracking("crawler", fn, "run1")
+    result = wrapped({})
+
+    assert result == {"result": "ok"}
+    assert len(fake.added) == 2
+    assert fake.added[0].status == "running"
+    assert fake.added[1].status == "done"
+    assert all(row.node_name == "crawler" for row in fake.added)
+
+
+def test_with_tracking_error_marks_error_and_reraises(monkeypatch):
+    fake = _FakeSession()
+    monkeypatch.setattr("library_agent.graph.SessionLocal", lambda: fake)
+
+    def fn(state):
+        raise ValueError("boom")
+
+    wrapped = _with_tracking("validator", fn, "run1")
+
+    import pytest
+    with pytest.raises(ValueError, match="boom"):
+        wrapped({})
+
+    assert len(fake.added) == 2
+    assert fake.added[0].status == "running"
+    assert fake.added[1].status == "error"
+    assert fake.added[1].error == "boom"
