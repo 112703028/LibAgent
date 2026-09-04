@@ -80,14 +80,28 @@ def _save_to_db(syllabi: list[RawSyllabus]) -> None:
         session.commit()
 
 
+def _pick_unprocessed(syllabi: list[RawSyllabus], parsed_ids: set[str], limit: int) -> list[str]:
+    """挑前 limit 筆「還沒處理過的新課」的 course_id。
+    已有 Citation（parser 跑過）或佔位符（parser 會跳過、永遠不會有 Citation）都算已處理，
+    這樣連按 limit=N 會依序推進到新課，不會每次都選到同幾門。"""
+    from library_agent.agents.parser import _needs_parsing
+    return [s.course_id for s in syllabi if _needs_parsing(s, parsed_ids)][:limit]
+
+
 def crawler_node(state: AgentState) -> AgentState:
+    # 全部 xlsx 課程照舊寫進 courses 表；limit 只影響「這次交給下游處理哪幾門」。
     syllabi = _dedup([s for path in sorted(DATA_DIR.glob("*.xlsx")) for s in _load_xlsx(path)])
-    limit = state.get("limit")
-    if limit:
-        syllabi = syllabi[:limit]
     _save_to_db(syllabi)
-    course_ids = [s.course_id for s in syllabi] if limit else None
-    return {"course_ids": course_ids}
+
+    limit = state.get("limit")
+    if not limit:
+        return {"course_ids": None}
+
+    from library_agent.db.models import Citation
+    with SessionLocal() as session:
+        parsed_ids = set(session.scalars(select(Citation.course_id).distinct()).all())
+
+    return {"course_ids": _pick_unprocessed(syllabi, parsed_ids, limit)}
 
 
 if __name__ == "__main__":
