@@ -50,19 +50,24 @@ def test_process_one_catches_exception_and_returns_error(monkeypatch):
     assert error is not None and "Alma down" in error
 
 
-# _stage_save：cascade 刪舊（recommendations → holding_checks）再寫、不 commit
+# _stage_save：冪等（未變則 skip）、cascade 刪舊（recommendations → holding_checks）再寫、不 commit
+
+class _FakeResult:
+    def __init__(self, row):
+        self._row = row
+
+    def first(self):
+        return self._row
+
 
 class _FakeSession:
-    def __init__(self, scalars_return=None):
+    def __init__(self, execute_return=None):
         self.calls: list[str] = []
-        self._scalars_return = scalars_return or []
-
-    def scalars(self, *a, **k):
-        self.calls.append("scalars")
-        return iter(self._scalars_return)
+        self._execute_return = execute_return
 
     def execute(self, *a, **k):
         self.calls.append("execute")
+        return _FakeResult(self._execute_return)
 
     def add(self, *a, **k):
         self.calls.append("add")
@@ -77,14 +82,25 @@ def _holding():
     return HoldingCheck(book=vb, status=HoldingStatus.OWNED_PHYSICAL, holdings_count=1)
 
 
-def test_stage_save_cascades_when_downstream_holdings_exist():
-    fs = _FakeSession(scalars_return=[500])  # 舊 holding_check id=500 已存在
-    L._stage_save(fs, _holding(), 99)
-    # 查舊 id → 刪 recommendations → 刪 holding_checks → 寫新，全程無 commit
-    assert fs.calls == ["scalars", "execute", "execute", "add"]
+def test_stage_save_cascades_when_existing_row_differs():
+    # 舊列 status=missing（跟這次查回的 owned_physical 不同）→ 要 cascade 覆寫
+    fs = _FakeSession(execute_return=(500, "missing", 0, None))
+    changed = L._stage_save(fs, _holding(), 99)
+    # 查舊列 → 刪 recommendations → 刪 holding_checks → 寫新，全程無 commit
+    assert fs.calls == ["execute", "execute", "execute", "add"]
+    assert changed is True
 
 
 def test_stage_save_no_cascade_when_no_prior_holding():
-    fs = _FakeSession(scalars_return=[])
-    L._stage_save(fs, _holding(), 99)
-    assert fs.calls == ["scalars", "add"]  # 沒舊列 → 不必刪，直接寫
+    fs = _FakeSession(execute_return=None)  # 沒有舊列
+    changed = L._stage_save(fs, _holding(), 99)
+    assert fs.calls == ["execute", "add"]  # 沒舊列 → 不必刪，直接寫
+    assert changed is True
+
+
+def test_stage_save_skips_when_existing_row_identical():
+    # 舊列跟這次查回的完全一樣（status/count/mms_id）→ 不觸發任何 delete/add
+    fs = _FakeSession(execute_return=(500, "owned_physical", 1, None))
+    changed = L._stage_save(fs, _holding(), 99)
+    assert fs.calls == ["execute"]  # 只查一次，沒有 delete 也沒有 add
+    assert changed is False

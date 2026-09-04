@@ -70,29 +70,42 @@ def _process_one(vb: VerifiedBookDB) -> tuple[int, HoldingCheck | None, str | No
         return vb.id, None, f"[librarian] {vb.id} {vb.canonical_title}: {e}"
 
 
-def _stage_save(session, holding: HoldingCheck, verified_book_id: int) -> None:
+def _stage_save(session, holding: HoldingCheck, verified_book_id: int) -> bool:
     """把單筆寫入暫存進「外部傳入的」session，不 commit（由 librarian_node 主執行緒分批 commit）。
-    覆寫前由下往上 cascade：recommendations → holding_checks，才能重寫。"""
-    # 步驟 1：先查出這本書在 holding_checks 的 id
-    existing_ids = list(session.scalars(
-        select(HoldingCheckDB.id).where(HoldingCheckDB.verified_book_id == verified_book_id)
-    ))
-    if existing_ids:
-        # 步驟 2：先把 recommendations 裡指向這些 id 的資料刪掉（請房客搬走）
+    覆寫前由下往上 cascade：recommendations → holding_checks，才能重寫。
+    冪等：若 Alma 這次查回的狀態/冊數跟既有 holding_check 完全相同，直接跳過（不觸發
+    cascade 刪除），這樣 recommender 才能正確偵測到「建議沒變」而 skip，不必每次重打 LLM。
+    回傳 True 代表有實際寫入（新增或覆寫），False 代表跳過。"""
+    existing = session.execute(
+        select(HoldingCheckDB.id, HoldingCheckDB.status, HoldingCheckDB.holdings_count,
+               HoldingCheckDB.alma_mms_id)
+        .where(HoldingCheckDB.verified_book_id == verified_book_id)
+    ).first()
+
+    if existing is not None:
+        existing_id, existing_status, existing_count, existing_mms = existing
+        if (existing_status, existing_count, existing_mms) == (
+            holding.status.value, holding.holdings_count, holding.alma_mms_id
+        ):
+            return False  # 完全沒變，不動 holding_check，不連帶砍掉 recommendation
+
+        # 步驟 1：先把 recommendations 裡指向這筆的資料刪掉（請房客搬走）
         session.execute(
-            delete(RecommendationDB).where(RecommendationDB.holding_id.in_(existing_ids))
+            delete(RecommendationDB).where(RecommendationDB.holding_id == existing_id)
         )
-        # 步驟 3：再刪 holding_checks（拆房間）
+        # 步驟 2：再刪 holding_check（拆房間）
         session.execute(
-            delete(HoldingCheckDB).where(HoldingCheckDB.verified_book_id == verified_book_id)
+            delete(HoldingCheckDB).where(HoldingCheckDB.id == existing_id)
         )
-    # 步驟 4：寫入新的 holding_check
+
+    # 新增，或覆寫真的變動的舊 holding_check
     session.add(HoldingCheckDB(
         verified_book_id=verified_book_id,
         status=holding.status.value,
         holdings_count=holding.holdings_count,
         alma_mms_id=holding.alma_mms_id,
     ))
+    return True
 
 
 def librarian_node(state: AgentState) -> AgentState:
@@ -112,6 +125,7 @@ def librarian_node(state: AgentState) -> AgentState:
     total = len(verified_books)
     done = 0
     written = 0
+    skipped = 0
     _BATCH = 100
 
     # worker 併發打 Alma（_process_one，不碰 DB）；主執行緒用單一 session
@@ -127,13 +141,18 @@ def librarian_node(state: AgentState) -> AgentState:
                 errors.append(error)
                 print(f"  ERROR                {label}  → {error}")
                 continue
-            _stage_save(session, holding, vb_id)
-            written += 1
-            print(f"  {holding.status.value:<20} {label}")
-            if written % _BATCH == 0:
-                session.commit()
+            changed = _stage_save(session, holding, vb_id)
+            if changed:
+                written += 1
+                print(f"  {holding.status.value:<20} {label}")
+                if written % _BATCH == 0:
+                    session.commit()
+            else:
+                skipped += 1
+                print(f"  SKIP  (未變)         {label}")
         session.commit()  # 收尾
 
+    print(f"  SKIP {skipped} 筆（館藏未變），寫入 {written} 筆")
     return {"errors": errors}
 
 
