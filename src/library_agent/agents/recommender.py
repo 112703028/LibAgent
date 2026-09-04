@@ -119,21 +119,6 @@ def _resolve_enrolled(session, course: Course, cache: dict[str, int]) -> int:
     return n
 
 
-def _process_one(
-    holding: HoldingCheckDB,
-    citation: Citation,
-    course: Course,
-    enrolled: int,
-) -> tuple[PurchasePriority, int, str]:
-    status = HoldingStatus(holding.status)
-    priority, copies = _decide(status, citation.is_required, enrolled, holding.holdings_count)
-    rationale = _llm_rationale(
-        citation.title, course.course_name, citation.is_required,
-        status, enrolled, holding.holdings_count, priority, copies,
-    )
-    return priority, copies, rationale
-
-
 def recommender_node(_state: AgentState) -> AgentState:
     errors: list[str] = []
 
@@ -152,19 +137,49 @@ def recommender_node(_state: AgentState) -> AgentState:
             q = q.where(Citation.course_id.in_(course_ids))
         rows = session.execute(q).all()
 
+        # 冪等：citation_id（不會被下游重寫覆蓋）→ 既有建議的 (priority, suggested_copies)。
+        # 不能用 holding_id 比對——librarian 每次都先刪再寫 holding_checks，
+        # 就算館藏狀態沒變，holding_id 也會變成新的 auto-increment 值。
+        # 數字沒變就代表館藏狀態/選課人數/是否指定書都沒變，不必重打 LLM 重寫理由文字。
+        existing = {
+            citation_id: (priority, suggested_copies)
+            for citation_id, priority, suggested_copies in session.execute(
+                select(
+                    VerifiedBookDB.citation_id,
+                    RecommendationDB.priority,
+                    RecommendationDB.suggested_copies,
+                )
+                .join(HoldingCheckDB, HoldingCheckDB.id == RecommendationDB.holding_id)
+                .join(VerifiedBookDB, VerifiedBookDB.id == HoldingCheckDB.verified_book_id)
+            ).all()
+        }
+
     total = len(rows)
     counts = {p: 0 for p in PurchasePriority}
+    skipped = 0
     enrolled_cache: dict[str, int] = {}  # #12：每門課的人數在單次執行內只解析一次
 
     with SessionLocal() as session:
         for i, (holding, citation, course) in enumerate(rows, 1):
             try:
                 enrolled = _resolve_enrolled(session, course, enrolled_cache)
-                priority, suggested_copies, rationale = _process_one(
-                    holding, citation, course, enrolled
+                status = HoldingStatus(holding.status)
+                priority, suggested_copies = _decide(
+                    status, citation.is_required, enrolled, holding.holdings_count
                 )
 
-                # 冪等：先刪再寫
+                if existing.get(citation.id) == (priority.value, suggested_copies):
+                    skipped += 1
+                    counts[priority] += 1
+                    print(f"  SKIP  [{i:>5}/{total}] {citation.title[:40]}")
+                    continue
+
+                rationale = _llm_rationale(
+                    citation.title, course.course_name, citation.is_required,
+                    status, enrolled, holding.holdings_count, priority, suggested_copies,
+                )
+
+                # 先刪再寫（覆蓋數字真的變動的舊建議）
                 session.execute(
                     delete(RecommendationDB).where(
                         RecommendationDB.holding_id == holding.id
@@ -193,6 +208,8 @@ def recommender_node(_state: AgentState) -> AgentState:
                 print(f"  [{i:>5}/{total}] [ERROR   ] {citation.title[:40]}  → {e}")
 
         session.commit()
+
+    print(f"  SKIP {skipped} 筆（建議未變），重算 {total - skipped} 筆")
 
     print(f"\n採購建議統計：")
     for priority, count in counts.items():
