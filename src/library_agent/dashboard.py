@@ -185,8 +185,11 @@ def _pending_list(pending: list) -> str:
 
 
 def _render(data: dict) -> str:
-    prio_bars = _bars([(_PRIORITY_LABEL[k], data["priority"].get(k, 0), _PRIORITY_COLOR[k])
-                       for k, _, _ in _PRIORITY_META])
+    prio_bars = _bars(
+        [(_PRIORITY_LABEL[k], data["priority"].get(k, 0), _PRIORITY_COLOR[k])
+         for k, _, _ in _PRIORITY_META]
+        + [("待審核", data["kpis"]["pending"], "#e0900a")]  # 與 KPI 卡片的 warning 色一致
+    )
     status_bars = _bars([(_STATUS_LABEL[k], data["status"].get(k, 0), _STATUS_COLOR[k])
                         for k, _, _ in _STATUS_META])
     filter_btns = '<button class="fbtn active" data-f="all">全部</button>' + "".join(
