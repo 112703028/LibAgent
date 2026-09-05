@@ -38,6 +38,10 @@ _PRIORITY_META = [
     ("low", "LOW 低", "#0ca30c"),
     ("skip", "SKIP 略過", "#898781"),
 ]
+# 待審核不是 Recommendation.priority 的列舉值（來自 VerifiedBook.review_status），
+# 獨立於 _PRIORITY_META 之外，只在畫長條圖/合併建議表時額外併入。
+_PENDING_LABEL = "待審核"
+_PENDING_COLOR = "#e0900a"  # 與 KPI 卡片的 warning 色一致
 _STATUS_META = [
     ("missing", "缺藏", "#d03b3b"),
     ("partial", "記錄異常", "#fab219"),
@@ -144,26 +148,36 @@ def _kpi_tiles(k: dict) -> str:
     )
 
 
-def _rec_table(recs: list) -> str:
-    if not recs:
+def _rec_row(priority: str, course: str, title: str, btype: str, status_html: str,
+             copies_html: str, rationale: str) -> str:
+    pcolor = _PRIORITY_COLOR.get(priority, _PENDING_COLOR)
+    plabel = _PRIORITY_LABEL.get(priority, _PENDING_LABEL)
+    return (
+        f'<tr data-priority="{html.escape(priority)}">'
+        f'<td><span class="pill" style="background:{pcolor}">{html.escape(plabel)}</span></td>'
+        f'<td>{html.escape(course or "")}</td>'
+        f'<td>{html.escape(title or "")}</td>'
+        f'<td>{btype}</td>'
+        f'<td>{status_html}</td>'
+        f'<td class="num">{copies_html}</td>'
+        f'<td class="rationale">{html.escape(rationale or "")}</td></tr>'
+    )
+
+
+def _rec_table(recs: list, pending: list) -> str:
+    if not recs and not pending:
         return '<p class="empty">尚無採購建議，請先執行 pipeline。</p>'
     body = []
     for priority, course, title, is_required, status, copies, rationale in recs:
-        pcolor = _PRIORITY_COLOR.get(priority, "#898781")
-        plabel = _PRIORITY_LABEL.get(priority, priority)
         scolor = _STATUS_COLOR.get(status, "#898781")
         slabel = _STATUS_LABEL.get(status, status)
-        btype = "指定" if is_required else "參考"
-        body.append(
-            f'<tr data-priority="{html.escape(priority)}">'
-            f'<td><span class="pill" style="background:{pcolor}">{html.escape(plabel)}</span></td>'
-            f'<td>{html.escape(course or "")}</td>'
-            f'<td>{html.escape(title or "")}</td>'
-            f'<td><span class="tag">{btype}</span></td>'
-            f'<td><span class="pill" style="background:{scolor}">{html.escape(slabel)}</span></td>'
-            f'<td class="num">{copies}</td>'
-            f'<td class="rationale">{html.escape(rationale or "")}</td></tr>'
-        )
+        btype = f'<span class="tag">{"指定" if is_required else "參考"}</span>'
+        status_html = f'<span class="pill" style="background:{scolor}">{html.escape(slabel)}</span>'
+        body.append(_rec_row(priority, course, title, btype, status_html, str(copies), rationale))
+    # 待審核的書還沒進 librarian/recommender，沒有館藏狀態/冊數，理由欄改顯示驗證信心分數與來源
+    for course, title, confidence, source in pending:
+        rationale = f"confidence {confidence:.2f} · {source or ''}"
+        body.append(_rec_row("pending", course, title, "", "—", "—", rationale))
     return (
         '<table><thead><tr><th>優先級</th><th>課程</th><th>書名</th><th>類別</th>'
         '<th>館藏狀態</th><th>冊數</th><th>理由</th></tr></thead>'
@@ -171,30 +185,17 @@ def _rec_table(recs: list) -> str:
     )
 
 
-def _pending_list(pending: list) -> str:
-    if not pending:
-        return '<p class="empty">目前沒有待審書目。</p>'
-    items = []
-    for course, title, confidence, source in pending:
-        items.append(
-            f'<li><span class="pconf">conf {confidence:.2f}</span> '
-            f'<b>{html.escape(title or "")}</b> '
-            f'<span class="pmeta">{html.escape(course or "")} · {html.escape(source or "")}</span></li>'
-        )
-    return f'<ul class="pending">{"".join(items)}</ul>'
-
-
 def _render(data: dict) -> str:
     prio_bars = _bars(
         [(_PRIORITY_LABEL[k], data["priority"].get(k, 0), _PRIORITY_COLOR[k])
          for k, _, _ in _PRIORITY_META]
-        + [("待審核", data["kpis"]["pending"], "#e0900a")]  # 與 KPI 卡片的 warning 色一致
+        + [(_PENDING_LABEL, data["kpis"]["pending"], _PENDING_COLOR)]
     )
     status_bars = _bars([(_STATUS_LABEL[k], data["status"].get(k, 0), _STATUS_COLOR[k])
                         for k, _, _ in _STATUS_META])
     filter_btns = '<button class="fbtn active" data-f="all">全部</button>' + "".join(
         f'<button class="fbtn" data-f="{k}">{html.escape(n)}</button>' for k, n, _ in _PRIORITY_META
-    )
+    ) + f'<button class="fbtn" data-f="pending">{_PENDING_LABEL}</button>'
     return f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>採購決策儀表板</title>
@@ -254,10 +255,6 @@ td.rationale {{ color:var(--text-secondary); font-size:12px; max-width:340px; }}
 .pill {{ display:inline-block; padding:1px 9px; border-radius:99px; font-size:11.5px; font-weight:600; color:#fff; white-space:nowrap; }}
 .tag {{ display:inline-block; padding:1px 7px; border-radius:5px; font-size:11.5px; border:1px solid var(--border); color:var(--text-secondary); white-space:nowrap; }}
 .empty {{ color:var(--muted); font-size:13px; }}
-ul.pending {{ list-style:none; margin:0; padding:0; }}
-ul.pending li {{ padding:6px 0; border-bottom:1px solid var(--gridline); font-size:13px; }}
-.pconf {{ display:inline-block; min-width:64px; color:var(--warning); font-weight:600; font-variant-numeric:tabular-nums; }}
-.pmeta {{ color:var(--muted); font-size:12px; }}
 </style></head><body><div class="wrap">
 <h1>圖書館採購決策儀表板</h1>
 <div class="sub">缺口分析 · 資料來自當下資料庫</div>
@@ -294,14 +291,12 @@ flowchart LR
 </div>
 
 <div class="card">
-  <h2>採購建議明細 <a class="exportlink" href="/export/recommendations">匯出 CSV</a></h2>
+  <h2>採購建議明細
+    <a class="exportlink" href="/export/recommendations">匯出 CSV</a>
+    <a class="exportlink" href="/export/pending">匯出待審核 CSV</a>
+  </h2>
   <div class="filters">{filter_btns}</div>
-  {_rec_table(data["recs"])}
-</div>
-
-<div class="card">
-  <h2>待人工審核（pending） <a class="exportlink" href="/export/pending">匯出 CSV</a></h2>
-  {_pending_list(data["pending"])}
+  {_rec_table(data["recs"], data["pending"])}
 </div>
 </div>
 <script>
