@@ -6,13 +6,16 @@ FastAPI 服務，讀既有 DB 呈現缺口分析：KPI 概覽、採購優先級�
 圖表用內嵌 HTML/CSS bar（無外部 CDN/JS 依賴、離線可用），配色取自 dataviz
 技能的 status palette，並以文字標籤 + 數值確保辨識不依賴顏色。
 """
+import csv
 import html
+import io
 import threading
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, or_, select
 
@@ -207,6 +210,9 @@ body {{ margin:0; background:var(--page); color:var(--text-primary);
 h1 {{ font-size:22px; margin:0 0 4px; }}
 .sub {{ color:var(--text-secondary); font-size:13px; margin-bottom:20px; }}
 h2 {{ font-size:15px; margin:0 0 12px; color:var(--text-secondary); }}
+.exportlink {{ font-size:12px; font-weight:400; color:var(--text-secondary); text-decoration:none;
+  border:1px solid var(--border); border-radius:6px; padding:2px 9px; margin-left:6px; }}
+.exportlink:hover {{ background:var(--track); }}
 .card {{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 18px; margin-bottom:16px; }}
 .runbar {{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; }}
 .runbtn {{ font:inherit; font-size:14px; font-weight:600; padding:8px 18px; border-radius:8px; cursor:pointer;
@@ -285,13 +291,13 @@ flowchart LR
 </div>
 
 <div class="card">
-  <h2>採購建議明細</h2>
+  <h2>採購建議明細 <a class="exportlink" href="/export/recommendations">匯出 CSV</a></h2>
   <div class="filters">{filter_btns}</div>
   {_rec_table(data["recs"])}
 </div>
 
 <div class="card">
-  <h2>待人工審核（pending）</h2>
+  <h2>待人工審核（pending） <a class="exportlink" href="/export/pending">匯出 CSV</a></h2>
   {_pending_list(data["pending"])}
 </div>
 </div>
@@ -362,6 +368,51 @@ def index() -> str:
     return _render(_load_data())
 
 
+# ---------- CSV 匯出 ----------
+
+def _csv_response(header: list[str], rows: list[tuple], filename_prefix: str) -> StreamingResponse:
+    buf = io.StringIO()
+    buf.write("﻿")  # UTF-8 BOM，讓 Excel 開啟中文不會亂碼
+    writer = csv.writer(buf)
+    writer.writerow(header)
+    writer.writerows(rows)
+    buf.seek(0)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
+    filename = f"{filename_prefix}_{stamp}.csv"
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/export/recommendations")
+def export_recommendations() -> StreamingResponse:
+    data = _load_data()
+    header = ["優先級", "課程", "書名", "類別", "館藏狀態", "冊數", "理由"]
+    rows = [
+        (
+            _PRIORITY_LABEL.get(priority, priority),
+            course,
+            title,
+            "指定" if is_required else "參考",
+            _STATUS_LABEL.get(status, status),
+            copies,
+            rationale,
+        )
+        for priority, course, title, is_required, status, copies, rationale in data["recs"]
+    ]
+    return _csv_response(header, rows, "recommendations")
+
+
+@app.get("/export/pending")
+def export_pending() -> StreamingResponse:
+    data = _load_data()
+    header = ["課程", "書名", "confidence", "來源"]
+    rows = list(data["pending"])
+    return _csv_response(header, rows, "pending_review")
+
+
 # ---------- 執行 pipeline + 進度 ----------
 
 _run_lock = threading.Lock()
@@ -406,7 +457,9 @@ def status() -> dict:
         counts = {
             "courses": s.scalar(select(func.count()).select_from(Course)) or 0,
             "citations": s.scalar(select(func.count()).select_from(Citation)) or 0,
-            "verified": s.scalar(select(func.count()).select_from(VerifiedBook)) or 0,
+            "verified": s.scalar(
+                select(func.count()).select_from(VerifiedBook).where(VerifiedBook.verified.is_(True))
+            ) or 0,
             "holdings": s.scalar(select(func.count()).select_from(HoldingCheck)) or 0,
             "recommendations": s.scalar(select(func.count()).select_from(Recommendation)) or 0,
         }
