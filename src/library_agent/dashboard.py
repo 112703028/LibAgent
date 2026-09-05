@@ -323,6 +323,7 @@ document.querySelectorAll('.fbtn').forEach(function(b){{
 }});
 
 const _el = id => document.getElementById(id);
+let _sawRunning = false;  // 這個分頁是否親眼看過 running；只有這樣才代表「這次是我觸發的」
 async function _poll() {{
   try {{
     const d = await (await fetch('/status')).json();
@@ -334,7 +335,13 @@ async function _poll() {{
     _el('runstatus').className = 'runstatus ' + d.status;
     _el('runbtn').disabled = (d.status === 'running');
     if (d.nodes) _updateFlowchart(d.nodes);
-    if (d.status === 'running') setTimeout(_poll, 3000);
+    if (d.status === 'running') {{
+      _sawRunning = true;
+      setTimeout(_poll, 3000);
+    }} else if (_sawRunning && (d.status === 'done' || d.status === 'error')) {{
+      // 親眼看過它從 running 跑到這裡結束 → 整頁資料（KPI/圖表/建議明細）都舊了，重整一次
+      location.reload();
+    }}
   }} catch (e) {{ _el('runstatus').textContent = '無法連線'; }}
 }}
 _el('runbtn').onclick = async () => {{
