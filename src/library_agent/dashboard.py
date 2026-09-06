@@ -270,9 +270,17 @@ h2 {{ font-size:15px; margin:0 0 12px; color:var(--text-secondary); }}
 .uploadbtn {{ font-size:13px; padding:6px 12px; border-radius:8px; cursor:pointer;
   border:1px solid var(--border); background:transparent; color:var(--text-secondary); }}
 .uploadbtn:hover {{ background:var(--track); }}
-.filefilter {{ flex-basis:100%; display:flex; flex-wrap:wrap; gap:6px 16px; font-size:12.5px;
-  color:var(--text-secondary); }}
-.filefilter label {{ display:inline-flex; align-items:center; gap:4px; cursor:pointer; }}
+.ffwrap {{ position:relative; }}
+.filefilter {{ position:absolute; top:calc(100% + 4px); left:0; z-index:20; min-width:220px;
+  max-height:280px; overflow-y:auto; display:flex; flex-direction:column; gap:6px;
+  padding:10px 12px; font-size:12.5px; color:var(--text-secondary);
+  background:var(--surface); border:1px solid var(--border); border-radius:8px;
+  box-shadow:0 4px 14px rgba(0,0,0,.1); }}
+.filefilter[hidden] {{ display:none; }}
+.filefilter label {{ display:flex; align-items:center; gap:6px; cursor:pointer; white-space:nowrap; }}
+.filefilter .ff-actions {{ display:flex; gap:10px; padding-bottom:6px; margin-bottom:2px;
+  border-bottom:1px solid var(--gridline); }}
+.filefilter .ff-actions a {{ color:var(--text-secondary); cursor:pointer; text-decoration:underline; }}
 .filefilter .ff-empty {{ color:var(--muted); }}
 .kpi-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin-bottom:16px; }}
 .kpi {{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px 16px; }}
@@ -310,9 +318,12 @@ td.rationale {{ color:var(--text-secondary); font-size:12px; max-width:340px; }}
   <button id="runbtn" class="runbtn">▶ 執行 pipeline</button>
   <label class="limitlbl">限制筆數 <input id="limit" type="number" min="1" placeholder="留空 = 全跑"></label>
   <label class="uploadbtn">上傳 xlsx<input id="fileupload" type="file" accept=".xlsx" multiple hidden></label>
+  <div class="ffwrap">
+    <button id="ffbtn" class="uploadbtn" type="button">篩選 (全部)</button>
+    <div id="filefilter" class="filefilter" hidden></div>
+  </div>
   <span id="runstatus" class="runstatus">—</span>
   <span id="counts" class="counts"></span>
-  <div id="filefilter" class="filefilter"></div>
 </div>
 
 <div class="card">
@@ -416,18 +427,50 @@ async function _poll() {{
     }}
   }} catch (e) {{ _el('runstatus').textContent = '無法連線'; }}
 }}
+// 更新「篩選」按鈕上的選取計數
+function _updateFfLabel() {{
+  const chks = Array.from(document.querySelectorAll('.ffchk'));
+  const picked = chks.filter(c => c.checked).length;
+  const txt = (chks.length === 0 || picked === chks.length) ? '全部' : `${{picked}}/${{chks.length}}`;
+  _el('ffbtn').textContent = '篩選 (' + txt + ')';
+}}
+
 // 載入 data/ 的 xlsx 清單，畫成勾選框（預設全勾）
 async function _loadFiles() {{
   try {{
     const d = await (await fetch('/files')).json();
     const box = _el('filefilter');
-    if (!d.files || !d.files.length) {{ box.innerHTML = '<span class="ff-empty">data/ 目前沒有 xlsx</span>'; return; }}
-    box.innerHTML = '<span>只跑：</span>' + d.files.map(function(f){{
-      const id = 'ff_' + encodeURIComponent(f);
-      return `<label><input type="checkbox" class="ffchk" value="${{f}}" checked> ${{f}}</label>`;
-    }}).join('');
+    if (!d.files || !d.files.length) {{
+      box.innerHTML = '<span class="ff-empty">data/ 目前沒有 xlsx</span>';
+      _updateFfLabel();
+      return;
+    }}
+    box.innerHTML =
+      '<div class="ff-actions"><a data-act="all">全選</a><a data-act="none">全不選</a></div>' +
+      d.files.map(function(f){{
+        return `<label><input type="checkbox" class="ffchk" value="${{f}}" checked> ${{f}}</label>`;
+      }}).join('');
+    box.querySelectorAll('.ffchk').forEach(c => c.addEventListener('change', _updateFfLabel));
+    box.querySelectorAll('.ff-actions a').forEach(a => a.addEventListener('click', function(){{
+      const on = a.dataset.act === 'all';
+      box.querySelectorAll('.ffchk').forEach(c => {{ c.checked = on; }});
+      _updateFfLabel();
+    }}));
+    _updateFfLabel();
   }} catch (e) {{ _el('filefilter').innerHTML = '<span class="ff-empty">無法載入檔案清單</span>'; }}
 }}
+
+// 「篩選」按鈕：點一下開/關下拉面板；點面板外部收起
+_el('ffbtn').addEventListener('click', function(ev){{
+  ev.stopPropagation();
+  _el('filefilter').hidden = !_el('filefilter').hidden;
+}});
+document.addEventListener('click', function(ev){{
+  const panel = _el('filefilter');
+  if (!panel.hidden && !panel.contains(ev.target) && ev.target !== _el('ffbtn')) {{
+    panel.hidden = true;
+  }}
+}});
 
 _el('fileupload').onchange = async (ev) => {{
   const files = Array.from(ev.target.files);
