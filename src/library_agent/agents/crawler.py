@@ -88,9 +88,20 @@ def _pick_unprocessed(syllabi: list[RawSyllabus], parsed_ids: set[str], limit: i
     return [s.course_id for s in syllabi if _needs_parsing(s, parsed_ids)][:limit]
 
 
+def _select_xlsx_paths(all_paths: list[Path], source_files: list[str] | None) -> list[Path]:
+    """決定這次 crawler 讀哪些 xlsx。source_files 為 None 或空 → 讀全部（跟原行為一致）；
+    否則只讀檔名（.name）在 source_files 裡的，忽略清單中不存在的檔名。"""
+    if not source_files:
+        return all_paths
+    wanted = set(source_files)
+    return [p for p in all_paths if p.name in wanted]
+
+
 def crawler_node(state: AgentState) -> AgentState:
-    # 全部 xlsx 課程照舊寫進 courses 表；limit 只影響「這次交給下游處理哪幾門」。
-    syllabi = _dedup([s for path in sorted(DATA_DIR.glob("*.xlsx")) for s in _load_xlsx(path)])
+    # 只讀被選中的 xlsx（未指定＝全部）；選中的課程照舊全寫進 courses 表。
+    all_paths = sorted(DATA_DIR.glob("*.xlsx"))
+    paths = _select_xlsx_paths(all_paths, state.get("source_files"))
+    syllabi = _dedup([s for path in paths for s in _load_xlsx(path)])
     _save_to_db(syllabi)
 
     limit = state.get("limit")

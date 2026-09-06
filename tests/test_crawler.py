@@ -1,10 +1,37 @@
-from library_agent.agents.crawler import _clean_text, _dedup, _pick_unprocessed
+from pathlib import Path
+
+from library_agent.agents.crawler import _clean_text, _dedup, _pick_unprocessed, _select_xlsx_paths
 from library_agent.state import RawSyllabus
 
 
 def test_clean_text():
     assert _clean_text("Hello_x000D_\r world  ") == "Hello world"
     assert _clean_text("  abc ") == "abc"
+
+
+# _select_xlsx_paths：決定 crawler 這次讀哪些 xlsx
+
+_ALL = [Path("data/a.xlsx"), Path("data/b.xlsx"), Path("data/c.xlsx")]
+
+
+def test_select_xlsx_none_reads_all():
+    # source_files=None（不勾）→ 跟現在一樣讀全部
+    assert _select_xlsx_paths(_ALL, None) == _ALL
+
+
+def test_select_xlsx_empty_reads_all():
+    # 空清單也視為「不限定」→ 讀全部（避免前端傳空陣列時整批跳過）
+    assert _select_xlsx_paths(_ALL, []) == _ALL
+
+
+def test_select_xlsx_filters_by_filename():
+    # 只勾 a.xlsx, c.xlsx → 只回傳這兩個（比對 .name，不含目錄）
+    assert _select_xlsx_paths(_ALL, ["a.xlsx", "c.xlsx"]) == [_ALL[0], _ALL[2]]
+
+
+def test_select_xlsx_ignores_unknown_names():
+    # 勾了不存在的檔名 → 忽略，只回傳實際存在的
+    assert _select_xlsx_paths(_ALL, ["a.xlsx", "ghost.xlsx"]) == [_ALL[0]]
 
 
 def _syl(cid: str, content: str):

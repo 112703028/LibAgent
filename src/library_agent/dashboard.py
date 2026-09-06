@@ -14,11 +14,12 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import Body, FastAPI, File, UploadFile
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, or_, select
 
+from library_agent.agents.crawler import DATA_DIR
 from library_agent.db.models import (
     Citation,
     Course,
@@ -54,6 +55,7 @@ _PRIORITY_LABEL = {k: n for k, n, _ in _PRIORITY_META}
 _PRIORITY_RANK = {k: i for i, (k, _, _) in enumerate(_PRIORITY_META)}
 _STATUS_COLOR = {k: c for k, _, c in _STATUS_META}
 _STATUS_LABEL = {k: n for k, n, _ in _STATUS_META}
+_STATUS_RANK = {k: i for i, (k, _, _) in enumerate(_STATUS_META)}
 
 
 def _not_rejected():
@@ -107,6 +109,17 @@ def _load_data() -> dict:
         ).all()
         recs = sorted(recs, key=lambda r: (_PRIORITY_RANK.get(r[0], 9), r[1] or ""))
 
+        holdings = s.execute(
+            select(
+                HoldingCheck.status, Course.course_name, VerifiedBook.canonical_title,
+                HoldingCheck.holdings_count, HoldingCheck.alma_mms_id,
+            )
+            .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id)
+            .join(Citation, Citation.id == VerifiedBook.citation_id)
+            .join(Course, Course.course_id == Citation.course_id)
+        ).all()
+        holdings = sorted(holdings, key=lambda r: (_STATUS_RANK.get(r[0], 9), r[1] or ""))
+
         pending = s.execute(
             select(Course.course_name, Citation.title, Citation.confidence, VerifiedBook.source)
             .join(Citation, Citation.id == VerifiedBook.citation_id)
@@ -115,7 +128,7 @@ def _load_data() -> dict:
             .order_by(Course.course_name)
         ).all()
 
-    return {"kpis": kpis, "priority": prio, "status": status, "recs": recs, "pending": pending}
+    return {"kpis": kpis, "priority": prio, "status": status, "recs": recs, "pending": pending, "holdings": holdings}
 
 
 # ---------- 呈現 ----------
@@ -185,6 +198,28 @@ def _rec_table(recs: list, pending: list) -> str:
     )
 
 
+def _holdings_table(holdings: list) -> str:
+    if not holdings:
+        return '<p class="empty">尚無館藏資料，請先執行 pipeline。</p>'
+    body = []
+    for status, course, title, count, mms_id in holdings:
+        scolor = _STATUS_COLOR.get(status, "#898781")
+        slabel = _STATUS_LABEL.get(status, status)
+        body.append(
+            f'<tr data-status="{html.escape(status)}">'
+            f'<td><span class="pill" style="background:{scolor}">{html.escape(slabel)}</span></td>'
+            f'<td>{html.escape(course or "")}</td>'
+            f'<td>{html.escape(title or "")}</td>'
+            f'<td class="num">{count}</td>'
+            f'<td>{html.escape(mms_id or "")}</td></tr>'
+        )
+    return (
+        '<table><thead><tr><th>館藏狀態</th><th>課程</th><th>書名</th>'
+        '<th>冊數</th><th>Alma 書目 ID</th></tr></thead>'
+        f'<tbody>{"".join(body)}</tbody></table>'
+    )
+
+
 def _render(data: dict) -> str:
     prio_bars = _bars(
         [(_PRIORITY_LABEL[k], data["priority"].get(k, 0), _PRIORITY_COLOR[k])
@@ -196,6 +231,9 @@ def _render(data: dict) -> str:
     filter_btns = '<button class="fbtn active" data-f="all">全部</button>' + "".join(
         f'<button class="fbtn" data-f="{k}">{html.escape(n)}</button>' for k, n, _ in _PRIORITY_META
     ) + f'<button class="fbtn" data-f="pending">{_PENDING_LABEL}</button>'
+    status_filter_btns = '<button class="sfbtn active" data-sf="all">全部</button>' + "".join(
+        f'<button class="sfbtn" data-sf="{k}">{html.escape(n)}</button>' for k, n, _ in _STATUS_META
+    )
     return f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>採購決策儀表板</title>
@@ -229,6 +267,13 @@ h2 {{ font-size:15px; margin:0 0 12px; color:var(--text-secondary); }}
 .runstatus.done {{ color:#0ca30c; }}
 .runstatus.error {{ color:var(--critical); }}
 .counts {{ font-size:12.5px; color:var(--muted); font-variant-numeric:tabular-nums; }}
+.uploadbtn {{ font-size:13px; padding:6px 12px; border-radius:8px; cursor:pointer;
+  border:1px solid var(--border); background:transparent; color:var(--text-secondary); }}
+.uploadbtn:hover {{ background:var(--track); }}
+.filefilter {{ flex-basis:100%; display:flex; flex-wrap:wrap; gap:6px 16px; font-size:12.5px;
+  color:var(--text-secondary); }}
+.filefilter label {{ display:inline-flex; align-items:center; gap:4px; cursor:pointer; }}
+.filefilter .ff-empty {{ color:var(--muted); }}
 .kpi-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin-bottom:16px; }}
 .kpi {{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px 16px; }}
 .kpi .val {{ font-size:30px; font-weight:700; letter-spacing:-.5px; }}
@@ -237,6 +282,8 @@ h2 {{ font-size:15px; margin:0 0 12px; color:var(--text-secondary); }}
 .kpi .lbl {{ font-size:12px; color:var(--text-secondary); margin-top:2px; }}
 .charts {{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }}
 @media (max-width:720px) {{ .charts {{ grid-template-columns:1fr; }} }}
+.tables {{ display:grid; grid-template-columns:1fr 1fr; gap:16px; align-items:start; }}
+@media (max-width:960px) {{ .tables {{ grid-template-columns:1fr; }} }}
 .bar-row {{ display:flex; align-items:center; gap:10px; margin:8px 0; }}
 .bar-label {{ width:96px; flex:none; text-align:right; font-size:13px; color:var(--text-secondary); }}
 .bar-track {{ flex:1; height:20px; background:var(--track); border-radius:4px; }}
@@ -244,9 +291,9 @@ h2 {{ font-size:15px; margin:0 0 12px; color:var(--text-secondary); }}
 .bar-value {{ width:44px; flex:none; font-weight:600; font-variant-numeric:tabular-nums; }}
 .bar-row:hover .bar-fill {{ filter:brightness(1.08); }}
 .filters {{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }}
-.fbtn {{ font:inherit; font-size:12.5px; padding:4px 12px; border-radius:99px; cursor:pointer;
+.fbtn, .sfbtn {{ font:inherit; font-size:12.5px; padding:4px 12px; border-radius:99px; cursor:pointer;
   border:1px solid var(--border); background:transparent; color:var(--text-secondary); }}
-.fbtn.active {{ background:var(--text-primary); color:var(--surface); border-color:var(--text-primary); }}
+.fbtn.active, .sfbtn.active {{ background:var(--text-primary); color:var(--surface); border-color:var(--text-primary); }}
 table {{ border-collapse:collapse; width:100%; font-size:13px; }}
 th,td {{ border-bottom:1px solid var(--gridline); padding:8px 10px; text-align:left; vertical-align:top; }}
 th {{ color:var(--text-secondary); font-weight:600; white-space:nowrap; }}
@@ -262,8 +309,10 @@ td.rationale {{ color:var(--text-secondary); font-size:12px; max-width:340px; }}
 <div class="card runbar">
   <button id="runbtn" class="runbtn">▶ 執行 pipeline</button>
   <label class="limitlbl">限制筆數 <input id="limit" type="number" min="1" placeholder="留空 = 全跑"></label>
+  <label class="uploadbtn">上傳 xlsx<input id="fileupload" type="file" accept=".xlsx" hidden></label>
   <span id="runstatus" class="runstatus">—</span>
   <span id="counts" class="counts"></span>
+  <div id="filefilter" class="filefilter"></div>
 </div>
 
 <div class="card">
@@ -290,13 +339,21 @@ flowchart LR
   <div class="card"><h2>館藏狀態分布</h2>{status_bars}</div>
 </div>
 
-<div class="card">
-  <h2>採購建議明細
-    <a class="exportlink" href="/export/recommendations">匯出 CSV</a>
-    <a class="exportlink" href="/export/pending">匯出待審核 CSV</a>
-  </h2>
-  <div class="filters">{filter_btns}</div>
-  {_rec_table(data["recs"], data["pending"])}
+<div class="tables">
+  <div class="card">
+    <h2>採購建議明細
+      <a class="exportlink" href="/export/recommendations">匯出 CSV</a>
+      <a class="exportlink" href="/export/pending">匯出待審核 CSV</a>
+    </h2>
+    <div class="filters">{filter_btns}</div>
+    {_rec_table(data["recs"], data["pending"])}
+  </div>
+
+  <div class="card">
+    <h2>館藏明細</h2>
+    <div class="filters">{status_filter_btns}</div>
+    {_holdings_table(data["holdings"])}
+  </div>
 </div>
 </div>
 <script>
@@ -320,8 +377,19 @@ document.querySelectorAll('.fbtn').forEach(function(b){{
     document.querySelectorAll('.fbtn').forEach(x=>x.classList.remove('active'));
     b.classList.add('active');
     var f=b.dataset.f;
-    document.querySelectorAll('tbody tr').forEach(function(tr){{
+    b.closest('.card').querySelectorAll('tbody tr').forEach(function(tr){{
       tr.style.display = (f==='all' || tr.dataset.priority===f) ? '' : 'none';
+    }});
+  }});
+}});
+
+document.querySelectorAll('.sfbtn').forEach(function(b){{
+  b.addEventListener('click', function(){{
+    document.querySelectorAll('.sfbtn').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    var f=b.dataset.sf;
+    b.closest('.card').querySelectorAll('tbody tr').forEach(function(tr){{
+      tr.style.display = (f==='all' || tr.dataset.status===f) ? '' : 'none';
     }});
   }});
 }});
@@ -348,14 +416,49 @@ async function _poll() {{
     }}
   }} catch (e) {{ _el('runstatus').textContent = '無法連線'; }}
 }}
+// 載入 data/ 的 xlsx 清單，畫成勾選框（預設全勾）
+async function _loadFiles() {{
+  try {{
+    const d = await (await fetch('/files')).json();
+    const box = _el('filefilter');
+    if (!d.files || !d.files.length) {{ box.innerHTML = '<span class="ff-empty">data/ 目前沒有 xlsx</span>'; return; }}
+    box.innerHTML = '<span>只跑：</span>' + d.files.map(function(f){{
+      const id = 'ff_' + encodeURIComponent(f);
+      return `<label><input type="checkbox" class="ffchk" value="${{f}}" checked> ${{f}}</label>`;
+    }}).join('');
+  }} catch (e) {{ _el('filefilter').innerHTML = '<span class="ff-empty">無法載入檔案清單</span>'; }}
+}}
+
+_el('fileupload').onchange = async (ev) => {{
+  const file = ev.target.files[0];
+  if (!file) return;
+  const fd = new FormData();
+  fd.append('file', file);
+  const r = await (await fetch('/upload', {{method:'POST', body: fd}})).json();
+  if (!r.ok) {{ alert(r.message || '上傳失敗'); }}
+  ev.target.value = '';       // 清掉，讓同一個檔可以再次觸發 onchange
+  await _loadFiles();          // 重新載入清單，新檔預設會被勾選
+}};
+
 _el('runbtn').onclick = async () => {{
   const lim = _el('limit').value.trim();
-  if (!lim && !confirm('未填限制筆數＝全跑剩下所有課程，可能需要數小時。確定要執行嗎？')) return;
+  // 收集勾選的檔案；全勾（或沒有勾選框）＝不限定，送 null
+  const chks = Array.from(document.querySelectorAll('.ffchk'));
+  const picked = chks.filter(c => c.checked).map(c => c.value);
+  const allChecked = chks.length > 0 && picked.length === chks.length;
+  const source_files = (chks.length === 0 || allChecked) ? null : picked;
+  if (source_files && source_files.length === 0) {{ alert('請至少勾選一個 xlsx，或全部勾選代表全跑'); return; }}
+  if (!lim && !confirm('未填限制筆數＝全跑選中檔案裡剩下所有課程，可能需要數小時。確定要執行嗎？')) return;
   const q = lim ? ('?limit=' + encodeURIComponent(lim)) : '';
   _el('runbtn').disabled = true;
-  await fetch('/run' + q, {{method:'POST'}});
+  await fetch('/run' + q, {{
+    method:'POST',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify(source_files),
+  }});
   _poll();
 }};
+_loadFiles();
 _poll();
 </script>
 </body></html>"""
@@ -417,10 +520,15 @@ _run_lock = threading.Lock()
 _run_state: dict = {"status": "idle", "started_at": None, "finished_at": None, "error": None, "run_id": None}
 
 
-def _run_pipeline(run_id: str, limit: int | None) -> None:
+def _run_pipeline(run_id: str, limit: int | None, source_files: list[str] | None) -> None:
     from library_agent.graph import build_graph
+    initial: dict = {}
+    if limit:
+        initial["limit"] = limit
+    if source_files:
+        initial["source_files"] = source_files
     try:
-        build_graph(run_id).invoke({"limit": limit} if limit else {})
+        build_graph(run_id).invoke(initial)
         status, error = "done", None
     except Exception as e:  # 背景執行緒的例外要自己接，否則靜默消失
         status, error = "error", str(e)[:500]
@@ -429,8 +537,8 @@ def _run_pipeline(run_id: str, limit: int | None) -> None:
 
 
 @app.post("/run")
-def start_run(limit: int | None = None) -> dict:
-    """在背景執行緒啟動整條 pipeline。limit=None 全跑；一次只准一個。"""
+def start_run(limit: int | None = None, source_files: list[str] | None = Body(default=None)) -> dict:
+    """在背景執行緒啟動整條 pipeline。limit=None 全跑；source_files=None/空＝讀全部 xlsx；一次只准一個。"""
     from library_agent.graph import _init_run
 
     with _run_lock:
@@ -439,8 +547,30 @@ def start_run(limit: int | None = None) -> dict:
         run_id = str(time.time())
         _init_run(run_id)
         _run_state.update(status="running", started_at=time.time(), finished_at=None, error=None, run_id=run_id)
-    threading.Thread(target=_run_pipeline, args=(run_id, limit), daemon=True).start()
+    threading.Thread(target=_run_pipeline, args=(run_id, limit, source_files), daemon=True).start()
     return {"ok": True}
+
+
+# ---------- xlsx 檔案管理 ----------
+
+@app.get("/files")
+def list_files() -> dict:
+    """列出 data/ 目錄現有的 xlsx 檔名，供前端篩選 UI 用。"""
+    names = sorted(p.name for p in DATA_DIR.glob("*.xlsx"))
+    return {"files": names}
+
+
+@app.post("/upload")
+async def upload_file(file: UploadFile = File(...)) -> dict:
+    """接收上傳的 xlsx 存到 data/（同名覆蓋）。只接受 .xlsx。"""
+    name = Path(file.filename or "").name  # 去掉任何目錄成分，防路徑穿越
+    if not name.lower().endswith(".xlsx"):
+        return {"ok": False, "message": "只接受 .xlsx 檔"}
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    dest = DATA_DIR / name
+    with open(dest, "wb") as f:
+        f.write(await file.read())
+    return {"ok": True, "filename": name}
 
 
 @app.get("/status")

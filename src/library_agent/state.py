@@ -73,3 +73,4 @@ class AgentState(TypedDict, total=False):
     errors: Annotated[list[str], _merge]
     limit: int | None  # 測試用：限制課程筆數
     course_ids: list[str] | None  # crawler 傳給下游的課程 ID 清單（limit 時使用）
+    source_files: list[str] | None  # 這次只讀 data/ 裡這些 xlsx 檔名（None/空＝全部）
