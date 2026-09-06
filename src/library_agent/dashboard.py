@@ -309,7 +309,7 @@ td.rationale {{ color:var(--text-secondary); font-size:12px; max-width:340px; }}
 <div class="card runbar">
   <button id="runbtn" class="runbtn">▶ 執行 pipeline</button>
   <label class="limitlbl">限制筆數 <input id="limit" type="number" min="1" placeholder="留空 = 全跑"></label>
-  <label class="uploadbtn">上傳 xlsx<input id="fileupload" type="file" accept=".xlsx" hidden></label>
+  <label class="uploadbtn">上傳 xlsx<input id="fileupload" type="file" accept=".xlsx" multiple hidden></label>
   <span id="runstatus" class="runstatus">—</span>
   <span id="counts" class="counts"></span>
   <div id="filefilter" class="filefilter"></div>
@@ -430,13 +430,17 @@ async function _loadFiles() {{
 }}
 
 _el('fileupload').onchange = async (ev) => {{
-  const file = ev.target.files[0];
-  if (!file) return;
-  const fd = new FormData();
-  fd.append('file', file);
-  const r = await (await fetch('/upload', {{method:'POST', body: fd}})).json();
-  if (!r.ok) {{ alert(r.message || '上傳失敗'); }}
-  ev.target.value = '';       // 清掉，讓同一個檔可以再次觸發 onchange
+  const files = Array.from(ev.target.files);
+  if (!files.length) return;
+  const failed = [];
+  for (const file of files) {{      // 逐一上傳（/upload 一次收一個檔）
+    const fd = new FormData();
+    fd.append('file', file);
+    const r = await (await fetch('/upload', {{method:'POST', body: fd}})).json();
+    if (!r.ok) failed.push(file.name + '：' + (r.message || '上傳失敗'));
+  }}
+  if (failed.length) alert('部分檔案上傳失敗：\\n' + failed.join('\\n'));
+  ev.target.value = '';       // 清掉，讓同一批檔可以再次觸發 onchange
   await _loadFiles();          // 重新載入清單，新檔預設會被勾選
 }};
 
