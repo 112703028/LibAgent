@@ -99,7 +99,7 @@ def _load_data() -> dict:
             select(
                 Recommendation.priority, Course.course_name, VerifiedBook.canonical_title,
                 Citation.is_required, HoldingCheck.status, Recommendation.suggested_copies,
-                Recommendation.rationale,
+                Recommendation.rationale, Citation.raw_mention,
             )
             .join(Course, Course.course_id == Recommendation.course_id)
             .join(HoldingCheck, HoldingCheck.id == Recommendation.holding_id)
@@ -177,14 +177,26 @@ def _rec_row(priority: str, course: str, title: str, btype: str, status_html: st
     )
 
 
+def _is_ai_recommended(raw_mention: str | None) -> bool:
+    """discoverer 產生的 AI 推薦書，raw_mention 會標 [AI推薦]（見 discoverer.py）。"""
+    return bool(raw_mention) and "AI推薦" in raw_mention
+
+
+def _book_type_label(is_required: bool, raw_mention: str | None) -> str:
+    """類別標籤：AI 推薦 > 指定 > 參考。AI 推薦以橘色標籤與教師指定/參考區隔。"""
+    if _is_ai_recommended(raw_mention):
+        return f'<span class="tag tag-ai">AI推薦</span>'
+    return f'<span class="tag">{"指定" if is_required else "參考"}</span>'
+
+
 def _rec_table(recs: list, pending: list) -> str:
     if not recs and not pending:
         return '<p class="empty">尚無採購建議，請先執行 pipeline。</p>'
     body = []
-    for priority, course, title, is_required, status, copies, rationale in recs:
+    for priority, course, title, is_required, status, copies, rationale, raw_mention in recs:
         scolor = _STATUS_COLOR.get(status, "#898781")
         slabel = _STATUS_LABEL.get(status, status)
-        btype = f'<span class="tag">{"指定" if is_required else "參考"}</span>'
+        btype = _book_type_label(is_required, raw_mention)
         status_html = f'<span class="pill" style="background:{scolor}">{html.escape(slabel)}</span>'
         body.append(_rec_row(priority, course, title, btype, status_html, str(copies), rationale))
     # 待審核的書還沒進 librarian/recommender，沒有館藏狀態/冊數，理由欄改顯示驗證信心分數與來源
@@ -309,6 +321,7 @@ td.num {{ text-align:right; font-variant-numeric:tabular-nums; font-weight:600; 
 td.rationale {{ color:var(--text-secondary); font-size:12px; max-width:340px; }}
 .pill {{ display:inline-block; padding:1px 9px; border-radius:99px; font-size:11.5px; font-weight:600; color:#fff; white-space:nowrap; }}
 .tag {{ display:inline-block; padding:1px 7px; border-radius:5px; font-size:11.5px; border:1px solid var(--border); color:var(--text-secondary); white-space:nowrap; }}
+.tag-ai {{ border-color:#e0900a; color:#fff; background:#e0900a; }}
 .empty {{ color:var(--muted); font-size:13px; }}
 </style></head><body><div class="wrap">
 <h1>圖書館採購決策儀表板</h1>
@@ -543,12 +556,12 @@ def export_recommendations() -> StreamingResponse:
             _PRIORITY_LABEL.get(priority, priority),
             course,
             title,
-            "指定" if is_required else "參考",
+            "AI推薦" if _is_ai_recommended(raw_mention) else ("指定" if is_required else "參考"),
             _STATUS_LABEL.get(status, status),
             copies,
             rationale,
         )
-        for priority, course, title, is_required, status, copies, rationale in data["recs"]
+        for priority, course, title, is_required, status, copies, rationale, raw_mention in data["recs"]
     ]
     return _csv_response(header, rows, "recommendations")
 
