@@ -121,7 +121,8 @@ def _load_data() -> dict:
         holdings = sorted(holdings, key=lambda r: (_STATUS_RANK.get(r[0], 9), r[1] or ""))
 
         pending = s.execute(
-            select(Course.course_name, Citation.title, Citation.confidence, VerifiedBook.source)
+            select(Course.course_name, Citation.title, Citation.confidence, VerifiedBook.source,
+                   Citation.is_required, Citation.raw_mention)
             .join(Citation, Citation.id == VerifiedBook.citation_id)
             .join(Course, Course.course_id == Citation.course_id)
             .where(VerifiedBook.review_status == "pending")
@@ -200,9 +201,10 @@ def _rec_table(recs: list, pending: list) -> str:
         status_html = f'<span class="pill" style="background:{scolor}">{html.escape(slabel)}</span>'
         body.append(_rec_row(priority, course, title, btype, status_html, str(copies), rationale))
     # 待審核的書還沒進 librarian/recommender，沒有館藏狀態/冊數，理由欄改顯示驗證信心分數與來源
-    for course, title, confidence, source in pending:
+    for course, title, confidence, source, is_required, raw_mention in pending:
         rationale = f"confidence {confidence:.2f} · {source or ''}"
-        body.append(_rec_row("pending", course, title, "", "—", "—", rationale))
+        btype = _book_type_label(is_required, raw_mention)
+        body.append(_rec_row("pending", course, title, btype, "—", "—", rationale))
     return (
         '<table><thead><tr><th>優先級</th><th>課程</th><th>書名</th><th>類別</th>'
         '<th>館藏狀態</th><th>冊數</th><th>理由</th></tr></thead>'
@@ -569,8 +571,17 @@ def export_recommendations() -> StreamingResponse:
 @app.get("/export/pending")
 def export_pending() -> StreamingResponse:
     data = _load_data()
-    header = ["課程", "書名", "confidence", "來源"]
-    rows = list(data["pending"])
+    header = ["課程", "書名", "類別", "confidence", "來源"]
+    rows = [
+        (
+            course,
+            title,
+            "AI推薦" if _is_ai_recommended(raw_mention) else ("指定" if is_required else "參考"),
+            confidence,
+            source,
+        )
+        for course, title, confidence, source, is_required, raw_mention in data["pending"]
+    ]
     return _csv_response(header, rows, "pending_review")
 
 
