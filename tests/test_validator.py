@@ -1,7 +1,10 @@
 from types import SimpleNamespace
 
 from library_agent.agents import validator as V
-from library_agent.agents.validator import _CacheEntry, _is_chinese, _process_one, _stage_save, _validate_chinese
+from library_agent.agents.validator import (
+    _CacheEntry, _is_chinese, _process_one, _stage_save, _validate_chinese, _validate_english,
+)
+from library_agent.integrations.google_books import QuotaExceededError
 from library_agent.state import BookCitation, VerifiedBook
 
 
@@ -50,6 +53,46 @@ def test_validate_chinese_both_miss_is_not_found(monkeypatch):
     assert out.verified is False
     assert out.source == "ncl_not_found"
     assert out.requires_human_review is True
+
+
+def _raise_quota(**kw):
+    raise QuotaExceededError("rate limited")
+
+
+def test_validate_chinese_quota_exceeded_marks_special_source(monkeypatch):
+    # NCL miss → Google 配額爆 → 標 quota_exceeded（非 ncl_not_found），verified=False 待重驗
+    monkeypatch.setattr(V, "nla_lookup", lambda **kw: None)
+    monkeypatch.setattr(V, "google_lookup", _raise_quota)
+
+    out = _validate_chinese(_cn_citation(), low_confidence=False)
+    assert out.verified is False
+    assert out.source == "quota_exceeded"
+    assert out.requires_human_review is True
+
+
+def test_validate_english_quota_exceeded_marks_special_source(monkeypatch):
+    # LOC miss → Google 配額爆 → 英文書也標 quota_exceeded（與中文書一致）
+    monkeypatch.setattr(V, "loc_lookup", lambda **kw: None)
+    monkeypatch.setattr(V, "google_lookup", _raise_quota)
+
+    cit = BookCitation(course_id="C1", title="Clean Code", confidence=0.9)
+    out = _validate_english(cit, low_confidence=False)
+    assert out.verified is False
+    assert out.source == "quota_exceeded"
+    assert out.requires_human_review is True
+
+
+def test_validate_english_loc_hit_skips_google(monkeypatch):
+    # LOC 命中就不該打 Google（回歸：確認 fallback 只在 miss 時觸發）
+    calls = {"google": 0}
+    monkeypatch.setattr(V, "loc_lookup", lambda **kw: _book_record("loc"))
+    monkeypatch.setattr(V, "google_lookup", lambda **kw: calls.__setitem__("google", calls["google"] + 1))
+
+    cit = BookCitation(course_id="C1", title="Clean Code", confidence=0.9)
+    out = _validate_english(cit, low_confidence=False)
+    assert out.verified is True
+    assert out.source == "loc"
+    assert calls["google"] == 0
 
 
 def _fake_citation(**kw):

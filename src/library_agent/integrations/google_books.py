@@ -11,6 +11,11 @@ _TIMEOUT = 10.0
 _MAX_RETRIES = 5
 
 
+class QuotaExceededError(RuntimeError):
+    """Google Books 每日配額用完（重試後仍 429）。呼叫端可據此區分
+    「配額爆了、之後重跑可解」與「真的查無此書 / 其他錯誤」。"""
+
+
 @dataclass
 class BookRecord:
     canonical_title: str
@@ -57,8 +62,8 @@ def _search(query: str, api_key: str | None) -> BookRecord | None:
             return None
         return _extract(items[0])
 
-    # 重試耗盡仍 429 → 拋例外，讓 validator 標成 ERROR 而非 MISS
-    raise RuntimeError(f"Google Books rate limited after {_MAX_RETRIES} retries")
+    # 重試耗盡仍 429 → 拋專屬例外，讓呼叫端區分「配額爆」與「查無此書」
+    raise QuotaExceededError(f"Google Books rate limited after {_MAX_RETRIES} retries")
 
 
 def _clean_title(title: str) -> str:
