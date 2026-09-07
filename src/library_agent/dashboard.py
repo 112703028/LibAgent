@@ -168,6 +168,7 @@ def _rec_row(priority: str, course: str, title: str, btype: str, status_html: st
     plabel = _PRIORITY_LABEL.get(priority, _PENDING_LABEL)
     return (
         f'<tr data-priority="{html.escape(priority)}">'
+        f'<td class="chk"><input type="checkbox" class="rowchk"></td>'
         f'<td><span class="pill" style="background:{pcolor}">{html.escape(plabel)}</span></td>'
         f'<td>{html.escape(course or "")}</td>'
         f'<td>{html.escape(title or "")}</td>'
@@ -206,7 +207,9 @@ def _rec_table(recs: list, pending: list) -> str:
         btype = _book_type_label(is_required, raw_mention)
         body.append(_rec_row("pending", course, title, btype, "—", "—", rationale))
     return (
-        '<table><thead><tr><th>優先級</th><th>課程</th><th>書名</th><th>類別</th>'
+        '<table id="rectable"><thead><tr>'
+        '<th class="chk"><input type="checkbox" id="rowchkall" title="全選/全不選"></th>'
+        '<th>優先級</th><th>課程</th><th>書名</th><th>類別</th>'
         '<th>館藏狀態</th><th>冊數</th><th>理由</th></tr></thead>'
         f'<tbody>{"".join(body)}</tbody></table>'
     )
@@ -266,9 +269,6 @@ body {{ margin:0; background:var(--page); color:var(--text-primary);
 h1 {{ font-size:22px; margin:0 0 4px; }}
 .sub {{ color:var(--text-secondary); font-size:13px; margin-bottom:20px; }}
 h2 {{ font-size:15px; margin:0 0 12px; color:var(--text-secondary); }}
-.exportlink {{ font-size:12px; font-weight:400; color:var(--text-secondary); text-decoration:none;
-  border:1px solid var(--border); border-radius:6px; padding:2px 9px; margin-left:6px; }}
-.exportlink:hover {{ background:var(--track); }}
 .card {{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 18px; margin-bottom:16px; }}
 .runbar {{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; }}
 .runbtn {{ font:inherit; font-size:14px; font-weight:600; padding:8px 18px; border-radius:8px; cursor:pointer;
@@ -325,6 +325,13 @@ td.rationale {{ color:var(--text-secondary); font-size:12px; max-width:340px; }}
 .tag {{ display:inline-block; padding:1px 7px; border-radius:5px; font-size:11.5px; border:1px solid var(--border); color:var(--text-secondary); white-space:nowrap; }}
 .tag-ai {{ border-color:#e0900a; color:#fff; background:#e0900a; }}
 .empty {{ color:var(--muted); font-size:13px; }}
+.cardhead {{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }}
+.cardhead h2 {{ margin:0; }}
+th.chk, td.chk {{ width:28px; text-align:center; padding-left:6px; padding-right:6px; }}
+.exp-sec {{ font-weight:600; color:var(--text-secondary); padding-top:4px;
+  margin-top:2px; border-top:1px solid var(--gridline); }}
+.exp-sec:first-child {{ border-top:none; margin-top:0; padding-top:0; }}
+#exppanel {{ right:0; left:auto; }}
 </style></head><body><div class="wrap">
 <h1>圖書館採購決策儀表板</h1>
 <div class="sub">缺口分析 · 資料來自當下資料庫</div>
@@ -367,10 +374,22 @@ flowchart LR
 
 <div class="tables">
   <div class="card">
-    <h2>採購建議明細
-      <a class="exportlink" href="/export/recommendations">匯出 CSV</a>
-      <a class="exportlink" href="/export/pending">匯出待審核 CSV</a>
-    </h2>
+    <div class="cardhead">
+      <h2>採購建議明細</h2>
+      <div class="ffwrap">
+        <button id="expbtn" class="uploadbtn" type="button">匯出 CSV ▾</button>
+        <div id="exppanel" class="filefilter" hidden>
+          <div class="exp-sec">依優先級匯出：</div>
+          <label><input type="checkbox" class="expchk" value="high" checked> HIGH 高</label>
+          <label><input type="checkbox" class="expchk" value="medium" checked> MEDIUM 中</label>
+          <label><input type="checkbox" class="expchk" value="low" checked> LOW 低</label>
+          <label><input type="checkbox" class="expchk" value="skip" checked> SKIP 略過</label>
+          <label><input type="checkbox" class="expchk" value="pending" checked> 待審核</label>
+          <div class="exp-sec"><label><input type="checkbox" id="exponlychecked"> 只匯出表格中我勾選的書</label></div>
+          <button id="expgo" class="runbtn" type="button" style="margin-top:8px;font-size:13px;padding:6px 14px;">下載 CSV</button>
+        </div>
+      </div>
+    </div>
     <div class="filters">{filter_btns}</div>
     {_rec_table(data["recs"], data["pending"])}
   </div>
@@ -520,6 +539,63 @@ _el('runbtn').onclick = async () => {{
   }});
   _poll();
 }};
+
+// ---- 匯出 CSV：下拉面板 + 前端組 CSV ----
+_el('expbtn').addEventListener('click', function(ev){{
+  ev.stopPropagation();
+  _el('exppanel').hidden = !_el('exppanel').hidden;
+}});
+document.addEventListener('click', function(ev){{
+  const p = _el('exppanel');
+  if (!p.hidden && !p.contains(ev.target) && ev.target !== _el('expbtn')) p.hidden = true;
+}});
+
+// 表頭全選框：勾選/取消目前「可見」的列（配合優先級篩選）
+const _chkall = _el('rowchkall');
+if (_chkall) _chkall.addEventListener('change', function(){{
+  document.querySelectorAll('#rectable tbody tr').forEach(function(tr){{
+    if (tr.style.display !== 'none') {{
+      const c = tr.querySelector('.rowchk');
+      if (c) c.checked = _chkall.checked;
+    }}
+  }});
+}});
+
+function _csvCell(s) {{
+  s = (s == null ? '' : String(s)).replace(/\\s+/g, ' ').trim();
+  return /[",\\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}}
+
+_el('expgo').addEventListener('click', function(){{
+  const onlyChecked = _el('exponlychecked').checked;
+  const wantPrio = new Set(Array.from(document.querySelectorAll('.expchk'))
+    .filter(c => c.checked).map(c => c.value));
+  const header = ['優先級','課程','書名','類別','館藏狀態','冊數','理由'];
+  const lines = [header.map(_csvCell).join(',')];
+  let n = 0;
+  document.querySelectorAll('#rectable tbody tr').forEach(function(tr){{
+    if (onlyChecked) {{
+      const c = tr.querySelector('.rowchk');
+      if (!c || !c.checked) return;
+    }} else {{
+      if (!wantPrio.has(tr.dataset.priority)) return;
+    }}
+    // 跳過第一欄（checkbox），讀其餘 td 的可見文字
+    const cells = Array.from(tr.querySelectorAll('td')).slice(1).map(td => td.textContent);
+    lines.push(cells.map(_csvCell).join(','));
+    n++;
+  }});
+  if (n === 0) {{ alert('沒有符合條件的資料可匯出'); return; }}
+  const blob = new Blob(['\\ufeff' + lines.join('\\r\\n')], {{type:'text/csv;charset=utf-8'}});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().slice(0,10).replace(/-/g,'');
+  a.href = url; a.download = 'recommendations_' + stamp + '.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+  _el('exppanel').hidden = true;
+}});
+
 _loadFiles();
 _poll();
 </script>
