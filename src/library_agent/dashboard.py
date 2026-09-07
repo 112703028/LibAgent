@@ -62,6 +62,23 @@ def _not_rejected():
     return or_(VerifiedBook.review_status.is_(None), VerifiedBook.review_status != "rejected")
 
 
+def _dedup_course_book(rows: list) -> list:
+    """去重：同一門課的同一本書只留一筆。tuple 最後兩欄約定為 (course_id, isbn_13)。
+    驗證階段偶有誤匹配（不同書名被正規化成同一本、拿到同 ISBN），導致同課同書
+    重複出現。去重鍵 = (course_id, isbn_13 或 canonical_title)；canonical_title 是
+    每列的第 3 欄（index 2）。去重後切掉最後兩欄輔助鍵，回傳原本欄位形狀。"""
+    seen = set()
+    out = []
+    for r in rows:
+        course_id, isbn = r[-2], r[-1]
+        key = (course_id, isbn or r[2])  # 無 ISBN 時退回用 canonical_title 去重
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(r[:-2])
+    return out
+
+
 def _load_data() -> dict:
     with SessionLocal() as s:
         kpis = {
@@ -100,6 +117,7 @@ def _load_data() -> dict:
                 Recommendation.priority, Course.course_name, VerifiedBook.canonical_title,
                 Citation.is_required, HoldingCheck.status, Recommendation.suggested_copies,
                 Recommendation.rationale, Citation.raw_mention,
+                Citation.course_id, VerifiedBook.isbn_13,  # 末兩欄：去重輔助鍵
             )
             .join(Course, Course.course_id == Recommendation.course_id)
             .join(HoldingCheck, HoldingCheck.id == Recommendation.holding_id)
@@ -108,17 +126,20 @@ def _load_data() -> dict:
             .where(_not_rejected())
         ).all()
         recs = sorted(recs, key=lambda r: (_PRIORITY_RANK.get(r[0], 9), r[1] or ""))
+        recs = _dedup_course_book(recs)  # 同課同書只留一筆（去重後切掉末兩欄輔助鍵）
 
         holdings = s.execute(
             select(
                 HoldingCheck.status, Course.course_name, VerifiedBook.canonical_title,
                 HoldingCheck.holdings_count, HoldingCheck.alma_mms_id,
+                Citation.course_id, VerifiedBook.isbn_13,  # 末兩欄：去重輔助鍵
             )
             .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id)
             .join(Citation, Citation.id == VerifiedBook.citation_id)
             .join(Course, Course.course_id == Citation.course_id)
         ).all()
         holdings = sorted(holdings, key=lambda r: (_STATUS_RANK.get(r[0], 9), r[1] or ""))
+        holdings = _dedup_course_book(holdings)
 
         pending = s.execute(
             select(Course.course_name, Citation.title, Citation.confidence, VerifiedBook.source,
