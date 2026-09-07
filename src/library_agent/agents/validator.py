@@ -101,9 +101,11 @@ def _validate_english(citation: BookCitation, low_confidence: bool) -> VerifiedB
 
 
 def _validate_chinese(citation: BookCitation, low_confidence: bool) -> VerifiedBook:
-    # 中文書走 NCL / NBINet 做「存在性驗證」（權威書目來源）；
+    # 中文書優先走 NCL / NBINet 做「存在性驗證」（權威中文書目來源）；
+    # NCL 查不到（冷門書/建檔延遲）再用 Google Books 補上（會佔 Google 每日配額）。
     # 「政大有沒有收藏」是館藏問題，由 librarian 另查 Alma。
-    book_info = nla_lookup(title=citation.title, authors=citation.authors, isbn=citation.isbn)
+    kwargs = dict(title=citation.title, authors=citation.authors, isbn=citation.isbn)
+    book_info = nla_lookup(**kwargs) or google_lookup(**kwargs)
     if book_info:
         return VerifiedBook(
             citation=citation,
