@@ -224,6 +224,7 @@ def _holdings_table(holdings: list) -> str:
         slabel = _STATUS_LABEL.get(status, status)
         body.append(
             f'<tr data-status="{html.escape(status)}">'
+            f'<td class="chk"><input type="checkbox" class="hrowchk"></td>'
             f'<td><span class="pill" style="background:{scolor}">{html.escape(slabel)}</span></td>'
             f'<td>{html.escape(course or "")}</td>'
             f'<td>{html.escape(title or "")}</td>'
@@ -231,7 +232,9 @@ def _holdings_table(holdings: list) -> str:
             f'<td>{html.escape(mms_id or "")}</td></tr>'
         )
     return (
-        '<table><thead><tr><th>館藏狀態</th><th>課程</th><th>書名</th>'
+        '<table id="holdtable"><thead><tr>'
+        '<th class="chk"><input type="checkbox" id="hrowchkall" title="全選/全不選"></th>'
+        '<th>館藏狀態</th><th>課程</th><th>書名</th>'
         '<th>冊數</th><th>Alma 書目 ID</th></tr></thead>'
         f'<tbody>{"".join(body)}</tbody></table>'
     )
@@ -325,8 +328,11 @@ td.rationale {{ color:var(--text-secondary); font-size:12px; max-width:340px; }}
 .tag {{ display:inline-block; padding:1px 7px; border-radius:5px; font-size:11.5px; border:1px solid var(--border); color:var(--text-secondary); white-space:nowrap; }}
 .tag-ai {{ border-color:#e0900a; color:#fff; background:#e0900a; }}
 .empty {{ color:var(--muted); font-size:13px; }}
-.cardhead {{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }}
+.cardhead {{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; }}
 .cardhead h2 {{ margin:0; }}
+.headtools {{ display:flex; align-items:center; gap:8px; }}
+.searchbox {{ font:inherit; font-size:13px; padding:5px 10px; border:1px solid var(--border);
+  border-radius:6px; width:180px; }}
 th.chk, td.chk {{ width:28px; text-align:center; padding-left:6px; padding-right:6px; }}
 .exp-sec {{ font-weight:600; color:var(--text-secondary); padding-top:4px;
   margin-top:2px; border-top:1px solid var(--gridline); }}
@@ -376,17 +382,20 @@ flowchart LR
   <div class="card">
     <div class="cardhead">
       <h2>採購建議明細</h2>
-      <div class="ffwrap">
-        <button id="expbtn" class="uploadbtn" type="button">匯出 CSV ▾</button>
-        <div id="exppanel" class="filefilter" hidden>
-          <div class="exp-sec">依優先級匯出：</div>
-          <label><input type="checkbox" class="expchk" value="high" checked> HIGH 高</label>
-          <label><input type="checkbox" class="expchk" value="medium" checked> MEDIUM 中</label>
-          <label><input type="checkbox" class="expchk" value="low" checked> LOW 低</label>
-          <label><input type="checkbox" class="expchk" value="skip" checked> SKIP 略過</label>
-          <label><input type="checkbox" class="expchk" value="pending" checked> 待審核</label>
-          <div class="exp-sec"><label><input type="checkbox" id="exponlychecked"> 只匯出表格中我勾選的書</label></div>
-          <button id="expgo" class="runbtn" type="button" style="margin-top:8px;font-size:13px;padding:6px 14px;">下載 CSV</button>
+      <div class="headtools">
+        <input id="recsearch" class="searchbox" type="search" placeholder="搜尋課程或書名…">
+        <div class="ffwrap">
+          <button id="expbtn" class="uploadbtn" type="button">匯出 CSV ▾</button>
+          <div id="exppanel" class="filefilter" hidden>
+            <div class="exp-sec">依優先級匯出：</div>
+            <label><input type="checkbox" class="expchk" value="high" checked> HIGH 高</label>
+            <label><input type="checkbox" class="expchk" value="medium" checked> MEDIUM 中</label>
+            <label><input type="checkbox" class="expchk" value="low" checked> LOW 低</label>
+            <label><input type="checkbox" class="expchk" value="skip" checked> SKIP 略過</label>
+            <label><input type="checkbox" class="expchk" value="pending" checked> 待審核</label>
+            <div class="exp-sec"><label><input type="checkbox" id="exponlychecked"> 只匯出表格中我勾選的書</label></div>
+            <button id="expgo" class="runbtn" type="button" style="margin-top:8px;font-size:13px;padding:6px 14px;">下載 CSV</button>
+          </div>
         </div>
       </div>
     </div>
@@ -395,7 +404,25 @@ flowchart LR
   </div>
 
   <div class="card">
-    <h2>館藏明細</h2>
+    <div class="cardhead">
+      <h2>館藏明細</h2>
+      <div class="headtools">
+        <input id="holdsearch" class="searchbox" type="search" placeholder="搜尋課程或書名…">
+        <div class="ffwrap">
+          <button id="hexpbtn" class="uploadbtn" type="button">匯出 CSV ▾</button>
+          <div id="hexppanel" class="filefilter" hidden>
+            <div class="exp-sec">依館藏狀態匯出：</div>
+            <label><input type="checkbox" class="hexpchk" value="missing" checked> 缺藏</label>
+            <label><input type="checkbox" class="hexpchk" value="partial" checked> 記錄異常</label>
+            <label><input type="checkbox" class="hexpchk" value="owned_physical" checked> 已有實體</label>
+            <label><input type="checkbox" class="hexpchk" value="owned_ebook" checked> 已有電子</label>
+            <label><input type="checkbox" class="hexpchk" value="unknown" checked> 未知</label>
+            <div class="exp-sec"><label><input type="checkbox" id="hexponlychecked"> 只匯出表格中我勾選的書</label></div>
+            <button id="hexpgo" class="runbtn" type="button" style="margin-top:8px;font-size:13px;padding:6px 14px;">下載 CSV</button>
+          </div>
+        </div>
+      </div>
+    </div>
     <div class="filters">{status_filter_btns}</div>
     {_holdings_table(data["holdings"])}
   </div>
@@ -417,26 +444,48 @@ function _updateFlowchart(nodes) {{
   }});
 }}
 
+// 套用表格顯示：有搜尋字時只看搜尋（無視篩選按鈕）；否則看選中的篩選按鈕。
+// tableId=表格 id；dataKey=data-priority / data-status；btnSel=篩選按鈕 class；searchId=搜尋框 id
+function _applyTableView(tableId, dataKey, btnSel, searchId) {{
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  const kw = (document.getElementById(searchId).value || '').trim().toLowerCase();
+  const active = document.querySelector(btnSel + '.active');
+  const f = active ? active.dataset[dataKey === 'priority' ? 'f' : 'sf'] : 'all';
+  table.querySelectorAll('tbody tr').forEach(function(tr){{
+    let show;
+    if (kw) {{
+      // 搜尋課程(第3欄) + 書名(第4欄)；欄位含 checkbox 在第1欄
+      const tds = tr.querySelectorAll('td');
+      const course = (tds[2] ? tds[2].textContent : '').toLowerCase();
+      const title = (tds[3] ? tds[3].textContent : '').toLowerCase();
+      show = course.includes(kw) || title.includes(kw);
+    }} else {{
+      show = (f === 'all' || tr.dataset[dataKey] === f);
+    }}
+    tr.style.display = show ? '' : 'none';
+  }});
+}}
+
 document.querySelectorAll('.fbtn').forEach(function(b){{
   b.addEventListener('click', function(){{
     document.querySelectorAll('.fbtn').forEach(x=>x.classList.remove('active'));
     b.classList.add('active');
-    var f=b.dataset.f;
-    b.closest('.card').querySelectorAll('tbody tr').forEach(function(tr){{
-      tr.style.display = (f==='all' || tr.dataset.priority===f) ? '' : 'none';
-    }});
+    _applyTableView('rectable', 'priority', '.fbtn', 'recsearch');
   }});
 }});
-
 document.querySelectorAll('.sfbtn').forEach(function(b){{
   b.addEventListener('click', function(){{
     document.querySelectorAll('.sfbtn').forEach(x=>x.classList.remove('active'));
     b.classList.add('active');
-    var f=b.dataset.sf;
-    b.closest('.card').querySelectorAll('tbody tr').forEach(function(tr){{
-      tr.style.display = (f==='all' || tr.dataset.status===f) ? '' : 'none';
-    }});
+    _applyTableView('holdtable', 'status', '.sfbtn', 'holdsearch');
   }});
+}});
+document.getElementById('recsearch').addEventListener('input', function(){{
+  _applyTableView('rectable', 'priority', '.fbtn', 'recsearch');
+}});
+document.getElementById('holdsearch').addEventListener('input', function(){{
+  _applyTableView('holdtable', 'status', '.sfbtn', 'holdsearch');
 }});
 
 const _el = id => document.getElementById(id);
@@ -594,6 +643,53 @@ _el('expgo').addEventListener('click', function(){{
   a.click();
   URL.revokeObjectURL(url);
   _el('exppanel').hidden = true;
+}});
+
+// ---- 館藏明細匯出 CSV（仿採購明細）----
+_el('hexpbtn').addEventListener('click', function(ev){{
+  ev.stopPropagation();
+  _el('hexppanel').hidden = !_el('hexppanel').hidden;
+}});
+document.addEventListener('click', function(ev){{
+  const p = _el('hexppanel');
+  if (!p.hidden && !p.contains(ev.target) && ev.target !== _el('hexpbtn')) p.hidden = true;
+}});
+const _hchkall = _el('hrowchkall');
+if (_hchkall) _hchkall.addEventListener('change', function(){{
+  document.querySelectorAll('#holdtable tbody tr').forEach(function(tr){{
+    if (tr.style.display !== 'none') {{
+      const c = tr.querySelector('.hrowchk');
+      if (c) c.checked = _hchkall.checked;
+    }}
+  }});
+}});
+_el('hexpgo').addEventListener('click', function(){{
+  const onlyChecked = _el('hexponlychecked').checked;
+  const wantStatus = new Set(Array.from(document.querySelectorAll('.hexpchk'))
+    .filter(c => c.checked).map(c => c.value));
+  const header = ['館藏狀態','課程','書名','冊數','Alma 書目 ID'];
+  const lines = [header.map(_csvCell).join(',')];
+  let n = 0;
+  document.querySelectorAll('#holdtable tbody tr').forEach(function(tr){{
+    if (onlyChecked) {{
+      const c = tr.querySelector('.hrowchk');
+      if (!c || !c.checked) return;
+    }} else {{
+      if (!wantStatus.has(tr.dataset.status)) return;
+    }}
+    const cells = Array.from(tr.querySelectorAll('td')).slice(1).map(td => td.textContent);
+    lines.push(cells.map(_csvCell).join(','));
+    n++;
+  }});
+  if (n === 0) {{ alert('沒有符合條件的資料可匯出'); return; }}
+  const blob = new Blob(['\\ufeff' + lines.join('\\r\\n')], {{type:'text/csv;charset=utf-8'}});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().slice(0,10).replace(/-/g,'');
+  a.href = url; a.download = 'holdings_' + stamp + '.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+  _el('hexppanel').hidden = true;
 }});
 
 _loadFiles();
