@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, or_, select
 
 from library_agent.agents.crawler import DATA_DIR
+from library_agent.dept_map import DEPARTMENT_MAP
 from library_agent.db.models import (
     Citation,
     Course,
@@ -276,6 +277,9 @@ h2 {{ font-size:15px; margin:0 0 12px; color:var(--text-secondary); }}
   border-bottom:1px solid var(--gridline); }}
 .filefilter .ff-actions a {{ color:var(--text-secondary); cursor:pointer; text-decoration:underline; }}
 .filefilter .ff-empty {{ color:var(--muted); }}
+.dept-college {{ margin-top:4px; padding-top:4px; border-top:1px solid var(--gridline); }}
+.dept-col-lbl {{ font-size:12.5px; }}
+.dept-item {{ padding-left:18px; color:var(--text-secondary); }}
 .kpi-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin-bottom:16px; }}
 .kpi {{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px 16px; }}
 .kpi .val {{ font-size:30px; font-weight:700; letter-spacing:-.5px; }}
@@ -471,25 +475,42 @@ function _updateDeptLabel() {{
   _el('deptbtn').textContent = '學系 (' + txt + ')';
 }}
 
-// 載入 DB 裡的開課系級清單，畫成勾選框（預設全勾）
+// 載入「學院 → 系所」兩層樹，畫成可展開/勾選的清單（預設全勾）
 async function _loadDepts() {{
   try {{
     const d = await (await fetch('/departments')).json();
     const box = _el('deptfilter');
-    if (!d.departments || !d.departments.length) {{
+    if (!d.tree || !d.tree.length) {{
       box.innerHTML = '<span class="ff-empty">目前沒有系所資料</span>';
       _updateDeptLabel();
       return;
     }}
-    box.innerHTML =
-      '<div class="ff-actions"><a data-act="all">全選</a><a data-act="none">全不選</a></div>' +
-      d.departments.map(function(f){{
-        return `<label><input type="checkbox" class="deptchk" value="${{f}}" checked> ${{f}}</label>`;
+    // 每個學院一個區塊：學院列（含全選該院的框）＋ 底下系所勾選框
+    const sections = d.tree.map(function(node){{
+      const depts = node.depts.map(function(dep){{
+        return `<label class="dept-item"><input type="checkbox" class="deptchk" value="${{dep}}" checked> ${{dep}}</label>`;
       }}).join('');
+      return `<div class="dept-college"><label class="dept-col-lbl"><input type="checkbox" class="colchk" checked> <b>${{node.college}}</b></label>${{depts}}</div>`;
+    }}).join('');
+    box.innerHTML = '<div class="ff-actions"><a data-act="all">全選</a><a data-act="none">全不選</a></div>' + sections;
+    // 系所勾選 → 更新計數
     box.querySelectorAll('.deptchk').forEach(c => c.addEventListener('change', _updateDeptLabel));
+    // 學院框 → 連動該院底下所有系所
+    box.querySelectorAll('.dept-college').forEach(function(sec){{
+      const col = sec.querySelector('.colchk');
+      const items = sec.querySelectorAll('.deptchk');
+      col.addEventListener('change', function(){{
+        items.forEach(c => {{ c.checked = col.checked; }});
+        _updateDeptLabel();
+      }});
+      items.forEach(c => c.addEventListener('change', function(){{
+        col.checked = Array.from(items).every(x => x.checked);
+      }}));
+    }});
+    // 全選/全不選
     box.querySelectorAll('.ff-actions a').forEach(a => a.addEventListener('click', function(){{
       const on = a.dataset.act === 'all';
-      box.querySelectorAll('.deptchk').forEach(c => {{ c.checked = on; }});
+      box.querySelectorAll('.deptchk, .colchk').forEach(c => {{ c.checked = on; }});
       _updateDeptLabel();
     }}));
     _updateDeptLabel();
@@ -727,13 +748,27 @@ def _run_pipeline(run_id: str, source_files: list[str] | None, departments: list
         _run_state.update(status=status, finished_at=time.time(), error=error)
 
 
+# 系所名 → 對應的所有原始系級值（供 /run 把前端選的系所展開成 crawler 能比對的值）
+_DEPT_TO_RAW: dict[str, list[str]] = {}
+for _raw, (_col, _dep) in DEPARTMENT_MAP.items():
+    _DEPT_TO_RAW.setdefault(_dep, []).append(_raw)
+
+
 @app.post("/run")
 def start_run(body: dict = Body(default={})) -> dict:
-    """在背景執行緒啟動整條 pipeline。source_files/departments 為 None/空＝全部；一次只准一個。"""
+    """在背景執行緒啟動整條 pipeline。source_files/departments 為 None/空＝全部；一次只准一個。
+    departments 收到的是「系所名」，在此展開成 crawler 比對用的原始系級值。"""
     from library_agent.graph import _init_run
 
     source_files = body.get("source_files") if isinstance(body, dict) else None
-    departments = body.get("departments") if isinstance(body, dict) else None
+    dept_names = body.get("departments") if isinstance(body, dict) else None
+    # 系所名 → 原始系級值（展平）；未知系所名原樣保留（例如「其他」歸類的原始值本身）
+    departments = None
+    if dept_names:
+        expanded: list[str] = []
+        for name in dept_names:
+            expanded.extend(_DEPT_TO_RAW.get(name, [name]))
+        departments = expanded
     with _run_lock:
         if _run_state["status"] == "running":
             return {"ok": False, "message": "pipeline 已在執行中"}
@@ -755,12 +790,18 @@ def list_files() -> dict:
 
 @app.get("/departments")
 def list_departments() -> dict:
-    """列出 DB 裡現有的開課系級（去重、排序），供前端學系篩選用。"""
+    """回傳「學院 → 系所」兩層樹，只列 DB 裡實際有課的系所（依 DEPARTMENT_MAP 歸類）。
+    格式：{"tree": [{"college": 學院, "depts": [系所名, ...]}, ...]}。"""
     with SessionLocal() as s:
-        rows = s.scalars(
+        raw_depts = s.scalars(
             select(Course.department).where(Course.department.is_not(None)).distinct()
         ).all()
-    return {"departments": sorted(rows)}
+    # 原始系級值 → (學院, 系所)；未知的歸到 (其他, 原始值)
+    tree: dict[str, set[str]] = {}
+    for raw in raw_depts:
+        college, dept = DEPARTMENT_MAP.get(raw, ("其他", raw))
+        tree.setdefault(college, set()).add(dept)
+    return {"tree": [{"college": c, "depts": sorted(tree[c])} for c in sorted(tree)]}
 
 
 @app.post("/upload")
