@@ -22,6 +22,7 @@ class Course(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     course_id: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
     course_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    department: Mapped[str | None] = mapped_column(String(100))  # 開課系級（xlsx「開課系級」欄）
     instructor: Mapped[str | None] = mapped_column(String(100))
     enrolled_count: Mapped[int] = mapped_column(Integer, default=0)
     semester: Mapped[str] = mapped_column(String(10), nullable=False)

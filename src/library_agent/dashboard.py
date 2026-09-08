@@ -6,16 +6,20 @@ FastAPI 服務，讀既有 DB 呈現缺口分析：KPI 概覽、採購優先級�
 圖表用內嵌 HTML/CSS bar（無外部 CDN/JS 依賴、離線可用），配色取自 dataviz
 技能的 status palette，並以文字標籤 + 數值確保辨識不依賴顏色。
 """
+import csv
 import html
+import io
 import threading
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
+from fastapi import Body, FastAPI, File, UploadFile
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, or_, select
 
+from library_agent.agents.crawler import DATA_DIR
 from library_agent.db.models import (
     Citation,
     Course,
@@ -35,6 +39,10 @@ _PRIORITY_META = [
     ("low", "LOW 低", "#0ca30c"),
     ("skip", "SKIP 略過", "#898781"),
 ]
+# 待審核不是 Recommendation.priority 的列舉值（來自 VerifiedBook.review_status），
+# 獨立於 _PRIORITY_META 之外，只在畫長條圖/合併建議表時額外併入。
+_PENDING_LABEL = "待審核"
+_PENDING_COLOR = "#e0900a"  # 與 KPI 卡片的 warning 色一致
 _STATUS_META = [
     ("missing", "缺藏", "#d03b3b"),
     ("partial", "記錄異常", "#fab219"),
@@ -51,6 +59,23 @@ _STATUS_LABEL = {k: n for k, n, _ in _STATUS_META}
 
 def _not_rejected():
     return or_(VerifiedBook.review_status.is_(None), VerifiedBook.review_status != "rejected")
+
+
+def _dedup_course_book(rows: list) -> list:
+    """去重：同一門課的同一本書只留一筆。tuple 最後兩欄約定為 (course_id, isbn_13)。
+    驗證階段偶有誤匹配（不同書名被正規化成同一本、拿到同 ISBN），導致同課同書
+    重複出現。去重鍵 = (course_id, isbn_13 或 canonical_title)；canonical_title 是
+    每列的第 3 欄（index 2）。去重後切掉最後兩欄輔助鍵，回傳原本欄位形狀。"""
+    seen = set()
+    out = []
+    for r in rows:
+        course_id, isbn = r[-2], r[-1]
+        key = (course_id, isbn or r[2])  # 無 ISBN 時退回用 canonical_title 去重
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(r[:-2])
+    return out
 
 
 def _load_data() -> dict:
@@ -90,7 +115,8 @@ def _load_data() -> dict:
             select(
                 Recommendation.priority, Course.course_name, VerifiedBook.canonical_title,
                 Citation.is_required, HoldingCheck.status, Recommendation.suggested_copies,
-                Recommendation.rationale,
+                Recommendation.rationale, Citation.raw_mention,
+                Citation.course_id, VerifiedBook.isbn_13,  # 末兩欄：去重輔助鍵
             )
             .join(Course, Course.course_id == Recommendation.course_id)
             .join(HoldingCheck, HoldingCheck.id == Recommendation.holding_id)
@@ -99,9 +125,11 @@ def _load_data() -> dict:
             .where(_not_rejected())
         ).all()
         recs = sorted(recs, key=lambda r: (_PRIORITY_RANK.get(r[0], 9), r[1] or ""))
+        recs = _dedup_course_book(recs)  # 同課同書只留一筆（去重後切掉末兩欄輔助鍵）
 
         pending = s.execute(
-            select(Course.course_name, Citation.title, Citation.confidence, VerifiedBook.source)
+            select(Course.course_name, Citation.title, Citation.confidence, VerifiedBook.source,
+                   Citation.is_required, Citation.raw_mention)
             .join(Citation, Citation.id == VerifiedBook.citation_id)
             .join(Course, Course.course_id == Citation.course_id)
             .where(VerifiedBook.review_status == "pending")
@@ -141,54 +169,70 @@ def _kpi_tiles(k: dict) -> str:
     )
 
 
-def _rec_table(recs: list) -> str:
-    if not recs:
+def _rec_row(priority: str, course: str, title: str, btype: str, status_html: str,
+             copies_html: str, rationale: str) -> str:
+    pcolor = _PRIORITY_COLOR.get(priority, _PENDING_COLOR)
+    plabel = _PRIORITY_LABEL.get(priority, _PENDING_LABEL)
+    return (
+        f'<tr data-priority="{html.escape(priority)}">'
+        f'<td class="chk"><input type="checkbox" class="rowchk"></td>'
+        f'<td><span class="pill" style="background:{pcolor}">{html.escape(plabel)}</span></td>'
+        f'<td>{html.escape(course or "")}</td>'
+        f'<td>{html.escape(title or "")}</td>'
+        f'<td>{btype}</td>'
+        f'<td>{status_html}</td>'
+        f'<td class="num">{copies_html}</td>'
+        f'<td class="rationale">{html.escape(rationale or "")}</td></tr>'
+    )
+
+
+def _is_ai_recommended(raw_mention: str | None) -> bool:
+    """discoverer 產生的 AI 推薦書，raw_mention 會標 [AI推薦]（見 discoverer.py）。"""
+    return bool(raw_mention) and "AI推薦" in raw_mention
+
+
+def _book_type_label(is_required: bool, raw_mention: str | None) -> str:
+    """類別標籤：AI 推薦 > 指定 > 參考。AI 推薦以橘色標籤與教師指定/參考區隔。"""
+    if _is_ai_recommended(raw_mention):
+        return f'<span class="tag tag-ai">AI推薦</span>'
+    return f'<span class="tag">{"指定" if is_required else "參考"}</span>'
+
+
+def _rec_table(recs: list, pending: list) -> str:
+    if not recs and not pending:
         return '<p class="empty">尚無採購建議，請先執行 pipeline。</p>'
     body = []
-    for priority, course, title, is_required, status, copies, rationale in recs:
-        pcolor = _PRIORITY_COLOR.get(priority, "#898781")
-        plabel = _PRIORITY_LABEL.get(priority, priority)
+    for priority, course, title, is_required, status, copies, rationale, raw_mention in recs:
         scolor = _STATUS_COLOR.get(status, "#898781")
         slabel = _STATUS_LABEL.get(status, status)
-        btype = "指定" if is_required else "參考"
-        body.append(
-            f'<tr data-priority="{html.escape(priority)}">'
-            f'<td><span class="pill" style="background:{pcolor}">{html.escape(plabel)}</span></td>'
-            f'<td>{html.escape(course or "")}</td>'
-            f'<td>{html.escape(title or "")}</td>'
-            f'<td><span class="tag">{btype}</span></td>'
-            f'<td><span class="pill" style="background:{scolor}">{html.escape(slabel)}</span></td>'
-            f'<td class="num">{copies}</td>'
-            f'<td class="rationale">{html.escape(rationale or "")}</td></tr>'
-        )
+        btype = _book_type_label(is_required, raw_mention)
+        status_html = f'<span class="pill" style="background:{scolor}">{html.escape(slabel)}</span>'
+        body.append(_rec_row(priority, course, title, btype, status_html, str(copies), rationale))
+    # 待審核的書還沒進 librarian/recommender，沒有館藏狀態/冊數，理由欄改顯示驗證信心分數與來源
+    for course, title, confidence, source, is_required, raw_mention in pending:
+        rationale = f"confidence {confidence:.2f} · {source or ''}"
+        btype = _book_type_label(is_required, raw_mention)
+        body.append(_rec_row("pending", course, title, btype, "—", "—", rationale))
     return (
-        '<table><thead><tr><th>優先級</th><th>課程</th><th>書名</th><th>類別</th>'
+        '<table id="rectable"><thead><tr>'
+        '<th class="chk"><input type="checkbox" id="rowchkall" title="全選/全不選"></th>'
+        '<th>優先級</th><th>課程</th><th>書名</th><th>類別</th>'
         '<th>館藏狀態</th><th>冊數</th><th>理由</th></tr></thead>'
         f'<tbody>{"".join(body)}</tbody></table>'
     )
 
 
-def _pending_list(pending: list) -> str:
-    if not pending:
-        return '<p class="empty">目前沒有待審書目。</p>'
-    items = []
-    for course, title, confidence, source in pending:
-        items.append(
-            f'<li><span class="pconf">conf {confidence:.2f}</span> '
-            f'<b>{html.escape(title or "")}</b> '
-            f'<span class="pmeta">{html.escape(course or "")} · {html.escape(source or "")}</span></li>'
-        )
-    return f'<ul class="pending">{"".join(items)}</ul>'
-
-
 def _render(data: dict) -> str:
-    prio_bars = _bars([(_PRIORITY_LABEL[k], data["priority"].get(k, 0), _PRIORITY_COLOR[k])
-                       for k, _, _ in _PRIORITY_META])
+    prio_bars = _bars(
+        [(_PRIORITY_LABEL[k], data["priority"].get(k, 0), _PRIORITY_COLOR[k])
+         for k, _, _ in _PRIORITY_META]
+        + [(_PENDING_LABEL, data["kpis"]["pending"], _PENDING_COLOR)]
+    )
     status_bars = _bars([(_STATUS_LABEL[k], data["status"].get(k, 0), _STATUS_COLOR[k])
                         for k, _, _ in _STATUS_META])
     filter_btns = '<button class="fbtn active" data-f="all">全部</button>' + "".join(
         f'<button class="fbtn" data-f="{k}">{html.escape(n)}</button>' for k, n, _ in _PRIORITY_META
-    )
+    ) + f'<button class="fbtn" data-f="pending">{_PENDING_LABEL}</button>'
     return f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>採購決策儀表板</title>
@@ -212,13 +256,26 @@ h2 {{ font-size:15px; margin:0 0 12px; color:var(--text-secondary); }}
 .runbtn {{ font:inherit; font-size:14px; font-weight:600; padding:8px 18px; border-radius:8px; cursor:pointer;
   border:1px solid var(--border); background:var(--text-primary); color:var(--surface); }}
 .runbtn:disabled {{ opacity:.45; cursor:not-allowed; }}
-.limitlbl {{ font-size:13px; color:var(--text-secondary); }}
-.limitlbl input {{ font:inherit; width:112px; padding:5px 8px; border:1px solid var(--border); border-radius:6px; margin-left:4px; }}
 .runstatus {{ font-size:13px; font-weight:600; color:var(--text-secondary); }}
 .runstatus.running {{ color:var(--warning); }}
 .runstatus.done {{ color:#0ca30c; }}
 .runstatus.error {{ color:var(--critical); }}
 .counts {{ font-size:12.5px; color:var(--muted); font-variant-numeric:tabular-nums; }}
+.uploadbtn {{ font-size:13px; padding:6px 12px; border-radius:8px; cursor:pointer;
+  border:1px solid var(--border); background:transparent; color:var(--text-secondary); }}
+.uploadbtn:hover {{ background:var(--track); }}
+.ffwrap {{ position:relative; }}
+.filefilter {{ position:absolute; top:calc(100% + 4px); left:0; z-index:20; min-width:220px;
+  max-height:280px; overflow-y:auto; display:flex; flex-direction:column; gap:6px;
+  padding:10px 12px; font-size:12.5px; color:var(--text-secondary);
+  background:var(--surface); border:1px solid var(--border); border-radius:8px;
+  box-shadow:0 4px 14px rgba(0,0,0,.1); }}
+.filefilter[hidden] {{ display:none; }}
+.filefilter label {{ display:flex; align-items:center; gap:6px; cursor:pointer; white-space:nowrap; }}
+.filefilter .ff-actions {{ display:flex; gap:10px; padding-bottom:6px; margin-bottom:2px;
+  border-bottom:1px solid var(--gridline); }}
+.filefilter .ff-actions a {{ color:var(--text-secondary); cursor:pointer; text-decoration:underline; }}
+.filefilter .ff-empty {{ color:var(--muted); }}
 .kpi-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin-bottom:16px; }}
 .kpi {{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px 16px; }}
 .kpi .val {{ font-size:30px; font-weight:700; letter-spacing:-.5px; }}
@@ -227,6 +284,7 @@ h2 {{ font-size:15px; margin:0 0 12px; color:var(--text-secondary); }}
 .kpi .lbl {{ font-size:12px; color:var(--text-secondary); margin-top:2px; }}
 .charts {{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }}
 @media (max-width:720px) {{ .charts {{ grid-template-columns:1fr; }} }}
+.tables {{ display:block; }}
 .bar-row {{ display:flex; align-items:center; gap:10px; margin:8px 0; }}
 .bar-label {{ width:96px; flex:none; text-align:right; font-size:13px; color:var(--text-secondary); }}
 .bar-track {{ flex:1; height:20px; background:var(--track); border-radius:4px; }}
@@ -234,9 +292,9 @@ h2 {{ font-size:15px; margin:0 0 12px; color:var(--text-secondary); }}
 .bar-value {{ width:44px; flex:none; font-weight:600; font-variant-numeric:tabular-nums; }}
 .bar-row:hover .bar-fill {{ filter:brightness(1.08); }}
 .filters {{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }}
-.fbtn {{ font:inherit; font-size:12.5px; padding:4px 12px; border-radius:99px; cursor:pointer;
+.fbtn, .sfbtn {{ font:inherit; font-size:12.5px; padding:4px 12px; border-radius:99px; cursor:pointer;
   border:1px solid var(--border); background:transparent; color:var(--text-secondary); }}
-.fbtn.active {{ background:var(--text-primary); color:var(--surface); border-color:var(--text-primary); }}
+.fbtn.active, .sfbtn.active {{ background:var(--text-primary); color:var(--surface); border-color:var(--text-primary); }}
 table {{ border-collapse:collapse; width:100%; font-size:13px; }}
 th,td {{ border-bottom:1px solid var(--gridline); padding:8px 10px; text-align:left; vertical-align:top; }}
 th {{ color:var(--text-secondary); font-weight:600; white-space:nowrap; }}
@@ -244,18 +302,33 @@ td.num {{ text-align:right; font-variant-numeric:tabular-nums; font-weight:600; 
 td.rationale {{ color:var(--text-secondary); font-size:12px; max-width:340px; }}
 .pill {{ display:inline-block; padding:1px 9px; border-radius:99px; font-size:11.5px; font-weight:600; color:#fff; white-space:nowrap; }}
 .tag {{ display:inline-block; padding:1px 7px; border-radius:5px; font-size:11.5px; border:1px solid var(--border); color:var(--text-secondary); white-space:nowrap; }}
+.tag-ai {{ border-color:#e0900a; color:#fff; background:#e0900a; }}
 .empty {{ color:var(--muted); font-size:13px; }}
-ul.pending {{ list-style:none; margin:0; padding:0; }}
-ul.pending li {{ padding:6px 0; border-bottom:1px solid var(--gridline); font-size:13px; }}
-.pconf {{ display:inline-block; min-width:64px; color:var(--warning); font-weight:600; font-variant-numeric:tabular-nums; }}
-.pmeta {{ color:var(--muted); font-size:12px; }}
+.cardhead {{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; }}
+.cardhead h2 {{ margin:0; }}
+.headtools {{ display:flex; align-items:center; gap:8px; }}
+.searchbox {{ font:inherit; font-size:13px; padding:5px 10px; border:1px solid var(--border);
+  border-radius:6px; width:180px; }}
+th.chk, td.chk {{ width:28px; text-align:center; padding-left:6px; padding-right:6px; }}
+.exp-sec {{ font-weight:600; color:var(--text-secondary); padding-top:4px;
+  margin-top:2px; border-top:1px solid var(--gridline); }}
+.exp-sec:first-child {{ border-top:none; margin-top:0; padding-top:0; }}
+#exppanel {{ right:0; left:auto; }}
 </style></head><body><div class="wrap">
 <h1>圖書館採購決策儀表板</h1>
 <div class="sub">缺口分析 · 資料來自當下資料庫</div>
 
 <div class="card runbar">
   <button id="runbtn" class="runbtn">▶ 執行 pipeline</button>
-  <label class="limitlbl">限制筆數 <input id="limit" type="number" min="1" placeholder="留空 = 全跑"></label>
+  <label class="uploadbtn">上傳 xlsx<input id="fileupload" type="file" accept=".xlsx" multiple hidden></label>
+  <div class="ffwrap">
+    <button id="ffbtn" class="uploadbtn" type="button">檔案 (全部)</button>
+    <div id="filefilter" class="filefilter" hidden></div>
+  </div>
+  <div class="ffwrap">
+    <button id="deptbtn" class="uploadbtn" type="button">學系 (全部)</button>
+    <div id="deptfilter" class="filefilter" hidden></div>
+  </div>
   <span id="runstatus" class="runstatus">—</span>
   <span id="counts" class="counts"></span>
 </div>
@@ -284,15 +357,30 @@ flowchart LR
   <div class="card"><h2>館藏狀態分布</h2>{status_bars}</div>
 </div>
 
-<div class="card">
-  <h2>採購建議明細</h2>
-  <div class="filters">{filter_btns}</div>
-  {_rec_table(data["recs"])}
-</div>
-
-<div class="card">
-  <h2>待人工審核（pending）</h2>
-  {_pending_list(data["pending"])}
+<div class="tables">
+  <div class="card">
+    <div class="cardhead">
+      <h2>採購建議明細</h2>
+      <div class="headtools">
+        <input id="recsearch" class="searchbox" type="search" placeholder="搜尋課程或書名…">
+        <div class="ffwrap">
+          <button id="expbtn" class="uploadbtn" type="button">匯出 CSV ▾</button>
+          <div id="exppanel" class="filefilter" hidden>
+            <div class="exp-sec">依優先級匯出：</div>
+            <label><input type="checkbox" class="expchk" value="high" checked> HIGH 高</label>
+            <label><input type="checkbox" class="expchk" value="medium" checked> MEDIUM 中</label>
+            <label><input type="checkbox" class="expchk" value="low" checked> LOW 低</label>
+            <label><input type="checkbox" class="expchk" value="skip" checked> SKIP 略過</label>
+            <label><input type="checkbox" class="expchk" value="pending" checked> 待審核</label>
+            <div class="exp-sec"><label><input type="checkbox" id="exponlychecked"> 只匯出表格中我勾選的書</label></div>
+            <button id="expgo" class="runbtn" type="button" style="margin-top:8px;font-size:13px;padding:6px 14px;">下載 CSV</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="filters">{filter_btns}</div>
+    {_rec_table(data["recs"], data["pending"])}
+  </div>
 </div>
 </div>
 <script>
@@ -311,18 +399,42 @@ function _updateFlowchart(nodes) {{
   }});
 }}
 
+// 套用表格顯示：有搜尋字時只看搜尋（無視篩選按鈕）；否則看選中的篩選按鈕。
+// tableId=表格 id；dataKey=data-priority / data-status；btnSel=篩選按鈕 class；searchId=搜尋框 id
+function _applyTableView(tableId, dataKey, btnSel, searchId) {{
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  const kw = (document.getElementById(searchId).value || '').trim().toLowerCase();
+  const active = document.querySelector(btnSel + '.active');
+  const f = active ? active.dataset[dataKey === 'priority' ? 'f' : 'sf'] : 'all';
+  table.querySelectorAll('tbody tr').forEach(function(tr){{
+    let show;
+    if (kw) {{
+      // 搜尋課程(第3欄) + 書名(第4欄)；欄位含 checkbox 在第1欄
+      const tds = tr.querySelectorAll('td');
+      const course = (tds[2] ? tds[2].textContent : '').toLowerCase();
+      const title = (tds[3] ? tds[3].textContent : '').toLowerCase();
+      show = course.includes(kw) || title.includes(kw);
+    }} else {{
+      show = (f === 'all' || tr.dataset[dataKey] === f);
+    }}
+    tr.style.display = show ? '' : 'none';
+  }});
+}}
+
 document.querySelectorAll('.fbtn').forEach(function(b){{
   b.addEventListener('click', function(){{
     document.querySelectorAll('.fbtn').forEach(x=>x.classList.remove('active'));
     b.classList.add('active');
-    var f=b.dataset.f;
-    document.querySelectorAll('tbody tr').forEach(function(tr){{
-      tr.style.display = (f==='all' || tr.dataset.priority===f) ? '' : 'none';
-    }});
+    _applyTableView('rectable', 'priority', '.fbtn', 'recsearch');
   }});
+}});
+document.getElementById('recsearch').addEventListener('input', function(){{
+  _applyTableView('rectable', 'priority', '.fbtn', 'recsearch');
 }});
 
 const _el = id => document.getElementById(id);
+let _sawRunning = false;  // 這個分頁是否親眼看過 running；只有這樣才代表「這次是我觸發的」
 async function _poll() {{
   try {{
     const d = await (await fetch('/status')).json();
@@ -334,17 +446,201 @@ async function _poll() {{
     _el('runstatus').className = 'runstatus ' + d.status;
     _el('runbtn').disabled = (d.status === 'running');
     if (d.nodes) _updateFlowchart(d.nodes);
-    if (d.status === 'running') setTimeout(_poll, 3000);
+    if (d.status === 'running') {{
+      _sawRunning = true;
+      setTimeout(_poll, 3000);
+    }} else if (_sawRunning && (d.status === 'done' || d.status === 'error')) {{
+      // 親眼看過它從 running 跑到這裡結束 → 整頁資料（KPI/圖表/建議明細）都舊了，重整一次
+      location.reload();
+    }}
   }} catch (e) {{ _el('runstatus').textContent = '無法連線'; }}
 }}
+// 更新「檔案」按鈕上的選取計數
+function _updateFfLabel() {{
+  const chks = Array.from(document.querySelectorAll('.ffchk'));
+  const picked = chks.filter(c => c.checked).length;
+  const txt = (chks.length === 0 || picked === chks.length) ? '全部' : `${{picked}}/${{chks.length}}`;
+  _el('ffbtn').textContent = '檔案 (' + txt + ')';
+}}
+
+// 更新「學系」按鈕上的選取計數
+function _updateDeptLabel() {{
+  const chks = Array.from(document.querySelectorAll('.deptchk'));
+  const picked = chks.filter(c => c.checked).length;
+  const txt = (chks.length === 0 || picked === chks.length) ? '全部' : `${{picked}}/${{chks.length}}`;
+  _el('deptbtn').textContent = '學系 (' + txt + ')';
+}}
+
+// 載入 DB 裡的開課系級清單，畫成勾選框（預設全勾）
+async function _loadDepts() {{
+  try {{
+    const d = await (await fetch('/departments')).json();
+    const box = _el('deptfilter');
+    if (!d.departments || !d.departments.length) {{
+      box.innerHTML = '<span class="ff-empty">目前沒有系所資料</span>';
+      _updateDeptLabel();
+      return;
+    }}
+    box.innerHTML =
+      '<div class="ff-actions"><a data-act="all">全選</a><a data-act="none">全不選</a></div>' +
+      d.departments.map(function(f){{
+        return `<label><input type="checkbox" class="deptchk" value="${{f}}" checked> ${{f}}</label>`;
+      }}).join('');
+    box.querySelectorAll('.deptchk').forEach(c => c.addEventListener('change', _updateDeptLabel));
+    box.querySelectorAll('.ff-actions a').forEach(a => a.addEventListener('click', function(){{
+      const on = a.dataset.act === 'all';
+      box.querySelectorAll('.deptchk').forEach(c => {{ c.checked = on; }});
+      _updateDeptLabel();
+    }}));
+    _updateDeptLabel();
+  }} catch (e) {{ _el('deptfilter').innerHTML = '<span class="ff-empty">無法載入系所清單</span>'; }}
+}}
+_el('deptbtn').addEventListener('click', function(ev){{
+  ev.stopPropagation();
+  _el('deptfilter').hidden = !_el('deptfilter').hidden;
+}});
+document.addEventListener('click', function(ev){{
+  const panel = _el('deptfilter');
+  if (!panel.hidden && !panel.contains(ev.target) && ev.target !== _el('deptbtn')) {{
+    panel.hidden = true;
+  }}
+}});
+
+// 載入 data/ 的 xlsx 清單，畫成勾選框（預設全勾）
+async function _loadFiles() {{
+  try {{
+    const d = await (await fetch('/files')).json();
+    const box = _el('filefilter');
+    if (!d.files || !d.files.length) {{
+      box.innerHTML = '<span class="ff-empty">data/ 目前沒有 xlsx</span>';
+      _updateFfLabel();
+      return;
+    }}
+    box.innerHTML =
+      '<div class="ff-actions"><a data-act="all">全選</a><a data-act="none">全不選</a></div>' +
+      d.files.map(function(f){{
+        return `<label><input type="checkbox" class="ffchk" value="${{f}}" checked> ${{f}}</label>`;
+      }}).join('');
+    box.querySelectorAll('.ffchk').forEach(c => c.addEventListener('change', _updateFfLabel));
+    box.querySelectorAll('.ff-actions a').forEach(a => a.addEventListener('click', function(){{
+      const on = a.dataset.act === 'all';
+      box.querySelectorAll('.ffchk').forEach(c => {{ c.checked = on; }});
+      _updateFfLabel();
+    }}));
+    _updateFfLabel();
+  }} catch (e) {{ _el('filefilter').innerHTML = '<span class="ff-empty">無法載入檔案清單</span>'; }}
+}}
+
+// 「篩選」按鈕：點一下開/關下拉面板；點面板外部收起
+_el('ffbtn').addEventListener('click', function(ev){{
+  ev.stopPropagation();
+  _el('filefilter').hidden = !_el('filefilter').hidden;
+}});
+document.addEventListener('click', function(ev){{
+  const panel = _el('filefilter');
+  if (!panel.hidden && !panel.contains(ev.target) && ev.target !== _el('ffbtn')) {{
+    panel.hidden = true;
+  }}
+}});
+
+_el('fileupload').onchange = async (ev) => {{
+  const files = Array.from(ev.target.files);
+  if (!files.length) return;
+  const failed = [];
+  for (const file of files) {{      // 逐一上傳（/upload 一次收一個檔）
+    const fd = new FormData();
+    fd.append('file', file);
+    const r = await (await fetch('/upload', {{method:'POST', body: fd}})).json();
+    if (!r.ok) failed.push(file.name + '：' + (r.message || '上傳失敗'));
+  }}
+  if (failed.length) alert('部分檔案上傳失敗：\\n' + failed.join('\\n'));
+  ev.target.value = '';       // 清掉，讓同一批檔可以再次觸發 onchange
+  await _loadFiles();          // 重新載入清單，新檔預設會被勾選
+}};
+
+// 從一組勾選框收集選取值；全勾（或沒有勾選框）＝不限定，回傳 null
+function _collectChecked(sel) {{
+  const chks = Array.from(document.querySelectorAll(sel));
+  const picked = chks.filter(c => c.checked).map(c => c.value);
+  const allChecked = chks.length > 0 && picked.length === chks.length;
+  return (chks.length === 0 || allChecked) ? null : picked;
+}}
+
 _el('runbtn').onclick = async () => {{
-  const lim = _el('limit').value.trim();
-  if (!lim && !confirm('未填限制筆數＝全跑剩下所有課程，可能需要數小時。確定要執行嗎？')) return;
-  const q = lim ? ('?limit=' + encodeURIComponent(lim)) : '';
+  const source_files = _collectChecked('.ffchk');
+  const departments = _collectChecked('.deptchk');
+  if (source_files && source_files.length === 0) {{ alert('請至少勾選一個檔案，或全部勾選代表全跑'); return; }}
+  if (departments && departments.length === 0) {{ alert('請至少勾選一個學系，或全部勾選代表全跑'); return; }}
+  const scopeMsg = departments ? `選中 ${{departments.length}} 個學系` : '全部學系';
+  if (!confirm(`即將對「${{scopeMsg}}」執行 pipeline，可能需要一段時間。確定要執行嗎？`)) return;
   _el('runbtn').disabled = true;
-  await fetch('/run' + q, {{method:'POST'}});
+  await fetch('/run', {{
+    method:'POST',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{source_files: source_files, departments: departments}}),
+  }});
   _poll();
 }};
+
+// ---- 匯出 CSV：下拉面板 + 前端組 CSV ----
+_el('expbtn').addEventListener('click', function(ev){{
+  ev.stopPropagation();
+  _el('exppanel').hidden = !_el('exppanel').hidden;
+}});
+document.addEventListener('click', function(ev){{
+  const p = _el('exppanel');
+  if (!p.hidden && !p.contains(ev.target) && ev.target !== _el('expbtn')) p.hidden = true;
+}});
+
+// 表頭全選框：勾選/取消目前「可見」的列（配合優先級篩選）
+const _chkall = _el('rowchkall');
+if (_chkall) _chkall.addEventListener('change', function(){{
+  document.querySelectorAll('#rectable tbody tr').forEach(function(tr){{
+    if (tr.style.display !== 'none') {{
+      const c = tr.querySelector('.rowchk');
+      if (c) c.checked = _chkall.checked;
+    }}
+  }});
+}});
+
+function _csvCell(s) {{
+  s = (s == null ? '' : String(s)).replace(/\\s+/g, ' ').trim();
+  return /[",\\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}}
+
+_el('expgo').addEventListener('click', function(){{
+  const onlyChecked = _el('exponlychecked').checked;
+  const wantPrio = new Set(Array.from(document.querySelectorAll('.expchk'))
+    .filter(c => c.checked).map(c => c.value));
+  const header = ['優先級','課程','書名','類別','館藏狀態','冊數','理由'];
+  const lines = [header.map(_csvCell).join(',')];
+  let n = 0;
+  document.querySelectorAll('#rectable tbody tr').forEach(function(tr){{
+    if (onlyChecked) {{
+      const c = tr.querySelector('.rowchk');
+      if (!c || !c.checked) return;
+    }} else {{
+      if (!wantPrio.has(tr.dataset.priority)) return;
+    }}
+    // 跳過第一欄（checkbox），讀其餘 td 的可見文字
+    const cells = Array.from(tr.querySelectorAll('td')).slice(1).map(td => td.textContent);
+    lines.push(cells.map(_csvCell).join(','));
+    n++;
+  }});
+  if (n === 0) {{ alert('沒有符合條件的資料可匯出'); return; }}
+  const blob = new Blob(['\\ufeff' + lines.join('\\r\\n')], {{type:'text/csv;charset=utf-8'}});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().slice(0,10).replace(/-/g,'');
+  a.href = url; a.download = 'recommendations_' + stamp + '.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+  _el('exppanel').hidden = true;
+}});
+
+
+_loadFiles();
+_loadDepts();
 _poll();
 </script>
 </body></html>"""
@@ -355,16 +651,75 @@ def index() -> str:
     return _render(_load_data())
 
 
+# ---------- CSV 匯出 ----------
+
+def _csv_response(header: list[str], rows: list[tuple], filename_prefix: str) -> StreamingResponse:
+    buf = io.StringIO()
+    buf.write("﻿")  # UTF-8 BOM，讓 Excel 開啟中文不會亂碼
+    writer = csv.writer(buf)
+    writer.writerow(header)
+    writer.writerows(rows)
+    buf.seek(0)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
+    filename = f"{filename_prefix}_{stamp}.csv"
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/export/recommendations")
+def export_recommendations() -> StreamingResponse:
+    data = _load_data()
+    header = ["優先級", "課程", "書名", "類別", "館藏狀態", "冊數", "理由"]
+    rows = [
+        (
+            _PRIORITY_LABEL.get(priority, priority),
+            course,
+            title,
+            "AI推薦" if _is_ai_recommended(raw_mention) else ("指定" if is_required else "參考"),
+            _STATUS_LABEL.get(status, status),
+            copies,
+            rationale,
+        )
+        for priority, course, title, is_required, status, copies, rationale, raw_mention in data["recs"]
+    ]
+    return _csv_response(header, rows, "recommendations")
+
+
+@app.get("/export/pending")
+def export_pending() -> StreamingResponse:
+    data = _load_data()
+    header = ["課程", "書名", "類別", "confidence", "來源"]
+    rows = [
+        (
+            course,
+            title,
+            "AI推薦" if _is_ai_recommended(raw_mention) else ("指定" if is_required else "參考"),
+            confidence,
+            source,
+        )
+        for course, title, confidence, source, is_required, raw_mention in data["pending"]
+    ]
+    return _csv_response(header, rows, "pending_review")
+
+
 # ---------- 執行 pipeline + 進度 ----------
 
 _run_lock = threading.Lock()
 _run_state: dict = {"status": "idle", "started_at": None, "finished_at": None, "error": None, "run_id": None}
 
 
-def _run_pipeline(run_id: str, limit: int | None) -> None:
+def _run_pipeline(run_id: str, source_files: list[str] | None, departments: list[str] | None) -> None:
     from library_agent.graph import build_graph
+    initial: dict = {}
+    if source_files:
+        initial["source_files"] = source_files
+    if departments:
+        initial["departments"] = departments
     try:
-        build_graph(run_id).invoke({"limit": limit} if limit else {})
+        build_graph(run_id).invoke(initial)
         status, error = "done", None
     except Exception as e:  # 背景執行緒的例外要自己接，否則靜默消失
         status, error = "error", str(e)[:500]
@@ -373,18 +728,52 @@ def _run_pipeline(run_id: str, limit: int | None) -> None:
 
 
 @app.post("/run")
-def start_run(limit: int | None = None) -> dict:
-    """在背景執行緒啟動整條 pipeline。limit=None 全跑；一次只准一個。"""
+def start_run(body: dict = Body(default={})) -> dict:
+    """在背景執行緒啟動整條 pipeline。source_files/departments 為 None/空＝全部；一次只准一個。"""
     from library_agent.graph import _init_run
 
+    source_files = body.get("source_files") if isinstance(body, dict) else None
+    departments = body.get("departments") if isinstance(body, dict) else None
     with _run_lock:
         if _run_state["status"] == "running":
             return {"ok": False, "message": "pipeline 已在執行中"}
         run_id = str(time.time())
         _init_run(run_id)
         _run_state.update(status="running", started_at=time.time(), finished_at=None, error=None, run_id=run_id)
-    threading.Thread(target=_run_pipeline, args=(run_id, limit), daemon=True).start()
+    threading.Thread(target=_run_pipeline, args=(run_id, source_files, departments), daemon=True).start()
     return {"ok": True}
+
+
+# ---------- xlsx 檔案 / 系所 管理 ----------
+
+@app.get("/files")
+def list_files() -> dict:
+    """列出 data/ 目錄現有的 xlsx 檔名，供前端篩選 UI 用。"""
+    names = sorted(p.name for p in DATA_DIR.glob("*.xlsx"))
+    return {"files": names}
+
+
+@app.get("/departments")
+def list_departments() -> dict:
+    """列出 DB 裡現有的開課系級（去重、排序），供前端學系篩選用。"""
+    with SessionLocal() as s:
+        rows = s.scalars(
+            select(Course.department).where(Course.department.is_not(None)).distinct()
+        ).all()
+    return {"departments": sorted(rows)}
+
+
+@app.post("/upload")
+async def upload_file(file: UploadFile = File(...)) -> dict:
+    """接收上傳的 xlsx 存到 data/（同名覆蓋）。只接受 .xlsx。"""
+    name = Path(file.filename or "").name  # 去掉任何目錄成分，防路徑穿越
+    if not name.lower().endswith(".xlsx"):
+        return {"ok": False, "message": "只接受 .xlsx 檔"}
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    dest = DATA_DIR / name
+    with open(dest, "wb") as f:
+        f.write(await file.read())
+    return {"ok": True, "filename": name}
 
 
 @app.get("/status")
@@ -399,7 +788,9 @@ def status() -> dict:
         counts = {
             "courses": s.scalar(select(func.count()).select_from(Course)) or 0,
             "citations": s.scalar(select(func.count()).select_from(Citation)) or 0,
-            "verified": s.scalar(select(func.count()).select_from(VerifiedBook)) or 0,
+            "verified": s.scalar(
+                select(func.count()).select_from(VerifiedBook).where(VerifiedBook.verified.is_(True))
+            ) or 0,
             "holdings": s.scalar(select(func.count()).select_from(HoldingCheck)) or 0,
             "recommendations": s.scalar(select(func.count()).select_from(Recommendation)) or 0,
         }

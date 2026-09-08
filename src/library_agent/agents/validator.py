@@ -11,7 +11,7 @@ from library_agent.db.models import HoldingCheck as HoldingCheckDB
 from library_agent.db.models import Recommendation as RecommendationDB
 from library_agent.db.models import VerifiedBook as VerifiedBookDB
 from library_agent.db.session import SessionLocal
-from library_agent.integrations.google_books import lookup as google_lookup
+from library_agent.integrations.google_books import QuotaExceededError, lookup as google_lookup
 from library_agent.integrations.loc import lookup as loc_lookup
 from library_agent.integrations.nla import lookup as nla_lookup
 from library_agent.state import AgentState, BookCitation, VerifiedBook
@@ -73,11 +73,31 @@ def _validate_one(citation: BookCitation) -> VerifiedBook:
         return _validate_english(citation, low_confidence)
 
 
+def _quota_exceeded_result(citation: BookCitation) -> VerifiedBook:
+    """Google 配額用完（今日）時的結果：不是真的查無此書，標成專屬 source 交人工審核，
+    與 not_found/ncl_not_found 區隔；verified=False 讓配額恢復後重跑會自動 retry
+    （且 validator 會優先撈 source='quota_exceeded' 的重驗）。"""
+    return VerifiedBook(
+        citation=citation,
+        canonical_title=citation.title,
+        canonical_authors=citation.authors,
+        isbn_13=citation.isbn,
+        source="quota_exceeded",
+        verified=False,
+        requires_human_review=True,
+    )
+
+
 def _validate_english(citation: BookCitation, low_confidence: bool) -> VerifiedBook:
     kwargs = dict(title=citation.title, authors=citation.authors, isbn=citation.isbn)
 
     # LOC 優先（無配額限制）；伺服器不穩定時 loc_lookup 會回傳 None
-    book_info = loc_lookup(**kwargs) or google_lookup(**kwargs)
+    book_info = loc_lookup(**kwargs)
+    if book_info is None:
+        try:
+            book_info = google_lookup(**kwargs)
+        except QuotaExceededError:
+            return _quota_exceeded_result(citation)
 
     if book_info:
         return VerifiedBook(
@@ -101,9 +121,16 @@ def _validate_english(citation: BookCitation, low_confidence: bool) -> VerifiedB
 
 
 def _validate_chinese(citation: BookCitation, low_confidence: bool) -> VerifiedBook:
-    # 中文書走 NCL / NBINet 做「存在性驗證」（權威書目來源）；
+    # 中文書優先走 NCL / NBINet 做「存在性驗證」（權威中文書目來源）；
+    # NCL 查不到（冷門書/建檔延遲）再用 Google Books 補上（會佔 Google 每日配額）。
     # 「政大有沒有收藏」是館藏問題，由 librarian 另查 Alma。
-    book_info = nla_lookup(title=citation.title, authors=citation.authors, isbn=citation.isbn)
+    kwargs = dict(title=citation.title, authors=citation.authors, isbn=citation.isbn)
+    book_info = nla_lookup(**kwargs)
+    if book_info is None:
+        try:
+            book_info = google_lookup(**kwargs)
+        except QuotaExceededError:
+            return _quota_exceeded_result(citation)
     if book_info:
         return VerifiedBook(
             citation=citation,
@@ -114,7 +141,7 @@ def _validate_chinese(citation: BookCitation, low_confidence: bool) -> VerifiedB
             verified=True,
             requires_human_review=low_confidence,
         )
-    # NCL 查不到：可能是冷門書/建檔延遲，標為待確認交人工審核
+    # NCL 與 Google 都查不到：可能是冷門書/建檔延遲，標為待確認交人工審核
     return VerifiedBook(
         citation=citation,
         canonical_title=citation.title,
@@ -234,6 +261,14 @@ def validator_node(state: AgentState) -> AgentState:
                 )
             )
         ).all())
+
+        # 上次 Google 配額爆掉的書（source='quota_exceeded'）優先重驗：配額有限，
+        # 先把這些「只是沒配額、不是查無此書」的處理掉，避免它們排在新書後面餓死。
+        quota_ids = set(session.scalars(
+            select(VerifiedBookDB.citation_id).where(VerifiedBookDB.source == "quota_exceeded")
+        ).all())
+
+    citations = sorted(citations, key=lambda c: 0 if c.id in quota_ids else 1)
 
     cache = _build_cache()
     print(f"  cache: {len(cache)} 筆已驗證書目可複用")
