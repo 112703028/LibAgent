@@ -23,6 +23,7 @@ class PurchasePriority(str, Enum):
 class RawSyllabus(BaseModel):
     course_id: str
     course_name: str
+    department: str | None = None  # 開課系級（xlsx「開課系級 Department and Level」欄）
     instructor: str | None = None
     enrolled_count: int = 0
     semester: str
@@ -74,3 +75,4 @@ class AgentState(TypedDict, total=False):
     limit: int | None  # 測試用：限制課程筆數
     course_ids: list[str] | None  # crawler 傳給下游的課程 ID 清單（limit 時使用）
     source_files: list[str] | None  # 這次只讀 data/ 裡這些 xlsx 檔名（None/空＝全部）
+    departments: list[str] | None  # 這次只處理這些開課系級的課（None/空＝全部）

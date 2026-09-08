@@ -1,7 +1,31 @@
 from pathlib import Path
 
-from library_agent.agents.crawler import _clean_text, _dedup, _pick_unprocessed, _select_xlsx_paths
+from library_agent.agents.crawler import (
+    _clean_text, _dedup, _filter_by_departments, _pick_unprocessed, _select_xlsx_paths,
+)
 from library_agent.state import RawSyllabus
+
+
+def _syl_dept(cid: str, dept: str | None):
+    return RawSyllabus(course_id=cid, course_name="c", department=dept,
+                       semester="114-1", source_file="f.xlsx", raw_content="book")
+
+
+def test_filter_by_departments_none_keeps_all():
+    rows = [_syl_dept("C1", "政治系"), _syl_dept("C2", "社會系")]
+    assert _filter_by_departments(rows, None) == rows
+    assert _filter_by_departments(rows, []) == rows  # 空清單＝不篩
+
+
+def test_filter_by_departments_keeps_only_selected():
+    rows = [_syl_dept("C1", "政治系"), _syl_dept("C2", "社會系"), _syl_dept("C3", "政治系")]
+    out = _filter_by_departments(rows, ["政治系"])
+    assert [s.course_id for s in out] == ["C1", "C3"]
+
+
+def test_filter_by_departments_excludes_none_department():
+    rows = [_syl_dept("C1", "政治系"), _syl_dept("C2", None)]
+    assert [s.course_id for s in _filter_by_departments(rows, ["政治系"])] == ["C1"]
 
 
 def test_clean_text():

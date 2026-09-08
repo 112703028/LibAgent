@@ -55,7 +55,6 @@ _PRIORITY_LABEL = {k: n for k, n, _ in _PRIORITY_META}
 _PRIORITY_RANK = {k: i for i, (k, _, _) in enumerate(_PRIORITY_META)}
 _STATUS_COLOR = {k: c for k, _, c in _STATUS_META}
 _STATUS_LABEL = {k: n for k, n, _ in _STATUS_META}
-_STATUS_RANK = {k: i for i, (k, _, _) in enumerate(_STATUS_META)}
 
 
 def _not_rejected():
@@ -128,19 +127,6 @@ def _load_data() -> dict:
         recs = sorted(recs, key=lambda r: (_PRIORITY_RANK.get(r[0], 9), r[1] or ""))
         recs = _dedup_course_book(recs)  # 同課同書只留一筆（去重後切掉末兩欄輔助鍵）
 
-        holdings = s.execute(
-            select(
-                HoldingCheck.status, Course.course_name, VerifiedBook.canonical_title,
-                HoldingCheck.holdings_count, HoldingCheck.alma_mms_id,
-                Citation.course_id, VerifiedBook.isbn_13,  # 末兩欄：去重輔助鍵
-            )
-            .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id)
-            .join(Citation, Citation.id == VerifiedBook.citation_id)
-            .join(Course, Course.course_id == Citation.course_id)
-        ).all()
-        holdings = sorted(holdings, key=lambda r: (_STATUS_RANK.get(r[0], 9), r[1] or ""))
-        holdings = _dedup_course_book(holdings)
-
         pending = s.execute(
             select(Course.course_name, Citation.title, Citation.confidence, VerifiedBook.source,
                    Citation.is_required, Citation.raw_mention)
@@ -150,7 +136,7 @@ def _load_data() -> dict:
             .order_by(Course.course_name)
         ).all()
 
-    return {"kpis": kpis, "priority": prio, "status": status, "recs": recs, "pending": pending, "holdings": holdings}
+    return {"kpis": kpis, "priority": prio, "status": status, "recs": recs, "pending": pending}
 
 
 # ---------- 呈現 ----------
@@ -236,31 +222,6 @@ def _rec_table(recs: list, pending: list) -> str:
     )
 
 
-def _holdings_table(holdings: list) -> str:
-    if not holdings:
-        return '<p class="empty">尚無館藏資料，請先執行 pipeline。</p>'
-    body = []
-    for status, course, title, count, mms_id in holdings:
-        scolor = _STATUS_COLOR.get(status, "#898781")
-        slabel = _STATUS_LABEL.get(status, status)
-        body.append(
-            f'<tr data-status="{html.escape(status)}">'
-            f'<td class="chk"><input type="checkbox" class="hrowchk"></td>'
-            f'<td><span class="pill" style="background:{scolor}">{html.escape(slabel)}</span></td>'
-            f'<td>{html.escape(course or "")}</td>'
-            f'<td>{html.escape(title or "")}</td>'
-            f'<td class="num">{count}</td>'
-            f'<td>{html.escape(mms_id or "")}</td></tr>'
-        )
-    return (
-        '<table id="holdtable"><thead><tr>'
-        '<th class="chk"><input type="checkbox" id="hrowchkall" title="全選/全不選"></th>'
-        '<th>館藏狀態</th><th>課程</th><th>書名</th>'
-        '<th>冊數</th><th>Alma 書目 ID</th></tr></thead>'
-        f'<tbody>{"".join(body)}</tbody></table>'
-    )
-
-
 def _render(data: dict) -> str:
     prio_bars = _bars(
         [(_PRIORITY_LABEL[k], data["priority"].get(k, 0), _PRIORITY_COLOR[k])
@@ -272,9 +233,6 @@ def _render(data: dict) -> str:
     filter_btns = '<button class="fbtn active" data-f="all">全部</button>' + "".join(
         f'<button class="fbtn" data-f="{k}">{html.escape(n)}</button>' for k, n, _ in _PRIORITY_META
     ) + f'<button class="fbtn" data-f="pending">{_PENDING_LABEL}</button>'
-    status_filter_btns = '<button class="sfbtn active" data-sf="all">全部</button>' + "".join(
-        f'<button class="sfbtn" data-sf="{k}">{html.escape(n)}</button>' for k, n, _ in _STATUS_META
-    )
     return f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>採購決策儀表板</title>
@@ -298,8 +256,6 @@ h2 {{ font-size:15px; margin:0 0 12px; color:var(--text-secondary); }}
 .runbtn {{ font:inherit; font-size:14px; font-weight:600; padding:8px 18px; border-radius:8px; cursor:pointer;
   border:1px solid var(--border); background:var(--text-primary); color:var(--surface); }}
 .runbtn:disabled {{ opacity:.45; cursor:not-allowed; }}
-.limitlbl {{ font-size:13px; color:var(--text-secondary); }}
-.limitlbl input {{ font:inherit; width:112px; padding:5px 8px; border:1px solid var(--border); border-radius:6px; margin-left:4px; }}
 .runstatus {{ font-size:13px; font-weight:600; color:var(--text-secondary); }}
 .runstatus.running {{ color:var(--warning); }}
 .runstatus.done {{ color:#0ca30c; }}
@@ -328,8 +284,7 @@ h2 {{ font-size:15px; margin:0 0 12px; color:var(--text-secondary); }}
 .kpi .lbl {{ font-size:12px; color:var(--text-secondary); margin-top:2px; }}
 .charts {{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }}
 @media (max-width:720px) {{ .charts {{ grid-template-columns:1fr; }} }}
-.tables {{ display:grid; grid-template-columns:1fr 1fr; gap:16px; align-items:start; }}
-@media (max-width:960px) {{ .tables {{ grid-template-columns:1fr; }} }}
+.tables {{ display:block; }}
 .bar-row {{ display:flex; align-items:center; gap:10px; margin:8px 0; }}
 .bar-label {{ width:96px; flex:none; text-align:right; font-size:13px; color:var(--text-secondary); }}
 .bar-track {{ flex:1; height:20px; background:var(--track); border-radius:4px; }}
@@ -365,11 +320,14 @@ th.chk, td.chk {{ width:28px; text-align:center; padding-left:6px; padding-right
 
 <div class="card runbar">
   <button id="runbtn" class="runbtn">▶ 執行 pipeline</button>
-  <label class="limitlbl">限制筆數 <input id="limit" type="number" min="1" placeholder="留空 = 全跑"></label>
   <label class="uploadbtn">上傳 xlsx<input id="fileupload" type="file" accept=".xlsx" multiple hidden></label>
   <div class="ffwrap">
-    <button id="ffbtn" class="uploadbtn" type="button">篩選 (全部)</button>
+    <button id="ffbtn" class="uploadbtn" type="button">檔案 (全部)</button>
     <div id="filefilter" class="filefilter" hidden></div>
+  </div>
+  <div class="ffwrap">
+    <button id="deptbtn" class="uploadbtn" type="button">學系 (全部)</button>
+    <div id="deptfilter" class="filefilter" hidden></div>
   </div>
   <span id="runstatus" class="runstatus">—</span>
   <span id="counts" class="counts"></span>
@@ -423,30 +381,6 @@ flowchart LR
     <div class="filters">{filter_btns}</div>
     {_rec_table(data["recs"], data["pending"])}
   </div>
-
-  <div class="card">
-    <div class="cardhead">
-      <h2>館藏明細</h2>
-      <div class="headtools">
-        <input id="holdsearch" class="searchbox" type="search" placeholder="搜尋課程或書名…">
-        <div class="ffwrap">
-          <button id="hexpbtn" class="uploadbtn" type="button">匯出 CSV ▾</button>
-          <div id="hexppanel" class="filefilter" hidden>
-            <div class="exp-sec">依館藏狀態匯出：</div>
-            <label><input type="checkbox" class="hexpchk" value="missing" checked> 缺藏</label>
-            <label><input type="checkbox" class="hexpchk" value="partial" checked> 記錄異常</label>
-            <label><input type="checkbox" class="hexpchk" value="owned_physical" checked> 已有實體</label>
-            <label><input type="checkbox" class="hexpchk" value="owned_ebook" checked> 已有電子</label>
-            <label><input type="checkbox" class="hexpchk" value="unknown" checked> 未知</label>
-            <div class="exp-sec"><label><input type="checkbox" id="hexponlychecked"> 只匯出表格中我勾選的書</label></div>
-            <button id="hexpgo" class="runbtn" type="button" style="margin-top:8px;font-size:13px;padding:6px 14px;">下載 CSV</button>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div class="filters">{status_filter_btns}</div>
-    {_holdings_table(data["holdings"])}
-  </div>
 </div>
 </div>
 <script>
@@ -495,18 +429,8 @@ document.querySelectorAll('.fbtn').forEach(function(b){{
     _applyTableView('rectable', 'priority', '.fbtn', 'recsearch');
   }});
 }});
-document.querySelectorAll('.sfbtn').forEach(function(b){{
-  b.addEventListener('click', function(){{
-    document.querySelectorAll('.sfbtn').forEach(x=>x.classList.remove('active'));
-    b.classList.add('active');
-    _applyTableView('holdtable', 'status', '.sfbtn', 'holdsearch');
-  }});
-}});
 document.getElementById('recsearch').addEventListener('input', function(){{
   _applyTableView('rectable', 'priority', '.fbtn', 'recsearch');
-}});
-document.getElementById('holdsearch').addEventListener('input', function(){{
-  _applyTableView('holdtable', 'status', '.sfbtn', 'holdsearch');
 }});
 
 const _el = id => document.getElementById(id);
@@ -531,13 +455,56 @@ async function _poll() {{
     }}
   }} catch (e) {{ _el('runstatus').textContent = '無法連線'; }}
 }}
-// 更新「篩選」按鈕上的選取計數
+// 更新「檔案」按鈕上的選取計數
 function _updateFfLabel() {{
   const chks = Array.from(document.querySelectorAll('.ffchk'));
   const picked = chks.filter(c => c.checked).length;
   const txt = (chks.length === 0 || picked === chks.length) ? '全部' : `${{picked}}/${{chks.length}}`;
-  _el('ffbtn').textContent = '篩選 (' + txt + ')';
+  _el('ffbtn').textContent = '檔案 (' + txt + ')';
 }}
+
+// 更新「學系」按鈕上的選取計數
+function _updateDeptLabel() {{
+  const chks = Array.from(document.querySelectorAll('.deptchk'));
+  const picked = chks.filter(c => c.checked).length;
+  const txt = (chks.length === 0 || picked === chks.length) ? '全部' : `${{picked}}/${{chks.length}}`;
+  _el('deptbtn').textContent = '學系 (' + txt + ')';
+}}
+
+// 載入 DB 裡的開課系級清單，畫成勾選框（預設全勾）
+async function _loadDepts() {{
+  try {{
+    const d = await (await fetch('/departments')).json();
+    const box = _el('deptfilter');
+    if (!d.departments || !d.departments.length) {{
+      box.innerHTML = '<span class="ff-empty">目前沒有系所資料</span>';
+      _updateDeptLabel();
+      return;
+    }}
+    box.innerHTML =
+      '<div class="ff-actions"><a data-act="all">全選</a><a data-act="none">全不選</a></div>' +
+      d.departments.map(function(f){{
+        return `<label><input type="checkbox" class="deptchk" value="${{f}}" checked> ${{f}}</label>`;
+      }}).join('');
+    box.querySelectorAll('.deptchk').forEach(c => c.addEventListener('change', _updateDeptLabel));
+    box.querySelectorAll('.ff-actions a').forEach(a => a.addEventListener('click', function(){{
+      const on = a.dataset.act === 'all';
+      box.querySelectorAll('.deptchk').forEach(c => {{ c.checked = on; }});
+      _updateDeptLabel();
+    }}));
+    _updateDeptLabel();
+  }} catch (e) {{ _el('deptfilter').innerHTML = '<span class="ff-empty">無法載入系所清單</span>'; }}
+}}
+_el('deptbtn').addEventListener('click', function(ev){{
+  ev.stopPropagation();
+  _el('deptfilter').hidden = !_el('deptfilter').hidden;
+}});
+document.addEventListener('click', function(ev){{
+  const panel = _el('deptfilter');
+  if (!panel.hidden && !panel.contains(ev.target) && ev.target !== _el('deptbtn')) {{
+    panel.hidden = true;
+  }}
+}});
 
 // 載入 data/ 的 xlsx 清單，畫成勾選框（預設全勾）
 async function _loadFiles() {{
@@ -591,21 +558,26 @@ _el('fileupload').onchange = async (ev) => {{
   await _loadFiles();          // 重新載入清單，新檔預設會被勾選
 }};
 
-_el('runbtn').onclick = async () => {{
-  const lim = _el('limit').value.trim();
-  // 收集勾選的檔案；全勾（或沒有勾選框）＝不限定，送 null
-  const chks = Array.from(document.querySelectorAll('.ffchk'));
+// 從一組勾選框收集選取值；全勾（或沒有勾選框）＝不限定，回傳 null
+function _collectChecked(sel) {{
+  const chks = Array.from(document.querySelectorAll(sel));
   const picked = chks.filter(c => c.checked).map(c => c.value);
   const allChecked = chks.length > 0 && picked.length === chks.length;
-  const source_files = (chks.length === 0 || allChecked) ? null : picked;
-  if (source_files && source_files.length === 0) {{ alert('請至少勾選一個 xlsx，或全部勾選代表全跑'); return; }}
-  if (!lim && !confirm('未填限制筆數＝全跑選中檔案裡剩下所有課程，可能需要數小時。確定要執行嗎？')) return;
-  const q = lim ? ('?limit=' + encodeURIComponent(lim)) : '';
+  return (chks.length === 0 || allChecked) ? null : picked;
+}}
+
+_el('runbtn').onclick = async () => {{
+  const source_files = _collectChecked('.ffchk');
+  const departments = _collectChecked('.deptchk');
+  if (source_files && source_files.length === 0) {{ alert('請至少勾選一個檔案，或全部勾選代表全跑'); return; }}
+  if (departments && departments.length === 0) {{ alert('請至少勾選一個學系，或全部勾選代表全跑'); return; }}
+  const scopeMsg = departments ? `選中 ${{departments.length}} 個學系` : '全部學系';
+  if (!confirm(`即將對「${{scopeMsg}}」執行 pipeline，可能需要一段時間。確定要執行嗎？`)) return;
   _el('runbtn').disabled = true;
-  await fetch('/run' + q, {{
+  await fetch('/run', {{
     method:'POST',
     headers: {{'Content-Type': 'application/json'}},
-    body: JSON.stringify(source_files),
+    body: JSON.stringify({{source_files: source_files, departments: departments}}),
   }});
   _poll();
 }};
@@ -666,54 +638,9 @@ _el('expgo').addEventListener('click', function(){{
   _el('exppanel').hidden = true;
 }});
 
-// ---- 館藏明細匯出 CSV（仿採購明細）----
-_el('hexpbtn').addEventListener('click', function(ev){{
-  ev.stopPropagation();
-  _el('hexppanel').hidden = !_el('hexppanel').hidden;
-}});
-document.addEventListener('click', function(ev){{
-  const p = _el('hexppanel');
-  if (!p.hidden && !p.contains(ev.target) && ev.target !== _el('hexpbtn')) p.hidden = true;
-}});
-const _hchkall = _el('hrowchkall');
-if (_hchkall) _hchkall.addEventListener('change', function(){{
-  document.querySelectorAll('#holdtable tbody tr').forEach(function(tr){{
-    if (tr.style.display !== 'none') {{
-      const c = tr.querySelector('.hrowchk');
-      if (c) c.checked = _hchkall.checked;
-    }}
-  }});
-}});
-_el('hexpgo').addEventListener('click', function(){{
-  const onlyChecked = _el('hexponlychecked').checked;
-  const wantStatus = new Set(Array.from(document.querySelectorAll('.hexpchk'))
-    .filter(c => c.checked).map(c => c.value));
-  const header = ['館藏狀態','課程','書名','冊數','Alma 書目 ID'];
-  const lines = [header.map(_csvCell).join(',')];
-  let n = 0;
-  document.querySelectorAll('#holdtable tbody tr').forEach(function(tr){{
-    if (onlyChecked) {{
-      const c = tr.querySelector('.hrowchk');
-      if (!c || !c.checked) return;
-    }} else {{
-      if (!wantStatus.has(tr.dataset.status)) return;
-    }}
-    const cells = Array.from(tr.querySelectorAll('td')).slice(1).map(td => td.textContent);
-    lines.push(cells.map(_csvCell).join(','));
-    n++;
-  }});
-  if (n === 0) {{ alert('沒有符合條件的資料可匯出'); return; }}
-  const blob = new Blob(['\\ufeff' + lines.join('\\r\\n')], {{type:'text/csv;charset=utf-8'}});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  const stamp = new Date().toISOString().slice(0,10).replace(/-/g,'');
-  a.href = url; a.download = 'holdings_' + stamp + '.csv';
-  a.click();
-  URL.revokeObjectURL(url);
-  _el('hexppanel').hidden = true;
-}});
 
 _loadFiles();
+_loadDepts();
 _poll();
 </script>
 </body></html>"""
@@ -784,13 +711,13 @@ _run_lock = threading.Lock()
 _run_state: dict = {"status": "idle", "started_at": None, "finished_at": None, "error": None, "run_id": None}
 
 
-def _run_pipeline(run_id: str, limit: int | None, source_files: list[str] | None) -> None:
+def _run_pipeline(run_id: str, source_files: list[str] | None, departments: list[str] | None) -> None:
     from library_agent.graph import build_graph
     initial: dict = {}
-    if limit:
-        initial["limit"] = limit
     if source_files:
         initial["source_files"] = source_files
+    if departments:
+        initial["departments"] = departments
     try:
         build_graph(run_id).invoke(initial)
         status, error = "done", None
@@ -801,27 +728,39 @@ def _run_pipeline(run_id: str, limit: int | None, source_files: list[str] | None
 
 
 @app.post("/run")
-def start_run(limit: int | None = None, source_files: list[str] | None = Body(default=None)) -> dict:
-    """在背景執行緒啟動整條 pipeline。limit=None 全跑；source_files=None/空＝讀全部 xlsx；一次只准一個。"""
+def start_run(body: dict = Body(default={})) -> dict:
+    """在背景執行緒啟動整條 pipeline。source_files/departments 為 None/空＝全部；一次只准一個。"""
     from library_agent.graph import _init_run
 
+    source_files = body.get("source_files") if isinstance(body, dict) else None
+    departments = body.get("departments") if isinstance(body, dict) else None
     with _run_lock:
         if _run_state["status"] == "running":
             return {"ok": False, "message": "pipeline 已在執行中"}
         run_id = str(time.time())
         _init_run(run_id)
         _run_state.update(status="running", started_at=time.time(), finished_at=None, error=None, run_id=run_id)
-    threading.Thread(target=_run_pipeline, args=(run_id, limit, source_files), daemon=True).start()
+    threading.Thread(target=_run_pipeline, args=(run_id, source_files, departments), daemon=True).start()
     return {"ok": True}
 
 
-# ---------- xlsx 檔案管理 ----------
+# ---------- xlsx 檔案 / 系所 管理 ----------
 
 @app.get("/files")
 def list_files() -> dict:
     """列出 data/ 目錄現有的 xlsx 檔名，供前端篩選 UI 用。"""
     names = sorted(p.name for p in DATA_DIR.glob("*.xlsx"))
     return {"files": names}
+
+
+@app.get("/departments")
+def list_departments() -> dict:
+    """列出 DB 裡現有的開課系級（去重、排序），供前端學系篩選用。"""
+    with SessionLocal() as s:
+        rows = s.scalars(
+            select(Course.department).where(Course.department.is_not(None)).distinct()
+        ).all()
+    return {"departments": sorted(rows)}
 
 
 @app.post("/upload")

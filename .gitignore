@@ -9,3 +9,5 @@ venv/
 .mypy_cache/
 .ruff_cache/
 .worktrees/
+backup_*.sql
+.~lock.*#
