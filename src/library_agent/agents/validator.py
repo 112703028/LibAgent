@@ -241,15 +241,20 @@ def _process_one(
         return None, f"[validator] {c.id} {c.title}: {e}", False
 
 
+def _pending_citations_query(course_ids: list[str] | None):
+    """待驗證 citation 查詢；排除已被回饋迴路 superseded 的舊書。"""
+    q = select(Citation).where(Citation.superseded_by_iteration.is_(None))
+    if course_ids:
+        q = q.where(Citation.course_id.in_(course_ids))
+    return q
+
+
 def validator_node(state: AgentState) -> AgentState:
     errors: list[str] = []
 
     course_ids = state.get("course_ids")
     with SessionLocal() as session:
-        q = select(Citation)  # 產生一個「SELECT * FROM citation」的查詢物件
-        if course_ids:
-            q = q.where(Citation.course_id.in_(course_ids))
-        citations = session.scalars(q).all()
+        citations = session.scalars(_pending_citations_query(course_ids)).all()
 
         # A：一次撈出「不需再處理」的 citation_id 集合，取代每筆一次的 _already_validated：
         #   已成功驗證(verified=True)，或已被人工審核處理(approved/rejected) → 都不重跑。
