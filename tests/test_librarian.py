@@ -1,7 +1,14 @@
 from types import SimpleNamespace
 
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
+
 from library_agent.agents import librarian as L
 from library_agent.agents.librarian import _to_status
+from library_agent.db.models import Citation as CitationDB
+from library_agent.db.models import Course as CourseDB
+from library_agent.db.models import VerifiedBook as VerifiedBookDB
+from library_agent.db.session import SessionLocal
 from library_agent.state import HoldingCheck, HoldingStatus, VerifiedBook, BookCitation
 
 
@@ -104,3 +111,44 @@ def test_stage_save_skips_when_existing_row_identical():
     changed = L._stage_save(fs, _holding(), 99)
     assert fs.calls == ["execute"]  # 只查一次，沒有 delete 也沒有 add
     assert changed is False
+
+
+# librarian_node 的 verified_books 查詢：superseded citation 的書不該進入館藏查詢
+
+def test_librarian_query_excludes_superseded_citation():
+    with SessionLocal() as s:
+        course = CourseDB(course_id="TESTLIB", course_name="測試課程", semester="9999",
+                          source_file="test", raw_content="test")
+        s.add(course); s.flush()
+        # 兩筆 citation：一筆 active（該選）、一筆已被回饋迴路換掉（不該選），各配一本 verified_book
+        c_active = CitationDB(course_id="TESTLIB", title="現役書", authors="[]",
+                              is_required=False, raw_mention="raw", confidence=0.7)
+        c_superseded = CitationDB(course_id="TESTLIB", title="已換掉的書", authors="[]",
+                                  is_required=False, raw_mention="raw", confidence=0.7,
+                                  superseded_by_iteration=1)
+        s.add_all([c_active, c_superseded]); s.flush()
+        vb_active = VerifiedBookDB(citation_id=c_active.id, canonical_title="現役書",
+                                   source="ncl", verified=True)
+        vb_superseded = VerifiedBookDB(citation_id=c_superseded.id, canonical_title="已換掉的書",
+                                       source="not_found", verified=False)
+        s.add_all([vb_active, vb_superseded]); s.commit()
+        try:
+            # 直接重現 librarian_node 裡的查詢邏輯（含 course_ids 過濾）
+            q = (
+                select(VerifiedBookDB)
+                .options(selectinload(VerifiedBookDB.citation))
+                .join(CitationDB, CitationDB.id == VerifiedBookDB.citation_id)
+                .where(CitationDB.superseded_by_iteration.is_(None))
+                .where(CitationDB.course_id.in_(["TESTLIB"]))
+            )
+            titles = {vb.canonical_title for vb in s.scalars(q).all()}
+            assert titles == {"現役書"}
+        finally:
+            s.query(VerifiedBookDB).filter(
+                VerifiedBookDB.citation_id.in_([c_active.id, c_superseded.id])
+            ).delete(synchronize_session=False)
+            s.query(CitationDB).filter(CitationDB.course_id == "TESTLIB").delete(
+                synchronize_session=False)
+            s.query(CourseDB).filter(CourseDB.course_id == "TESTLIB").delete(
+                synchronize_session=False)
+            s.commit()

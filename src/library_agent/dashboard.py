@@ -62,6 +62,11 @@ def _not_rejected():
     return or_(VerifiedBook.review_status.is_(None), VerifiedBook.review_status != "rejected")
 
 
+def _not_superseded():
+    """排除被回饋迴路換掉的舊 citation（superseded_by_iteration 非空）。"""
+    return Citation.superseded_by_iteration.is_(None)
+
+
 def _dedup_course_book(rows: list) -> list:
     """去重：同一門課的同一本書只留一筆。tuple 最後兩欄約定為 (course_id, isbn_13)。
     驗證階段偶有誤匹配（不同書名被正規化成同一本、拿到同 ISBN），導致同課同書
@@ -85,10 +90,14 @@ def _load_data() -> dict:
             "courses": s.scalar(select(func.count()).select_from(Course)) or 0,
             "citations": s.scalar(select(func.count()).select_from(Citation)) or 0,
             "verified": s.scalar(
-                select(func.count()).select_from(VerifiedBook).where(VerifiedBook.verified.is_(True))
+                select(func.count()).select_from(VerifiedBook)
+                .join(Citation, Citation.id == VerifiedBook.citation_id)
+                .where(VerifiedBook.verified.is_(True), _not_superseded())
             ) or 0,
             "pending": s.scalar(
-                select(func.count()).select_from(VerifiedBook).where(VerifiedBook.review_status == "pending")
+                select(func.count()).select_from(VerifiedBook)
+                .join(Citation, Citation.id == VerifiedBook.citation_id)
+                .where(VerifiedBook.review_status == "pending", _not_superseded())
             ) or 0,
         }
 
@@ -98,7 +107,8 @@ def _load_data() -> dict:
             select(Recommendation.priority, func.count(), func.sum(Recommendation.suggested_copies))
             .join(HoldingCheck, HoldingCheck.id == Recommendation.holding_id)
             .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id)
-            .where(_not_rejected())
+            .join(Citation, Citation.id == VerifiedBook.citation_id)
+            .where(_not_rejected(), _not_superseded())
             .group_by(Recommendation.priority)
         ).all():
             prio[priority] = cnt
@@ -108,7 +118,11 @@ def _load_data() -> dict:
 
         status = {k: 0 for k, _, _ in _STATUS_META}
         for st, cnt in s.execute(
-            select(HoldingCheck.status, func.count()).group_by(HoldingCheck.status)
+            select(HoldingCheck.status, func.count())
+            .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id)
+            .join(Citation, Citation.id == VerifiedBook.citation_id)
+            .where(_not_superseded())
+            .group_by(HoldingCheck.status)
         ).all():
             status[st] = status.get(st, 0) + cnt
 
@@ -123,7 +137,7 @@ def _load_data() -> dict:
             .join(HoldingCheck, HoldingCheck.id == Recommendation.holding_id)
             .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id)
             .join(Citation, Citation.id == VerifiedBook.citation_id)
-            .where(_not_rejected())
+            .where(_not_rejected(), _not_superseded())
         ).all()
         recs = sorted(recs, key=lambda r: (_PRIORITY_RANK.get(r[0], 9), r[1] or ""))
         recs = _dedup_course_book(recs)  # 同課同書只留一筆（去重後切掉末兩欄輔助鍵）
@@ -133,7 +147,7 @@ def _load_data() -> dict:
                    Citation.is_required, Citation.raw_mention)
             .join(Citation, Citation.id == VerifiedBook.citation_id)
             .join(Course, Course.course_id == Citation.course_id)
-            .where(VerifiedBook.review_status == "pending")
+            .where(VerifiedBook.review_status == "pending", _not_superseded())
             .order_by(Course.course_name)
         ).all()
 

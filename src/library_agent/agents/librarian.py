@@ -115,11 +115,14 @@ def librarian_node(state: AgentState) -> AgentState:
     course_ids = state.get("course_ids")
     with SessionLocal() as session:
         from library_agent.db.models import Citation as CitationDB
-        q = select(VerifiedBookDB).options(selectinload(VerifiedBookDB.citation))
+        q = (
+            select(VerifiedBookDB)
+            .options(selectinload(VerifiedBookDB.citation))
+            .join(CitationDB, CitationDB.id == VerifiedBookDB.citation_id)
+            .where(CitationDB.superseded_by_iteration.is_(None))
+        )
         if course_ids:
-            q = q.join(CitationDB, CitationDB.id == VerifiedBookDB.citation_id).where(
-                CitationDB.course_id.in_(course_ids)
-            )
+            q = q.where(CitationDB.course_id.in_(course_ids))
         verified_books = session.scalars(q).all()
 
     total = len(verified_books)

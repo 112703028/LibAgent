@@ -1,7 +1,8 @@
 """回饋迴路對照實驗：同一批需 AI 推薦的課，比較「無迴路」vs「有迴路」的驗證成功率。
 
 無迴路 = discoverer→validator 跑一次（discovery_iteration 停在 0，路由不回 discoverer）。
-有迴路 = 完整 pipeline（validator→discoverer 條件邊，最多迭代 _MAX_DISCOVERY_ITERATIONS 次）。
+有迴路 = 完整 pipeline（validator→discoverer 條件邊，迭代上限 _MAX_DISCOVERY_ITERATIONS，
+即最多重推 _MAX_DISCOVERY_ITERATIONS − 1 次；預設上限 2 ⇒ 最多重推 1 次）。
 
 用法：
     python -u experiments/feedback_loop_experiment.py --sample 25
