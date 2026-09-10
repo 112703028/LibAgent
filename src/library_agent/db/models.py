@@ -50,6 +50,8 @@ class Citation(Base):
     is_required: Mapped[bool] = mapped_column(Boolean, default=True)
     raw_mention: Mapped[str | None] = mapped_column(Text)
     confidence: Mapped[float] = mapped_column(Float, default=0.0)
+    # AI 推薦書驗證失敗被回饋迴路換掉時，標記在第幾輪被取代（None=仍有效）。保留舊列供實驗追溯。
+    superseded_by_iteration: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     course: Mapped["Course"] = relationship(back_populates="citations")
     verified_book: Mapped["VerifiedBook | None"] = relationship(back_populates="citation")
