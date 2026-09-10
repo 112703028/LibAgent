@@ -191,3 +191,11 @@ def test_pending_query_excludes_superseded():
     q = _pending_citations_query(None)
     compiled = str(q)
     assert "superseded_by_iteration" in compiled
+
+
+def test_validator_node_increments_discovery_iteration(monkeypatch):
+    # 不實際打 API：讓 validator 對空 citation 集合快速返回
+    from library_agent.agents import validator as v
+    monkeypatch.setattr(v, "_pending_citations_query", lambda cid: v.select(v.Citation).where(v.Citation.id == -1))
+    out = v.validator_node({"course_ids": ["NONE"], "discovery_iteration": 0})
+    assert out.get("discovery_iteration") == 1

@@ -321,7 +321,7 @@ def validator_node(state: AgentState) -> AgentState:
 
         session.commit()  # 收尾：把最後不足一批的寫入 commit
 
-    return {"errors": errors}
+    return {"errors": errors, "discovery_iteration": state.get("discovery_iteration", 0) + 1}
 
 
 if __name__ == "__main__":
