@@ -89,6 +89,11 @@ def _strip_subtitle(title: str) -> str:
     return re.sub(r"\s*:.*", "", title).strip()
 
 
+def _strip_volume(title: str) -> str:
+    # 剝尾端卷號後綴（", 1" / ", Vol. 2" / ", Volume 3"），避免卷號讓精確書名比對 miss。
+    return re.sub(r",\s*(?:vol(?:ume)?\.?\s*)?\d+\s*$", "", title, flags=re.IGNORECASE).strip()
+
+
 def lookup(
     title: str,
     authors: list[str] | None = None,
@@ -122,6 +127,13 @@ def lookup(
     short = _strip_subtitle(clean if (clean != title and clean) else title)
     if short not in {title, clean} and short:
         result = _query(f'dc.title="{short}" and dc.creator="{first_author}"')
+        if result:
+            return result
+
+    # 5. 再剝尾端卷號後綴（處理 "Technics and Time, 1"：卷號讓書名比對 miss）
+    base = _strip_volume(short)
+    if base not in {title, clean, short} and base:
+        result = _query(f'dc.title="{base}" and dc.creator="{first_author}"')
         if result:
             return result
 

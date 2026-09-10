@@ -78,6 +78,12 @@ def _strip_subtitle(title: str) -> str:
     return re.sub(r"\s*:.*", "", title).strip()
 
 
+def _strip_volume(title: str) -> str:
+    # 剝尾端卷號後綴（", 1" / ", Vol. 2" / ", Volume 3"），這些會讓 intitle:"..."
+    # 精確片語比對 miss（例：Technics and Time, 1）。只剝結尾模式，不動書名中間的數字。
+    return re.sub(r",\s*(?:vol(?:ume)?\.?\s*)?\d+\s*$", "", title, flags=re.IGNORECASE).strip()
+
+
 def lookup(
     title: str,
     authors: list[str] | None = None,
@@ -116,10 +122,20 @@ def lookup(
 
     # 5. 去掉副標後再查（只在有作者時才做，避免 "Management" 誤中其他書）
     # 處理 "World Politics: Trend & Transformation" 這類冒號在 query 裡被 Google 解析成 operator 的情況
+    short = _strip_subtitle(clean if (clean != title and clean) else title)
     if first_author:
-        short = _strip_subtitle(clean if (clean != title and clean) else title)
         if short not in {title, clean} and short:
             result = _search(f'intitle:"{short}" inauthor:"{first_author}"', api_key)
+            if result:
+                return result
+
+    # 6. 再剝尾端卷號後綴後查（處理 "Technics and Time, 1"：卷號讓 intitle 精確片語 miss）。
+    # 仍保留作者比對，不放寬成裸查詢，避免「查得到≠查對」的誤中。
+    if first_author:
+        base = _strip_volume(short)
+        tried = {title, clean, short}
+        if base not in tried and base:
+            result = _search(f'intitle:"{base}" inauthor:"{first_author}"', api_key)
             if result:
                 return result
 
