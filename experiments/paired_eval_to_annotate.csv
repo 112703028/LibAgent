@@ -1,0 +1,121 @@
+﻿序號,citation_id,課程ID,分層,原始書名(生成),原始作者,配到的書名(canonical),配到的作者,配到ISBN,來源,標註_生成正確(對/錯),標註_配對正確(對/錯),標註_備註
+1,2567,70307001,same,Think like an Anthropologist,Matthew Engelke,How to Think Like an Anthropologist,Matthew Engelke,9.7814E+12,google_books,t,t,建議配對=對
+2,988,31014041,same,破曉時分,朱西甯,愛在破曉時分,中間淳生 / 王小玲,,ncl,t,f,建議配對=對
+3,643,10107001,same,日本語作文的方法,,表現主題別.日本語作文的方法,佐藤政光,,ncl,t,t,建議配對=對
+4,2894,90116001,same,休閒遊憩理論與實務,歐聖榮,休閒遊憩 : 理論與實務 = Leisure and recreation : theories and practices,歐聖榮,9.78987E+12,ncl,t,t,建議配對=對
+5,1593,42089001,same,家栽之人,毛利甚八,家栽之人,魚戶修 / 小熊森林,,ncl,t,t,這兩個雖然作者看起來不一樣 但一個是原作一個是繪者
+6,1501,41203001,same,Expressionismus. Die große Künstlerbewegung der Moderne,Magdalena M. Moeller,Expressionismus,Magdalena M. Moeller,9.78383E+12,google_books,t,t,建議配對=對
+7,1425,41135001,same,伊底帕斯王,索發克里斯,暨大英劇公演1999/12/1 伊底帕斯王,索發克里斯,,ncl,t,f,作者一樣 名稱也是相似 但配對到了是公演
+8,1095,31024001,same,晚清小說史,阿英,阿英《晚清小說史》,阿英 / 許傑,9.78987E+12,ncl,t,t,建議配對=對
+9,2882,90116001,same,Cross-Cultural Behaviour in Tourism: Concepts and Analysis,Y. Reisinger / L. Turner,Cross-cultural Behaviour in Tourism,Y. Reisinger,,google_books,t,t,建議配對=對
+10,943,31013021,same,房思琪的初戀樂園,林奕含,房思琪的初戀樂園,林奕含,9.78987E+12,ncl,t,t,建議配對=對
+11,2712,70382001,same,An Introduction to Political Philosophy,Jonathan Wolff,An Introduction to Political Philosophy,Jonathan Wolff,9.7802E+12,google_books,t,t,建議配對=對
+12,2892,90116001,same,觀光與休閒遊憩資源規劃,鍾溫清 / 曾秉希,觀光與休閒遊憩資源規劃,鍾溫凊 / 曾秉希,9.78958E+12,ncl,t,t,建議配對=對
+13,3357,151508001,same,Zhuangzi: The Complete Writings,Brook Ziporyn,Zhuangzi : the complete writings,"Zhuangzi / Ziporyn, Brook",9.78162E+12,loc,t,f,一個是莊子本人 一個是外國人寫的
+14,513,3829001,same,災害防救基本計畫,行政院,擬訂災害防救基本計畫有關各類災害防救對策之研究成果報告書,張寬勇 / 趙良林,,ncl,t,f,建議配對=對
+15,889,31010011,same,唐詩解構：洛夫的唐韻新鑄藝術,洛夫,唐詩解構 : 洛夫的唐韻新鑄藝術,洛夫,9.78957E+12,ncl,t,t,建議配對=對
+16,2384,70216001,same,蘭亭序是怎麼到博物館？,陳玉金 / 馬筱鳳,蘭亭序是怎麼到博物館? : 天下第一行書,"陳, 玉金 / 馬, 筱鳳. / 黃, 麗珍.",9.78987E+12,ncl,t,t,建議配對=對
+17,1996,32001691,same,"Oxford EAP: A Course in English for Academic Purposes, Intermediate/B1+",Edward de Chazal / Sam McCarter,Oxford EAP B2: Student's Book and DVD-ROM Pack,,9.78019E+12,google_books,t,f,b1 b2似乎是不同本書
+18,706,31004011,same,唐詩三百首詳析,喻守真,"民國時期文學研究叢書. 喻守真<<唐詩三百首詳析>>, 許舜屏<<白話注釋唐詩三百首>>",張高評,9.78987E+12,ncl,t,t,配對的怪怪的 他把作者當成書名的一部份
+19,668,10122011,same,活用韓語關鍵助詞,羅際任,"活用韓語關鍵助詞 : 第一本針對國人,上課或自學均適用的助詞教材",羅際任,9.78627E+12,ncl,t,t,建議配對=對
+20,915,31013011,same,台灣原住民族文學史綱,巴蘇亞‧博伊哲努,台灣原住民族文學史綱,巴蘇亞.博伊哲努 / 浦忠成,9.78987E+12,ncl,t,t,建議配對=對
+21,1407,41133011,same,派系鬥爭與權謀政治：二二八悲劇的另一面相,陳翠蓮,派系鬥爭與權謀政治 : 二二八悲劇的另一面,陳翠蓮,,ncl,t,t,建議配對=對
+22,1455,41169001,same,Arab Television Industries,Marwan M. Kraidy,Arab Television Industries,Joe F. Khalil / Marwan M. Kraidy,9.78184E+12,google_books,t,t,建議配對=對
+23,126,347091,same,Fundamentals of Corporate Finance,"Ross, S. A. / Westerfield, R. W. / Jordan, B. D.",FUNDAMENTALS OF CORPORATE FINANCE,Richard A. Brealey / Stewart C. Myers / Alan J. Marcus,9.78981E+12,google_books,t,f,書名相同 但是是不同人寫的
+24,2420,70225001,same,中國文學史,臺靜農,"""文學""立科與""中國文學史"" : 由京師大學堂章程到林傳甲<<中國文學史>>",陳國球,,ncl,t,f,建議配對=對
+25,648,10107031,same,作文學日語,,大学.大学院留学生の日本語. 作文學日語,,9.78987E+12,ncl,t,t,建議配對=對
+26,2294,46001061,same,Python入門邁向高手之路王者歸來,洪錦魁,Python入門邁向高手之路 : 王者歸來 = Marching onto the path of Python,洪錦魁,9.78987E+12,ncl,t,t,建議配對=對
+27,1338,41125001,same,Sinophone Studies: A Critical Reader,Shu-mei Shih / Chien-hsin Tsai / Brian Bernards,Sinophone Studies,Shu-mei Shih / Chien-hsin Tsai / Brian Bernards,9.78023E+12,google_books,t,t,建議配對=對
+28,2826,90106001,same,公共衛生學,許怡欣 等41人,2006年聯合年會 : 台灣公共衛生學會、台灣流行病學學會暨台灣事故傷害預防與安全促進學會,許怡欣 等41人,,ncl,t,f,建議配對=對
+29,2634,70329001,same,台灣高砂族の音樂,黑澤隆朝,黑澤隆朝「台灣高砂族の音樂」四位排灣族耆老一甲子的回顧,周明傑,,ncl,t,t,建議配對=對
+30,2779,80001001,same,"Research Design: Qualitative, Quantitative, and Mixed Methods Approaches",John W. Creswell / J. David Creswell,Research Design,John W. Creswell / J. David Creswell,9.78151E+12,google_books,t,t,建議配對=對
+31,1991,32001631,same,"Cambridge Academic English: An Integrated Skills Course for EAP, Intermediate Student's Book",Martin Hewings / Craig Thaine / Michael McCarthy,Cambridge Academic English C1 Advanced Teacher's Book,Matt Firth / Chris Sowton / Martin Hewings / Craig Thaine,9.78052E+12,google_books,t,f,建議配對=對
+32,1414,41133011,same,八田與一研究,黃昭堂,八田與一研究,黃昭堂,,ncl,t,t,建議配對=對
+33,82,229001,same,The Beauty Myth,Naomi Wolf,The Beauty Myth,Naomi Wolf,,google_books,t,t,建議配對=對
+34,2377,70216001,same,動畫基礎技法,Richard Williams,"動畫基礎技法 : 一本充滿方法, 原則與公式的手册",威廉斯,9.78987E+12,ncl,t,t,建議配對=對
+35,1603,42089001,same,帝一之國,古屋兔丸,帝一之國,古屋兎丸 / 江昱霖,9.78986E+12,ncl,t,t,建議配對=對
+36,3169,504779001,same,The Icon and the Axe: An Interpretive History of Russian Culture,James H. Billington,The icon and the axe : an interpretive history of Russian culture,"Billington, James H.",9.78039E+12,loc,t,t,建議配對=對
+37,3304,501871001,same,A Course in Phonetics,Peter Ladefoged / Keith Johnson,A Course in phonetics,"Ladefoged, Peter. / Johnstone, Keith.",9.78129E+12,loc,t,t,建議配對=對
+38,14,218001,same,Macroeconomics,Robert Gordon,Macroeconomics,Olivier Blanchard,9.78013E+12,google_books,t,f,建議配對=對
+39,2949,100803001,same,大眾史學論集,,人人都是史家 : 大眾史學論集,周樑楷,,ncl,t,f,建議配對=對
+40,3162,502863001,same,A History of the Arab Peoples,Albert Hourani,A history of the Arab peoples,"Hourani, Albert",9.78067E+12,loc,t,t,建議配對=對
+41,971,31013031,diff,臺灣新文學思潮史綱,趙遐秋 / 呂正惠,台灣新文學思潮史綱,趙遐秋 / 呂正惠,,ncl,t,t,建議配對=對
+42,2386,70216001,diff,文化與文創,漢寶德,「點字書、數位有聲書暨閱讀推廣活動」圖書光碟.,漢寶德,,ncl,t,f,建議配對=錯
+43,1434,41135001,diff,哈姆雷,莎士比亞,2012關渡藝術節 Kuandu Arts Festival : Action Creation Transformation.,莎士比亞,,ncl,t,f,建議配對=錯
+44,1242,32001091,diff,Life 6,,Journal,Blank Unlined Blank Unlined Journals,9.78172E+12,google_books,t,f,建議配對=錯
+45,1154,31031011,diff,中國古代文體學,褚斌杰,20世纪80年代以来的中国古代文体学研究,張慕華,,ncl,t,f,建議配對=對
+46,967,31013031,diff,臺灣文學史綱,葉石濤,台灣文學史綱 : (日譯註解版),葉石濤 / 中島利郎 / 沢井律之 / 彭萱,9.78987E+12,ncl,t,f,建議配對=對
+47,1058,31023001,diff,珍惜台灣南島語言,李壬癸,八十自述 : 珍惜臺灣南島語言的人,李壬癸,9.78986E+12,ncl,t,f,建議配對=對
+48,2667,70366001,diff,書寫台灣：文學史、後殖民、後現代,周英雄 / 劉紀蕙,從口頭傳統到文字書寫 : 臺灣原住民族敘事文學的精神蛻變與返本開新,劉秀美,9.78958E+12,ncl,t,f,建議配對=對
+49,1235,31219011,diff,臺灣布袋戲表演藝術之美,吳明德,台灣布袋戲表演藝術之美,吳明德,,ncl,t,t,建議配對=對
+50,885,31010011,diff,青少年詩話,蕭蕭,靑少年詩話,蕭蕭,9.78958E+12,ncl,t,t,建議配對=錯
+51,852,31010011,diff,現代詩學,蕭蕭,"""九十年代詩歌""的內在分歧 : 以功能建構為視角",余暘,9.78701E+12,ncl,t,f,建議配對=錯
+52,1351,41133001,diff,台灣：分裂國家與民主化,若林正丈,黃四十八砦紀事,王葆心,,ncl,t,f,建議配對=錯
+53,871,31010011,diff,臺灣文學的週邊：臺灣文學與臺灣現代詩的對流,趙天儀,台灣文學的週邊 : 台灣文學與台灣現代詩的對流,趙天儀,,ncl,t,t,建議配對=對
+54,1277,41025011,diff,台灣電影：政治、經濟、美學（1949～1994）,盧非易,…年臺灣電影年鑑 = ... Taiwan cinema yearbook,陳俊哲,9.78986E+12,ncl,t,f,建議配對=對
+55,2975,101002001,diff,唐五代西北方音,羅常培,羅常培文集 = The collected linguistic works of Luo Changpei,羅常培,9.78753E+12,ncl,t,f,建議配對=錯
+56,1246,32001261,diff,Life at the International House: Season One,Dave A. Gardener,Memoirs of the Life and Writings of Benjamin Franklin ..,Benjamin Franklin,,google_books,t,f,建議配對=錯
+57,245,605001,diff,公司法論,柯芳枝,法律學研究.,賴源河,,ncl,t,f,建議配對=錯
+58,1138,31024001,diff,新中國未來記,梁啟超,"大馬扁 六十回,又名,大馬騙",黃世仲 / 春颿 / 梁啟超 / 藤谷古香 / 吳沃堯,,ncl,t,f,建議配對=錯
+59,2891,90116001,diff,休閒設施規劃與管理,王玉馨,休閒及運動設施規劃與管理 = Recreation facility management,"貝格斯 / Beggs, Brent A / 穆爾 / Mull, Richard F / 瑞尼森 / Renneisen, Mick / 穆瓦尼 / Mulvaney, Michael A / 王玉馨",9.78627E+12,ncl,t,f,建議配對=錯
+60,774,31004091,diff,驚豔唐詩,歐麗娟,驚艷唐詩 : 字行間的人生密碼,歐麗娟,9.78957E+12,ncl,t,t,建議配對=錯
+61,2492,32001701,diff,Longman Academic Writing Series 4: Essays,Alice Oshima / Ann Hogue,"Longman Academic Writing Series, Level 4",Alice Oshima / Ann Hogue / Lara Ravitch,9.78013E+12,google_books,t,t,建議配對=錯
+62,1526,42015001,diff,歐盟大麻煩(The Trouble with €urope),Roger Bootle,歐盟大麻煩 : 世界第一大經濟體分裂，全球大蕭條即將再臨？,"布特爾 / 侯英豪 / Bootle, Roger",9.78987E+12,ncl,t,t,建議配對=錯
+63,1836,2347011,diff,ACSM's Guidelines for Exercise Testing and Prescription,American College of Sports Medicine,Acsm Guideline Exercise Test Pres 11,American College of Sports Medicine / LIGUORI,9.78198E+12,google_books,t,f,建議配對=錯
+64,924,31013011,diff,台灣文學史小事典,彭瑞金 / 藍建春 / 阮美慧,臺灣文學史小事典,彭瑞金 / 藍建春 / 阮美慧 / 王鈺婷,9.78986E+12,ncl,t,t,建議配對=對
+65,1322,41114001,diff,日本經濟史,武田晴人,"""計劃化""和""民主化""",中村隆英 / 胡企林 / 胡靖 / 林華,,ncl,t,f,建議配對=錯
+66,827,31008011,diff,中國小說史略,魯迅,編年體魯迅著作全集 : 插圖本,周樹人 / 陳漱渝 / 蕭振鳴,,ncl,t,f,建議配對=錯
+67,1913,32001011,diff,Study Speaking: A Course in Spoken English for Academic Purposes,Kenneth Anderson / Joan Maclean / Tony Lynch,会话,Tony Lynch,,google_books,t,f,建議配對=錯
+68,1170,31031021,diff,談美,朱光潛,「美國文化與中美關係」演講,朱光潛,,ncl,t,f,建議配對=錯
+69,2940,100803001,diff,歷史之源,阿諾德 (John H. Arnold),上海历史之源 : 福泉山,張明華,9.78753E+12,ncl,t,f,建議配對=錯
+70,220,359221,diff,Statistics for Business & Economics,Anderson et al.,"Statistics for Business and Economics, Metric Edition",Cengage South-Western,357114485,google_books,t,f,建議配對=錯
+71,84,229001,diff,India’s Sacred Cow,Marvin Harris,The nexus of culture and social movements,Rennison Peter Lalgee,,google_books,t,f,建議配對=錯
+72,3243,782018001,diff,Data Structures and Algorithm Analysis in C++,Mark Allen Weiss,Data structures and algorithm analyis in C++,"Weiss, Mark Allen.",9.78013E+12,loc,t,t,建議配對=錯
+73,3006,100813001,diff,田庄人的故事（一）臺灣農村社會文化調查計畫口述歷史專輯,許雪姬,田庄人的故事 : 臺灣農村社會文化調查計畫口述歷史專輯 = Farmers' stories : oral histories of rural society and culture in Taiwan,許雪姬,9.78987E+12,ncl,t,t,建議配對=錯
+74,1287,41025011,diff,戲戀人生——侯孝賢電影研究,林文琪 / 沈曉茵 / 李振亞,文化容顏音像紀實 第...屆國家文藝獎得獎者紀錄片,林文琪 / 沈曉茵 / 李振亞,,ncl,t,f,建議配對=錯
+75,85,229001,diff,社會學概論——見樹又見林的社會學思維,Frank van Tubergen / 關秉寅 / 彭思錦 / 潘宣 / 馮垂華 / 蕭維毅,當代社會學概論,彭懷恩,,ncl,t,f,建議配對=錯
+76,1020,31015011,diff,神話,喬瑟夫．坎伯,"""神话中国"" vs ""轴心时代"" : ""哲学突破""说及""科学中国""说批判",葉舒憲,,ncl,t,f,建議配對=錯
+77,2393,70172011,diff,Coursepack,,The New (post-communist) Europe and Its Ethnic Problems,Géza Jeszenszky,9.78963E+12,google_books,t,f,抓對了 但原本就沒有放書
+78,806,31004111,diff,漢魏樂府的音樂與詩,錢志熙,汉魏乐府的音乐与诗,錢志熙,9.78753E+12,ncl,t,f,建議配對=錯
+79,776,31004091,diff,歷代詩選注,鄭文惠 / 歐麗娟 / 陳文華 / 吳彩娥,歴代詩選注,鄭文惠,,ncl,t,t,建議配對=錯
+80,476,2366031,diff,羽球指引,樊正治,圖解游泳指引,"H, Robertson David / 謝璨玲",,ncl,t,f,建議配對=錯
+81,1076,31023011,diff,賽夏族,胡家瑜,1000步的繽紛台灣.,"方, 玉晶. / 魏, 宇晨.",,ncl,t,f,建議配對=錯
+82,2719,70379001,diff,漢語要素教學法：語法詞彙教學篇,楊玉玲,"汉语要素教学法,",楊玉玲,9.78756E+12,ncl,t,t,建議配對=錯
+83,1165,31031021,diff,元史,,"""邊地""的主體性與多元性",唐曉峰,,ncl,t,f,建議配對=錯
+84,2987,100831001,diff,王漁洋事跡徵略,蔣寅,王漁洋事跡征略,蔣寅,,ncl,t,t,建議配對=錯
+85,1091,31023011,diff,研究的起點：從自我出發，寫一個對你（和世界）意義重大的研究計畫,墨磊寧（Thomas S.Mullaney） / 雷勤風（Christopher Rea）,林保淳參考著作,林保淳,,ncl,t,f,建議配對=錯
+86,3015,100813001,diff,清代滿漢關係研究,中國社會科學研究院近代史研究所政治史研究室,清代满汉关系研究 = A study on Manchu-Han relations in the Qing dynasty,中國社會科學研究院近代史研究所政治史研究室,9.78751E+12,ncl,t,t,建議配對=錯
+87,883,31010011,diff,二十世紀臺灣新詩史,張雙英,二十世紀台灣新詩史,張雙英,9.78957E+12,ncl,t,t,建議配對=對
+88,1504,41204001,diff,台灣流行歌：日治時代誌,林良哲,詞曲之外 : 奧山貞吉與日治時期臺灣流行歌編曲,陳婉菱,9.78986E+12,ncl,t,f,建議配對=對
+89,398,2343001,diff,學校體育教材教法與評量橄欖球,教育部,"學校體育敎材敎法與評量 : 橄欖球 = Teaching methods, materials, and assessment in physical education : rugby",林靜萍 / 陳良乾,9.78986E+12,ncl,t,t,建議配對=錯
+90,2945,100803001,diff,法國史學革命：年鑑學派，1929–2014,伯克 (Peter Burke),法国史学革命 : 年鉴学派 .,"伯克 / 刘永华 / Burke, Peter",9.7873E+12,ncl,t,t,建議配對=對
+91,1293,41042011,diff,電影百年發展史（上、下）,Kristin Thompson / David Bordwell,電影百年發展史 : 後半世紀,"湯普森 / Thompson, Kristin / 鮑威爾 / 廖金鳳 / Bordwell, David",9.78957E+12,ncl,t,t,建議配對=錯
+92,973,31014011,diff,中國哲學十九講,牟宗三,牟宗三先生全集,牟宗三,,ncl,t,f,建議配對=錯
+93,1305,41100041,diff,因明入正理論,商羯羅主,[果清法師佛法演講專輯],釋果清,,ncl,t,f,建議配對=錯
+94,1262,32001601,diff,Life 6,,Journal,Blank Unlined Blank Unlined Journals,9.78172E+12,google_books,t,f,建議配對=錯
+95,1050,31023001,diff,霧峯林家的中挫（1864-1885年）,黃富三,霧峯林家的中挫 : 一八六一 - 一八八五,黃富三,,ncl,t,t,建議配對=錯
+96,512,3829001,diff,110年國防報告書,國防部,國防報告書(漫畫版). 守護幸福的36小時,梁紹先,9.78987E+12,ncl,t,f,建議配對=錯
+97,1139,31024001,diff,福爾摩斯探案集,周瘦鵑,巴斯克維爾的獵犬,柯南道爾,,ncl,t,f,建議配對=錯
+98,2391,70260001,diff,他與她：從榮格觀點探索男性與女性的內在旅程,Robert A. Johnson,風谷裡的沙漏 複管陶笛演奏專輯 = The sandglass in the windy valley,許浩倫,,ncl,t,f,建議配對=錯
+99,2340,70039001,diff,漢語語言學,李子瑄 / 曹逢甫,"""Hanyu Pinyin"" in der Didaktik der chinesischen Sprache und Zeichenschrift","Wippermann, Dorothea / Guder-Manitius, Andreas / Jin, Meiling",9.78386E+12,ncl,t,f,建議配對=錯
+100,441,2344001,diff,身體美學,蔣勳,道南論衡 : 全國研究生漢學學術研討會論文集,蔣勳,9.78986E+12,ncl,t,f,建議配對=錯
+101,810,31004111,diff,追憶——中國古典文學中的往事再現,宇文所安,1913 : 意猶未盡的黃金時代 : 追憶二十世紀初西方文明的盛夏,伊里斯 / 姬健梅,9.78986E+12,ncl,t,f,建議配對=錯
+102,252,702021,diff,普通心理學,Robert J. Sternberg,科學名詞彙編,Robert J. Sternberg,,ncl,t,f,建議配對=錯
+103,978,31014011,diff,中國哲學文獻選編,陳榮捷,中国哲学文献选编,陳榮捷 / 楊儒賓 / 吳有能 / 朱榮貴,9.78756E+12,ncl,t,t,建議配對=錯
+104,1831,2347001,diff,ACSM's Guidelines for Exercise Testing and Prescription,American College of Sports Medicine,Acsm Guideline Exercise Test Pres 11,American College of Sports Medicine,9.78198E+12,google_books,t,f,建議配對=錯
+105,1100,31024001,diff,七俠五義,石玉崑 / 俞樾,包青天審奇案,廉正明,,ncl,t,f,建議配對=錯
+106,1538,42015011,diff,歐盟大麻煩(The Trouble with €urope),羅傑.布特爾 / Roger Bootle,歐盟大麻煩 : 世界第一大經濟體分裂，全球大蕭條即將再臨？,"布特爾 / 侯英豪 / Bootle, Roger",9.78987E+12,ncl,t,t,建議配對=錯
+107,1142,31024001,diff,斷鴻零雁記,蘇曼殊,断鴻零雁記 : 蘇曼殊.人と作品,蘇曼殊 / 飯塚朗,,ncl,t,t,建議配對=錯
+108,432,2339021,diff,木球規則,,國際比賽規則,,,ncl,t,f,建議配對=錯
+109,2360,70152001,diff,觀．台灣,,[國立臺北大學教師升等資料 : 公共事務學院.,黃朝盟,,ncl,t,f,建議配對=錯
+110,1941,32001211,diff,Oxford EAP: A Course in English for Academic Purposes: Intermediate/B1+,Edward de Chazal / Julie Moore,Oxford English for Academic Purposes,Edward De Chazal / Sam McCarter,9.78019E+12,google_books,t,t,建議配對=錯
+111,1064,31023001,diff,語言與文化（注釋增訂本）,羅常培 / 胡雙寶,"""一带一路""中的语言与文化 : 首届""一带一路""语言与文化国际学术研讨会思想选粹",李亞林,9.78757E+12,ncl,t,f,建議配對=錯
+112,2347,70078001,diff,臺灣抗日運動史研究,若林正丈,台湾抗日運動史研究,若林正丈,,ncl,t,t,建議配對=對
+113,1212,31031041,diff,中國古典散文：從中世紀到近代的散文、遊記、筆記和書信,顧彬 (Wolfgang Kubin),中国古典散文精选注译,傅璇琮 / 邓安生 / 李玉奇,9.7873E+12,ncl,t,f,建議配對=對
+114,2955,101002001,diff,中上古漢語音韻論文集,龍師宇純,龍宇純全集,龍宇純,9.78986E+12,ncl,t,f,建議配對=錯
+115,2693,70376001,diff,王家衛的電影世界,張建德 / Stephen Teo,王家卫的电影世界,"張建德 / Teo, Stephen. / 蘇濤",9.7873E+12,ncl,t,t,建議配對=錯
+116,2740,70378001,diff,語言學綱要,葉蜚聲 / 徐通鏘,公文语言学纲要,袁暉 / 郭其智,9.78754E+12,ncl,t,f,建議配對=錯
+117,790,31004111,diff,談美,朱光潛,「美國文化與中美關係」演講,朱光潛,,ncl,t,f,建議配對=錯
+118,1081,31023011,diff,台灣當代劇場的評論與詮釋,于善祿,臺灣當代劇場的評論與詮釋,于善祿,9.78986E+12,ncl,t,t,建議配對=對
+119,2929,100803001,diff,史學方法論,杜維運,東洋画の見方と技法 ; 大和絵史-絵巻物史 ; 日本中世絵師の諸問題 ; 美術史学方法論,下店静市,,ncl,t,f,建議配對=對
+120,744,31004051,diff,認知詩學的理論與實踐初探,周世箴,「修辭學之多元詮釋與教學」學術研討會論文集.,張高評,9.78957E+12,ncl,t,f,建議配對=錯
