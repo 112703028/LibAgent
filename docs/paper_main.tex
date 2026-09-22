@@ -492,14 +492,17 @@ confidence and internally plausible, such errors evade prompt constraints and
 existence checks alike, and can be caught only through external
 title--author cross-checking.
 
-One might object that this low rate merely reflects an easy task: entries
-extracted from a listed syllabus are transcribed, not generated. Splitting the
-70 entries by provenance refutes this. The \emph{AI-recommended} subset, 40
-entries whose course listed no readings, so the model generated from the
-description alone, shows a 0\% hallucination rate (0/40; Wilson 95\% CI
-0--8.8\%), whereas the single hallucination falls in the \emph{extracted} subset.
-The low rate is thus not an artifact of task simplicity; the small $n$ warrants
-caution, but the direction counters the objection.
+The A/B rate above pools extracted and recommended entries; extraction is easy
+(the book is in the source text), so one might object that the low rate merely
+reflects that. We therefore isolate the harder \emph{AI-recommended} case
+(courses with no readings, so the model generates from the description alone). On an expanded sample of 58
+AI-recommended entries, the hallucination rate is 5.2\% (3/58; Wilson 95\% CI
+1.8--14.1\%). Crucially, all three cases are \emph{mislabeling}---a real book
+paired with a wrong author or an incorrect title variant---not a fabricated,
+nonexistent book: fabrication of nonexistent books is 0/58 (95\% CI 0--6.2\%).
+The failure mode of AI recommendation is therefore not inventing books that do
+not exist, but detail-level errors on real books---exactly what external
+title--author verification is positioned to catch.
 
 To evaluate generation and verification on identical inputs, we track the same
 120 verified citations through both stages (Table~\ref{tab:paired}). Generation
@@ -646,13 +649,23 @@ upper-bound estimate, counted by citation (including cross-course repeats).
 The loop acts only on books recommended by the Discoverer. Across 50 courses
 and 249 AI-recommended books, the first-pass verification success rate already
 reaches 99.2\% (only 2 failures); the loop handles both, but because the room
-for improvement is small, the absolute gain is only 0.8 percentage points. The
-two failures have different causes: one a query defect (a volume suffix), the
-other a coverage gap. This reveals the loop's fundamental limit: when failure
-stems from the model recommending incorrectly, re-recommendation fixes it; when
-it stems from a genuinely existing book absent from the sources, re-recommending
-merely circumvents the verifier's blind spot. The loop's benefit ceiling is thus
-bounded by the structure of failure causes.
+for improvement is small, the absolute gain is only 0.8 percentage points.
+
+We also examine whether replacement preserves recommendation quality, as the loop
+could, in principle, discard a valid book merely because the source cannot find
+it. Human comparison of the two triggering cases is instructive. For an
+Indonesian-conversation course, the original recommendation was a real title with
+a misattributed author (a mislabeling), so replacing it with comprehensive
+Indonesian grammars was an improvement. But for a media-theory course, the
+original recommendation---\textit{Technics and Time, 1}, a canonical text in the
+field---failed only because its volume suffix (``, 1'') broke exact matching; the
+replacements are of comparable relevance, but a well-suited book was discarded for
+a formatting reason. This confirms a risk in the loop: it can optimize for
+retrievability at the expense of preserving a good recommendation. The proper fix
+is at the verifier (e.g., stripping volume suffixes), not re-recommendation: the
+loop circumvents the verifier's blind spot rather than curing it. Its benefit
+ceiling is thus bounded by the structure of failure causes, and its quality by the
+verifier's own defects.
 
 \subsection{Implications for Multi-Agent System Design}
 Since the LLM generation side is already highly accurate, a multi-agent
