@@ -15,6 +15,8 @@
 \usepackage[T1]{fontenc}
 \usepackage{microtype}
 \usepackage{seqsplit}    % 讓 \texttt 長 identifier（如 superseded_by_iteration）可在窄欄斷行
+\usepackage{algorithm}
+\usepackage{algpseudocode}
 
 \begin{document}
 
@@ -46,12 +48,12 @@ information and thus need external verification. We implement a six-agent LLM
 system (with a human-review node) automating the full syllabus-to-acquisition
 pipeline, augmented with a Validator$\rightarrow$Discoverer feedback loop for
 self-correction. Through four experiments we reach a counterintuitive finding:
-under appropriate prompt constraints, LLM hallucination is very low (0--1.4\%),
-and the primary bottleneck is verification, not generation: the verifier
-mis-pairs records and the queried sources under-cover certain books, neither
-stemming from books being nonexistent. A multi-agent architecture thus adds
-value not by preventing hallucination but by making every recommendation
-auditable and catching detail-level errors.
+in our constrained bibliographic task and evaluated sample, observed LLM
+hallucination is very low (0--1.4\%), and the primary bottleneck is verification,
+not generation: the verifier mis-pairs records and the queried sources
+under-cover certain books, neither stemming from books being nonexistent. In this
+setting, a multi-agent architecture adds value not by preventing hallucination
+but by making every recommendation auditable and catching detail-level errors.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -95,21 +97,24 @@ ISBNs are determined by external authoritative APIs (the National Central
 Library NCL/NBINet, the Library of Congress LOC, Google Books, and the Alma
 holdings system); the LLM never generates them.
 
-On evaluation, however, this assumption was overturned: hallucination proved
-very low (0--1.4\%) while the true bottleneck was the verification stage
-(Section IV), over half of the Chinese failures being correctable query defects
-rather than nonexistent books. This reframes the architecture's value from
+On evaluation, however, this assumption was overturned: in our sample,
+hallucination proved very low (0--1.4\%) while the true bottleneck was the
+verification stage (Section IV), over half of the Chinese failures being
+correctable query defects rather than nonexistent books. This reframes the architecture's value from
 ``preventing hallucination'' to ``providing auditability and catching
 detail-level errors.''
 
 The contributions of this paper are as follows:
 
 \begin{itemize}
-\item \textbf{An architecture-evaluation method for multi-agent LLM systems.}
+\item \textbf{An evaluation method for a modular agentic pipeline.}
 Using generation-side baselines, namely pure LLM (A) and a single LLM with a
 self-invoked tool (B), we quantitatively evaluate correctness and
 hallucination, and, via verifier-reliability and failure-cause analyses,
-localize our system's bottleneck to verification rather than generation.
+localize our system's bottleneck to verification rather than generation. Our
+evidence concerns the value of modular, enforced verification and provenance;
+we do not claim a controlled comparison of multi-agent versus single-agent
+decomposition, which we leave to future work.
 
 \item \textbf{A verification-driven self-correction mechanism, and an honest
 account of its limits.} We implement a Validator$\rightarrow$Discoverer
@@ -271,6 +276,41 @@ the LLM errs, the error is intercepted at verification, because it cannot be
 mapped to an authoritative record, rather than flowing into acquisition
 recommendations.
 
+\textit{Record pairing.} Algorithm~\ref{alg:pair} gives the Chinese pairing
+procedure (NCL, which returns multiple candidates). ISBN, if present, is a
+unique key. Otherwise a title query returns candidates, and \textsc{PickBest}
+selects one whose author overlaps the query authors (normalized substring
+match); crucially, \emph{when no author overlaps, or none is given, it falls
+back to the first candidate}---there is no rejection threshold. This maximizes
+recall but, for short or ambiguous titles that retrieve many unrelated
+candidates, forces a mis-pairing rather than an honest ``not found.'' English
+pairing (LOC/Google) differs: the query binds the author (\texttt{title AND
+creator}) and returns a single record, so it has no multi-candidate selection.
+
+\begin{algorithm}[t]
+\caption{Verifier record pairing (Chinese/NCL)}
+\label{alg:pair}
+\small
+\begin{algorithmic}[1]
+\Function{Lookup}{title $t$, authors $A$, ISBN $b$}
+  \If{$b \neq \varnothing$ \textbf{and} ISBNQuery($b$) $\neq \varnothing$}
+     \State \Return first ISBN result \Comment{unique key}
+  \EndIf
+  \State $R \gets$ TitleQuery($t$)
+  \If{$R = \varnothing$} $R \gets$ TitleQuery(\textsc{Clean}($t$)) \EndIf
+  \If{$R = \varnothing$} \Return \textsc{NotFound} \EndIf
+  \State \Return \Call{PickBest}{$R$, $A$}
+\EndFunction
+\Function{PickBest}{candidates $R$, authors $A$}
+  \If{$A = \varnothing$} \Return $R_1$ \EndIf
+  \For{$r \in R$}
+     \If{AuthorOverlap($r$, $A$)} \Return $r$ \EndIf
+  \EndFor
+  \State \Return $R_1$ \Comment{no rejection: fall back to first}
+\EndFunction
+\end{algorithmic}
+\end{algorithm}
+
 % Fig. 1 —— 執行流程示意（execution trace），置於回饋迴路段落前
 \begin{figure}[t]
 \centering
@@ -387,10 +427,12 @@ types: \textbf{(T1) recovered-after-fix}, retrieved after title normalization
 (stripping volume suffixes, subtitles, traditional--simplified differences)
 with author-matched queries; \textbf{(T2) unresolved query defect}, still
 missed after the fix, but a loose query finds a highly similar title (i.e., the
-book exists but exact matching still fails); and \textbf{(T3) coverage gap},
-where even a loose query finds no similar result (i.e., the source has not cataloged it). T1
+book exists but exact matching still fails); and \textbf{(T3) unresolved
+retrieval (probable coverage gap)}, where even a loose query finds no similar
+result---the record is not retrievable from the queried source, which we read as
+a likely coverage gap without independently confirming absence elsewhere. T1
 and T2 together are termed ``query-related'' failures (resolvable by improving
-query logic), while T3 requires source expansion. English books use the full
+query logic), while T3 points to source expansion. English books use the full
 set (49), and Chinese books a random sample ($n=100$, population 481, fixed
 random seed). Book existence is probed with loose queries against the National
 Central Library (NCL) for Chinese and Google Books/LOC for English; because
@@ -528,11 +570,12 @@ suffixes, subtitles, traditional--simplified differences). A representative case
 is \textit{Technics and Time, 1}: its trailing volume suffix (``, 1'') causes
 exact phrase matching to fail, and after the fix its authoritative record is
 retrieved (ISBN 9780804730419).
-\item \textbf{Coverage gap (requiring source expansion).} Many genuinely
-existing books are simply absent from the queried library-cataloging sources,
-most acutely English academic works and specific editions. Experiment 4 shows
-this accounts for 61.2\% of English failures and 50.0\% of Chinese
-(upper-bound estimate). Such failures cannot be solved by the pairing algorithm
+\item \textbf{Unresolved retrieval, i.e., probable coverage gap (requiring
+source expansion).} Many records are simply not retrievable from the queried
+library-cataloging sources, most acutely English academic works and specific
+editions. Experiment 4 shows this accounts for 61.2\% of English failures and
+50.0\% of Chinese (upper-bound estimate, since we do not independently confirm
+the book is absent everywhere). Such failures cannot be solved by the pairing algorithm
 and require integrating more sources; the system correctly keeps such books as
 ``not found'' rather than mis-pairing them to raise the hit rate.
 \end{enumerate}
@@ -542,6 +585,35 @@ source coverage (requiring more resources), not generation-side hallucination.
 Widening the candidate window from 5 to 20 improves resolvable cases by only 11.8
 percentage points (64.7\% still unresolved), confirming the problem is not
 candidate selection but these two deeper layers.
+
+That pairing quality is fixable is shown directly by an ablation of the pairing
+function (Algorithm~\ref{alg:pair}) over the 92 Chinese entries of the paired
+sample, re-annotated on the re-queried candidates (Table~\ref{tab:ablation}).
+Removing author matching raises the pairing error rate from 42.4\% to 50.0\%, so
+author overlap helps. More strikingly, adding a rejection threshold---returning
+\textsc{NotFound} when no candidate's author overlaps, instead of the first
+candidate---cuts the error rate among returned pairings from 42.4\% to 16.0\%, at
+the cost of a 46\% not-found rate. The mis-pairing is therefore not intrinsic:
+the absence of a rejection threshold, not candidate ranking, is the correctable
+defect. (Rates here are on the NCL sub-sample and are relative, not the
+corpus-weighted rate of Table~\ref{tab:paired}.)
+
+\begin{table}[t]
+\caption{Pairing-Function Ablation (Chinese/NCL, $n=92$; relative rates)}
+\label{tab:ablation}
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lccc}
+\toprule
+Variant & Pairing error & Not-found & Note \\
+\midrule
+Current (author match)   & 42.4\% & 0\%  & baseline \\
+No author match          & 50.0\% & 0\%  & always first candidate \\
++ Rejection threshold     & 16.0\% & 46\% & reject if no author overlap \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \subsection{Failure-Cause Diagnosis}
 % 表 2：失敗成因診斷，置於 IV.C
@@ -557,7 +629,7 @@ Failure cause & English (49) & Chinese (100) \\
 \midrule
 T1 recovered-after-fix     & 12.2\% (6)  & 33.0\% (33) \\
 T2 unresolved query defect & 26.5\% (13) & 17.0\% (17) \\
-T3 coverage gap            & 61.2\% (30) & 50.0\% (50) \\
+T3 unresolved retrieval    & 61.2\% (30) & 50.0\% (50) \\
 \textbf{Query-related (T1+T2)} & \textbf{38.8\% (19)} & \textbf{50.0\% (50)} \\
 \bottomrule
 \end{tabular}
