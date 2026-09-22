@@ -603,14 +603,14 @@ corpus-weighted rate of Table~\ref{tab:paired}.)
 \label{tab:ablation}
 \centering
 \small
-\setlength{\tabcolsep}{4pt}
-\begin{tabular}{lccc}
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{lcc}
 \toprule
-Variant & Pairing error & Not-found & Note \\
+Variant & Pairing error & Not-found \\
 \midrule
-Current (author match)   & 42.4\% & 0\%  & baseline \\
-No author match          & 50.0\% & 0\%  & always first candidate \\
-+ Rejection threshold     & 16.0\% & 46\% & reject if no author overlap \\
+Current (author match) & 42.4\% & 0\%  \\
+No author match        & 50.0\% & 0\%  \\
+Current + reject       & 16.0\% & 46\% \\
 \bottomrule
 \end{tabular}
 \end{table}
