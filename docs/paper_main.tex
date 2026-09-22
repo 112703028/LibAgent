@@ -163,9 +163,16 @@ builds on for course-syllabus bibliographies. Bibliographic normalization,
 however, faces a particular challenge: titles frequently appear as abbreviations,
 aliases, traditional--simplified variants, or with volume/subtitle suffixes, so
 that exact matching easily fails while loose matching easily mis-pairs to
-irrelevant records, especially for short titles. We address this through title
-normalization targeting such variants, combined with author matching to avoid
-mis-pairing. A non-LLM baseline is instructive here: rule-based extraction is
+irrelevant records, especially for short titles. This is, at its core, a
+classical entity-resolution / record-linkage problem: deciding whether two
+records denote the same work under noisy, incomplete fields is exactly what
+probabilistic record linkage~\cite{FellegiSunter} and the entity-resolution and
+duplicate-detection literature~\cite{Elmagarmid,Christen} formalize. Our verifier
+is a lightweight instance (title query plus author-overlap match); its 35.4\%
+error and the ablation above indicate that adopting stronger linkage techniques
+(learned similarity, rejection thresholds) is a promising direction. We address
+the immediate variants through title normalization combined with author matching
+to avoid mis-pairing. A non-LLM baseline is instructive here: rule-based extraction is
 impractical because syllabus bibliographies are free text with no fixed
 schema (Chinese, English, Japanese, and Russian entries in heterogeneous
 formats that no finite pattern set captures), and recommendation is generative
@@ -446,8 +453,12 @@ consulting the original syllabus text rather than title--topic similarity).
 Inter-annotator agreement is 98.5\% overall (98.6\% for correctness, 98.5\% for
 hallucination); because the labels are highly imbalanced (the positive class
 dominates), which renders Cohen's $\kappa$ uninformative, we report Gwet's
-AC1${}=0.985$ (almost-perfect agreement). Because of stratified sampling and
-limited sample size, the reported proportions are observational; 95\% confidence
+AC1${}=0.985$ (almost-perfect agreement). Split by provenance, agreement is
+comparable for extraction (96.7\%) and recommendation (97.4\%), with 100\%
+agreement on hallucination in both, so the more subjective recommendation
+judgments are not less reliable than the extraction ones. Because of stratified
+sampling and limited sample size, the reported proportions are observational;
+95\% confidence
 intervals are computed with the Wilson interval. All experiments count by
 citation, including cross-course repeated citations.
 
@@ -483,7 +494,11 @@ Hallucination & 0\% & 1.4\% \\
 
 Table~\ref{tab:baseline} reports the results. The generation side (A, B) shows
 uniformly high correctness (98.6--100\%) and uniformly low hallucination rates
-(0--1.4\%). Even in Condition A, with no external tools, the hallucination rate
+(0--1.4\%). The A/B difference is a single discordant entry in each metric
+(69/70 vs.\ 70/70 correctness; 0/70 vs.\ 1/70 hallucination), which McNemar's
+exact test finds non-significant; we therefore do not claim that the tool
+improves generation. Even in Condition A, with no external tools, the
+hallucination rate
 is 0\%, indicating that, under anti-hallucination prompt constraints, LLMs are
 already quite reliable at generating real bibliographies. Condition B's sole
 hallucination case is not ``fabrication from nothing'' but ``mislabeling'': the
@@ -704,19 +719,34 @@ the holdings endpoint, positioning LLM multi-agent verification as reusable
 educational infrastructure, not a one-off script.
 
 \subsection{Limitations}
-Four limitations apply. The data is one institution's single semester, limiting
-external validity. The annotation sample is limited (70 for the architecture
-comparison, 50 courses for the loop, 149 for the diagnosis); despite
-almost-perfect inter-annotator agreement (AC1${}=0.985$), proportions remain
-observational rather than significant (95\% CIs tabulated). Chinese existence
-probing queries the NCL union catalog, falling back to Google Books (which
-under-covers traditional-Chinese books), so the Chinese coverage-gap figure
-(50.0\%) is an upper bound; moreover, because the T2/T3 boundary is decided by a
-loose external lookup, the exact split may shift by a few entries as source
-indices change (our reported figures are reproducible from the released
-classification log). Finally, the feedback-loop evaluation rests on only
-two triggering failures, so its benefit estimate is illustrative rather than
-conclusive.
+The data is one institution's single semester, limiting external validity. The
+annotation samples are modest (70 for the baselines, 120 for the paired
+evaluation, 92 for the pairing ablation, 58 for the recommendation-hallucination
+check, 149 for the diagnosis); despite almost-perfect inter-annotator agreement
+(AC1${}=0.985$ on the baseline set), proportions remain observational rather than
+significant (95\% CIs tabulated). In particular, the recommendation-hallucination
+rate (5.2\%, CI 1.8--14.1\%) has a wide interval, though qualitatively all three
+cases are mislabeling rather than fabrication. Chinese existence probing queries
+the NCL union catalog, falling back to Google Books (which under-covers
+traditional-Chinese books), so the Chinese coverage-gap figure (50.0\%) is an
+upper bound; moreover, because the T2/T3 boundary is decided by a loose external
+lookup, the exact split may shift by a few entries as source indices change (our
+reported figures are reproducible from the released classification log). Finally,
+the feedback-loop evaluation rests on only two triggering failures, so its
+estimates are illustrative rather than conclusive.
+
+\subsection{Ethical Considerations}
+Because acquisition decisions allocate public funds, deployment carries
+accountability obligations. First, all AI-generated recommendations serve only
+as candidates; every acquisition decision retains human review (the Human Review
+node), and the AI cannot bypass human approval. Second, uneven coverage of the
+verification sources may introduce a language bias---traditional-Chinese and
+English entries differ in verifiability, which could systematically affect
+acquisition opportunities across languages; deployments should monitor this
+imbalance so that automation does not amplify existing collection gaps. Third,
+anchoring facts such as ISBNs to external authoritative sources rather than model
+output keeps every recommendation traceable and auditable, which we regard as a
+precondition for responsible LLM use in public-resource decisions.
 
 % ============================================================
 \section{Conclusion and Future Work}
@@ -742,6 +772,9 @@ model-autonomous verification.
 \bibitem{LLMJudge} L. Zheng et al., ``Judging LLM-as-a-judge with MT-Bench and Chatbot Arena,'' in \textit{NeurIPS}, vol.\ 36, 2023.
 \bibitem{SIE} J. Dagdelen, A. Dunn, et al., ``Structured information extraction from scientific text with large language models,'' \textit{Nature Communications}, vol.\ 15, art.\ 1418, 2024, doi: 10.1038/s41467-024-45563-x.
 \bibitem{DSS} M. Hemili, A. Laouar, and S. B. Eom, ``A decision support system for managing demand-driven collection development in university digital libraries,'' \textit{Int. J. of Information Systems and Social Change}, vol.\ 10, no.\ 4, pp.\ 57--74, 2019.
+\bibitem{FellegiSunter} I. P. Fellegi and A. B. Sunter, ``A theory for record linkage,'' \textit{J. Amer. Statist. Assoc.}, vol.\ 64, no.\ 328, pp.\ 1183--1210, 1969.
+\bibitem{Elmagarmid} A. K. Elmagarmid, P. G. Ipeirotis, and V. S. Verykios, ``Duplicate record detection: A survey,'' \textit{IEEE Trans. Knowl. Data Eng.}, vol.\ 19, no.\ 1, pp.\ 1--16, 2007.
+\bibitem{Christen} P. Christen, \textit{Data Matching: Concepts and Techniques for Record Linkage, Entity Resolution, and Duplicate Detection}. Springer, 2012.
 \end{thebibliography}
 
 \end{document}
