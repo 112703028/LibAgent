@@ -168,7 +168,7 @@ classical entity-resolution / record-linkage problem: deciding whether two
 records denote the same work under noisy, incomplete fields is exactly what
 probabilistic record linkage~\cite{FellegiSunter} and the entity-resolution and
 duplicate-detection literature~\cite{Elmagarmid,Christen} formalize. Our verifier
-is a lightweight instance (title query plus author-overlap match); its 35.4\%
+is a lightweight instance (title query plus author-overlap match); its 29.9\%
 error and the ablation above indicate that adopting stronger linkage techniques
 (learned similarity, rejection thresholds) is a promising direction. We address
 the immediate variants through title normalization combined with author matching
@@ -520,23 +520,23 @@ not exist, but detail-level errors on real books---exactly what external
 title--author verification is positioned to catch.
 
 To evaluate generation and verification on identical inputs, we track the same
-120 verified citations through both stages (Table~\ref{tab:paired}). Generation
-correctness is 100\% (120/120): these are books actually listed in syllabi, so
+300 verified citations through both stages (Table~\ref{tab:paired}). Generation
+correctness is 99.7\% (299/300): these are books actually listed in syllabi, so
 the LLM reproduces them reliably. Yet among these correctly generated citations,
 the verifier pairs a substantial fraction to an irrelevant authoritative record
 (e.g., a scripture title paired to a stage-drama performance record). Because the
 sample is stratified by title similarity---oversampling divergent-title cases
 where mis-pairing concentrates---we report per-stratum rates and a corpus-weighted
 estimate rather than a pooled rate that the design would bias: similar-title
-records mis-pair at 27.5\%, divergent-title at 67.5\%, for a corpus-weighted
-pairing error rate of 35.4\%. This paired design localizes the bottleneck to the
+records mis-pair at 21.0\%, divergent-title at 66.0\%, for a corpus-weighted
+pairing error rate of 29.9\%. This paired design localizes the bottleneck to the
 verification stage: generation is essentially error-free on real syllabus books,
 while roughly a third of the paired records are incorrect. We analyze this
 failure next.
 
 \begin{table}[t]
 \caption{Paired Evaluation of the Same Citations Through Generation and Verifier
-Pairing ($n=120$; stratified, corpus-weighted)}
+Pairing ($n=300$; stratified, corpus-weighted)}
 \label{tab:paired}
 \centering
 \small
@@ -545,19 +545,19 @@ Pairing ($n=120$; stratified, corpus-weighted)}
 \toprule
 Transition & Pair correct & Pair wrong \\
 \midrule
-Generation correct & 55 & 65 \\
-Generation wrong    & 0  & 0  \\
+Generation correct & 147 & 152 \\
+Generation wrong    & 0   & 1   \\
 \midrule
 \multicolumn{3}{l}{\textit{Pairing error rate by stratum:}} \\
-\quad Similar-title (80.3\% of corpus)   & \multicolumn{2}{c}{27.5\% (11/40)} \\
-\quad Divergent-title (19.7\% of corpus) & \multicolumn{2}{c}{67.5\% (54/80)} \\
-\quad \textbf{Corpus-weighted}           & \multicolumn{2}{c}{\textbf{35.4\%}} \\
+\quad Similar-title (80.3\% of corpus)   & \multicolumn{2}{c}{21.0\% (21/100)} \\
+\quad Divergent-title (19.7\% of corpus) & \multicolumn{2}{c}{66.0\% (132/200)} \\
+\quad \textbf{Corpus-weighted}           & \multicolumn{2}{c}{\textbf{29.9\%}} \\
 \bottomrule
 \end{tabular}
 
 \vspace{2pt}
-{\scriptsize The same 120 verified citations are tracked through both stages.
-Strata (similar-/divergent-title) are sampled 40/80 but weighted by their true
+{\scriptsize The same 300 verified citations are tracked through both stages.
+Strata (similar-/divergent-title) are sampled 100/200 but weighted by their true
 corpus proportions (80.3\%/19.7\%); we report the weighted rate, not the raw
 pooled rate, which the stratified design would bias.}
 \end{table}
@@ -576,7 +576,7 @@ failures resolve into a three-layer structure:
 the primary problem.
 \item \textbf{Verifier mis-pairing (a correctable pairing defect).} The paired
 evaluation (Table~\ref{tab:paired}) already establishes the corpus-weighted
-pairing error rate at 35.4\%. Experiment 2 further localizes \emph{where} this
+pairing error rate at 29.9\%. Experiment 2 further localizes \emph{where} this
 concentrates: among verified Chinese books, short titles ($\leq 4$ characters)
 mis-pair at 66.7\% ($n=60$), far exceeding general titles at 25.0\% ($n=60$),
 confirming that short titles easily mis-pair to irrelevant records in
@@ -720,7 +720,7 @@ educational infrastructure, not a one-off script.
 
 \subsection{Limitations}
 The data is one institution's single semester, limiting external validity. The
-annotation samples are modest (70 for the baselines, 120 for the paired
+annotation samples are modest (70 for the baselines, 300 for the paired
 evaluation, 92 for the pairing ablation, 58 for the recommendation-hallucination
 check, 149 for the diagnosis); despite almost-perfect inter-annotator agreement
 (AC1${}=0.985$ on the baseline set), proportions remain observational rather than
@@ -758,10 +758,12 @@ bottleneck proved to be verification, namely record mis-pairing and source
 coverage gaps, rather than generation-side hallucination (0--1.4\%); a
 multi-agent
 architecture's value here thus lies not in preventing hallucination but in
-auditability and detail-level error-catching. Two directions follow: expanding
+auditability and detail-level error-catching. Three directions follow: expanding
 source coverage (most failed books appear in commercial trade-bibliography
-sources), and cross-institutional, larger datasets to test enforced versus
-model-autonomous verification.
+sources); replacing the lightweight pairing with stronger record-linkage
+techniques (learned similarity, rejection thresholds, or structured decision
+models) to reduce mis-pairing; and cross-institutional, larger datasets to test
+enforced versus model-autonomous verification.
 
 % ============================================================
 \begin{thebibliography}{00}
