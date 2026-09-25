@@ -288,7 +288,7 @@ procedure (NCL, which returns multiple candidates). ISBN, if present, is a
 unique key. Otherwise a title query returns candidates, and \textsc{PickBest}
 selects one whose author overlaps the query authors (normalized substring
 match); crucially, \emph{when no author overlaps, or none is given, it falls
-back to the first candidate}---there is no rejection threshold. This maximizes
+back to the first candidate}: there is no rejection threshold. This maximizes
 recall but, for short or ambiguous titles that retrieve many unrelated
 candidates, forces a mis-pairing rather than an honest ``not found.'' English
 pairing (LOC/Google) differs: the query binds the author (\texttt{title AND
@@ -436,7 +436,7 @@ with author-matched queries; \textbf{(T2) unresolved query defect}, still
 missed after the fix, but a loose query finds a highly similar title (i.e., the
 book exists but exact matching still fails); and \textbf{(T3) unresolved
 retrieval (probable coverage gap)}, where even a loose query finds no similar
-result---the record is not retrievable from the queried source, which we read as
+result: the record is not retrievable from the queried source, which we read as
 a likely coverage gap without independently confirming absence elsewhere. T1
 and T2 together are termed ``query-related'' failures (resolvable by improving
 query logic), while T3 points to source expansion. English books use the full
@@ -512,11 +512,11 @@ The A/B rate above pools extracted and recommended entries; extraction is easy
 reflects that. We therefore isolate the harder \emph{AI-recommended} case
 (courses with no readings, so the model generates from the description alone). On an expanded sample of 58
 AI-recommended entries, the hallucination rate is 5.2\% (3/58; Wilson 95\% CI
-1.8--14.1\%). Crucially, all three cases are \emph{mislabeling}---a real book
-paired with a wrong author or an incorrect title variant---not a fabricated,
+1.8--14.1\%). Crucially, all three cases are \emph{mislabeling} (a real book
+paired with a wrong author or an incorrect title variant), not a fabricated,
 nonexistent book: fabrication of nonexistent books is 0/58 (95\% CI 0--6.2\%).
 The failure mode of AI recommendation is therefore not inventing books that do
-not exist, but detail-level errors on real books---exactly what external
+not exist, but detail-level errors on real books, exactly what external
 title--author verification is positioned to catch.
 
 To evaluate generation and verification on identical inputs, we track the same
@@ -525,8 +525,8 @@ correctness is 99.7\% (299/300): these are books actually listed in syllabi, so
 the LLM reproduces them reliably. Yet among these correctly generated citations,
 the verifier pairs a substantial fraction to an irrelevant authoritative record
 (e.g., a scripture title paired to a stage-drama performance record). Because the
-sample is stratified by title similarity---oversampling divergent-title cases
-where mis-pairing concentrates---we report per-stratum rates and a corpus-weighted
+sample is stratified by title similarity (oversampling divergent-title cases
+where mis-pairing concentrates), we report per-stratum rates and a corpus-weighted
 estimate rather than a pooled rate that the design would bias: similar-title
 records mis-pair at 21.0\%, divergent-title at 66.0\%, for a corpus-weighted
 pairing error rate of 29.9\%. This paired design localizes the bottleneck to the
@@ -608,9 +608,9 @@ That pairing quality is fixable is shown directly by an ablation of the pairing
 function (Algorithm~\ref{alg:pair}) over the 92 Chinese entries of the paired
 sample, re-annotated on the re-queried candidates (Table~\ref{tab:ablation}).
 Removing author matching raises the pairing error rate from 42.4\% to 50.0\%, so
-author overlap helps. More strikingly, adding a rejection threshold---returning
+author overlap helps. More strikingly, adding a rejection threshold (returning
 \textsc{NotFound} when no candidate's author overlaps, instead of the first
-candidate---cuts the error rate among returned pairings from 42.4\% to 16.0\%, at
+candidate) cuts the error rate among returned pairings from 42.4\% to 16.0\%, at
 the cost of a 46\% not-found rate. The mis-pairing is therefore not intrinsic:
 the absence of a rejection threshold, not candidate ranking, is the correctable
 defect. (Rates here are on the NCL sub-sample and are relative, not the
@@ -672,8 +672,8 @@ it. Human comparison of the two triggering cases is instructive. For an
 Indonesian-conversation course, the original recommendation was a real title with
 a misattributed author (a mislabeling), so replacing it with comprehensive
 Indonesian grammars was an improvement. But for a media-theory course, the
-original recommendation---\textit{Technics and Time, 1}, a canonical text in the
-field---failed only because its volume suffix (``, 1'') broke exact matching; the
+original recommendation, \textit{Technics and Time, 1}, a canonical text in the
+field, failed only because its volume suffix (``, 1'') broke exact matching; the
 replacements are of comparable relevance, but a well-suited book was discarded for
 a formatting reason. This confirms a risk in the loop: it can optimize for
 retrievability at the expense of preserving a good recommendation. The proper fix
@@ -740,7 +740,7 @@ Because acquisition decisions allocate public funds, deployment carries
 accountability obligations. First, all AI-generated recommendations serve only
 as candidates; every acquisition decision retains human review (the Human Review
 node), and the AI cannot bypass human approval. Second, uneven coverage of the
-verification sources may introduce a language bias---traditional-Chinese and
+verification sources may introduce a language bias: traditional-Chinese and
 English entries differ in verifiability, which could systematically affect
 acquisition opportunities across languages; deployments should monitor this
 imbalance so that automation does not amplify existing collection gaps. Third,
