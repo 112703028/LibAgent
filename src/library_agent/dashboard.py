@@ -434,7 +434,11 @@ flowchart LR
 </div>
 </div>
 <script>
-mermaid.initialize({{ startOnLoad: true, theme: 'neutral', securityLevel: 'loose' }});
+// curve:'step' 讓連線走直角折線（預設 basis 是貝茲曲線）。
+// 實測過 basis/linear/step/stepBefore/stepAfter，只有 step 系列產生 90 度轉角，
+// 其中 step 的直角比例最高；linear 只是把曲線拉直成斜線，不是直角。
+mermaid.initialize({{ startOnLoad: true, theme: 'neutral', securityLevel: 'loose',
+                      flowchart: {{ curve: 'step' }} }});
 
 const _NODE_COLOR = {_node_color_js()};
 
