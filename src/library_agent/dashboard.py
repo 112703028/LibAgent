@@ -264,6 +264,11 @@ h1 {{ font-size:22px; margin:0 0 4px; }}
 .sub {{ color:var(--text-secondary); font-size:13px; margin-bottom:20px; }}
 h2 {{ font-size:15px; margin:0 0 12px; color:var(--text-secondary); }}
 .card {{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 18px; margin-bottom:16px; }}
+.mermaid {{ margin:0; text-align:center; overflow-x:auto; }}
+.flowlegend {{ display:flex; gap:16px; flex-wrap:wrap; justify-content:center;
+  margin-top:10px; font-size:12px; color:var(--text-secondary); }}
+.flowlegend span {{ display:inline-flex; align-items:center; gap:5px; }}
+.flowlegend i {{ width:10px; height:10px; border-radius:3px; display:inline-block; }}
 .runbar {{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; }}
 .runbtn {{ font:inherit; font-size:14px; font-weight:600; padding:8px 18px; border-radius:8px; cursor:pointer;
   border:1px solid var(--border); background:var(--text-primary); color:var(--surface); }}
@@ -352,17 +357,26 @@ th.chk, td.chk {{ width:28px; text-align:center; padding-left:6px; padding-right
   <h2>Pipeline 進度</h2>
   <pre class="mermaid" id="flowchart">
 flowchart LR
-    crawler[crawler]
-    parser[parser]
-    discoverer[discoverer]
-    validator[validator]
-    librarian[librarian]
-    human_review[human_review]
-    recommender[recommender]
+    crawler["crawler<br/>爬取課綱"]
+    parser["parser<br/>解析書目"]
+    discoverer["discoverer<br/>AI 推薦補書"]
+    validator["validator<br/>書目驗證"]
+    match_auditor["match_auditor<br/>配對稽核"]
+    librarian["librarian<br/>館藏查詢"]
+    recommender["recommender<br/>採購建議"]
+    human_review["human_review<br/>人工審核"]
     crawler --> parser --> discoverer --> validator
-    validator --> librarian --> recommender
-    validator --> human_review
+    validator -.->|AI 推薦書驗證失敗則重推| discoverer
+    validator --> match_auditor
+    match_auditor --> librarian --> recommender
+    match_auditor -->|配對可疑 / 低信心| human_review
   </pre>
+  <div class="flowlegend">
+    <span><i style="background:#898781"></i>未開始</span>
+    <span><i style="background:#fab219"></i>執行中</span>
+    <span><i style="background:#0ca30c"></i>完成</span>
+    <span><i style="background:#d03b3b"></i>錯誤</span>
+  </div>
 </div>
 
 <div class="kpi-grid">{_kpi_tiles(data["kpis"])}</div>
