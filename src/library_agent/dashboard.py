@@ -259,6 +259,9 @@ def _rec_table(recs: list, pending: list) -> str:
 
 
 def _render(data: dict) -> str:
+    # 延後 import：graph 會把所有 agent 模組拉進來，與本檔其他用到 graph 的地方一致
+    from library_agent.graph import _MAX_DISCOVERY_ITERATIONS
+
     prio_bars = _bars(
         [(_PRIORITY_LABEL[k], data["priority"].get(k, 0), _PRIORITY_COLOR[k])
          for k, _, _ in _PRIORITY_META]
@@ -295,6 +298,13 @@ h2 {{ font-size:15px; margin:0 0 12px; color:var(--text-secondary); }}
 /* 淺色色塊（未開始）在白底卡片上要有輪廓才看得出來 */
 .flowlegend i {{ width:10px; height:10px; border-radius:3px; display:inline-block;
   border:1px solid rgba(0,0,0,.12); }}
+.flownote {{ margin:8px 0 0; text-align:center; font-size:12px; line-height:1.6;
+  color:var(--text-secondary); }}
+.flownote b {{ color:var(--text-primary); font-weight:600; }}
+/* 邊標籤要蓋住底下的線：mermaid 自己只給 background-color 卻沒有留白，
+   字會跟線黏在一起（curve:step 的轉折點剛好也在標籤位置）。
+   選擇器用 #flowchart span.edgeLabel 壓過 mermaid 內嵌的 #<id> .edgeLabel。 */
+#flowchart span.edgeLabel {{ background:var(--surface); padding:2px 7px; border-radius:4px; }}
 .runbar {{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; }}
 .runbtn {{ font:inherit; font-size:14px; font-weight:600; padding:8px 18px; border-radius:8px; cursor:pointer;
   border:1px solid var(--border); background:var(--text-primary); color:var(--surface); }}
@@ -392,12 +402,16 @@ flowchart LR
     recommender["recommender<br/>採購建議"]
     human_review["human_review<br/>人工審核"]
     crawler --> parser --> discoverer --> validator
-    validator -.->|AI 推薦書驗證失敗則重推| discoverer
+    validator -.->|重推| discoverer
     validator --> match_auditor
     match_auditor --> librarian --> recommender
-    match_auditor -->|配對可疑 / 低信心| human_review
+    match_auditor -->|待審| human_review
   </pre>
   <div class="flowlegend">{_flow_legend()}</div>
+  <p class="flownote">
+    虛線為條件邊：AI 推薦書驗證失敗時回 discoverer <b>重推</b>（最多 {_MAX_DISCOVERY_ITERATIONS - 1} 輪）。
+    配對可疑或抽取信心度不足的書會進人工審核佇列（<b>待審</b>），並排除在採購建議之外。
+  </p>
 </div>
 
 <div class="kpi-grid">{_kpi_tiles(data["kpis"])}</div>
