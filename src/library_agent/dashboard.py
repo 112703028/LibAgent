@@ -301,10 +301,6 @@ h2 {{ font-size:15px; margin:0 0 12px; color:var(--text-secondary); }}
 .flownote {{ margin:8px 0 0; text-align:center; font-size:12px; line-height:1.6;
   color:var(--text-secondary); }}
 .flownote b {{ color:var(--text-primary); font-weight:600; }}
-/* 邊標籤要蓋住底下的線：mermaid 自己只給 background-color 卻沒有留白，
-   字會跟線黏在一起（curve:step 的轉折點剛好也在標籤位置）。
-   選擇器用 #flowchart span.edgeLabel 壓過 mermaid 內嵌的 #<id> .edgeLabel。 */
-#flowchart span.edgeLabel {{ background:var(--surface); padding:2px 7px; border-radius:4px; }}
 .runbar {{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; }}
 .runbtn {{ font:inherit; font-size:14px; font-weight:600; padding:8px 18px; border-radius:8px; cursor:pointer;
   border:1px solid var(--border); background:var(--text-primary); color:var(--surface); }}
@@ -402,15 +398,16 @@ flowchart LR
     recommender["recommender<br/>採購建議"]
     human_review["human_review<br/>人工審核"]
     crawler --> parser --> discoverer --> validator
-    validator -.->|重推| discoverer
+    validator -.-> discoverer
     validator --> match_auditor
     match_auditor --> librarian --> recommender
-    match_auditor -->|待審| human_review
+    match_auditor --> human_review
   </pre>
   <div class="flowlegend">{_flow_legend()}</div>
   <p class="flownote">
-    虛線為條件邊：AI 推薦書驗證失敗時回 discoverer <b>重推</b>（最多 {_MAX_DISCOVERY_ITERATIONS - 1} 輪）。
-    配對可疑或抽取信心度不足的書會進人工審核佇列（<b>待審</b>），並排除在採購建議之外。
+    <b>虛線</b>為條件邊：AI 推薦書驗證失敗時回 discoverer 重推（最多 {_MAX_DISCOVERY_ITERATIONS - 1} 輪）。
+    <b>match_auditor</b> 會把配對可疑、或抽取信心度不足的書送進 human_review 佇列，
+    並排除在採購建議之外。
   </p>
 </div>
 
