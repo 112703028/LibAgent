@@ -9,6 +9,7 @@ FastAPI 服務，讀既有 DB 呈現缺口分析：KPI 概覽、採購優先級�
 import csv
 import html
 import io
+import json
 import threading
 import time
 from datetime import datetime, timezone
@@ -57,6 +58,16 @@ _PRIORITY_LABEL = {k: n for k, n, _ in _PRIORITY_META}
 _PRIORITY_RANK = {k: i for i, (k, _, _) in enumerate(_PRIORITY_META)}
 _STATUS_COLOR = {k: c for k, _, c in _STATUS_META}
 _STATUS_LABEL = {k: n for k, n, _ in _STATUS_META}
+
+# Pipeline 流程圖的節點狀態色（對應 PipelineNodeRun.status）。
+# 圖例與前端上色用的 JS 物件都從這裡產生，避免兩邊各寫一份 hex 改色時脫鉤。
+# pending 用淺灰：節點標籤是深色字，底色太深會讀不到，而且「未開始」本來就該看起來是惰性的。
+_NODE_STATUS_META = [
+    ("pending", "未開始", "#d8dce1"),
+    ("running", "執行中", "#fab219"),
+    ("done", "完成", "#0ca30c"),
+    ("error", "錯誤", "#d03b3b"),
+]
 
 
 def _not_superseded():
@@ -152,6 +163,19 @@ def _load_data() -> dict:
 
 
 # ---------- 呈現 ----------
+
+def _flow_legend() -> str:
+    """流程圖下方的狀態色圖例。"""
+    return "".join(
+        f'<span><i style="background:{color}"></i>{html.escape(label)}</span>'
+        for _, label, color in _NODE_STATUS_META
+    )
+
+
+def _node_color_js() -> str:
+    """給前端 _updateFlowchart() 用的 status → 色碼對照表（JS 物件字面值）。"""
+    return json.dumps({k: c for k, _, c in _NODE_STATUS_META}, ensure_ascii=False)
+
 
 def _bars(items: list[tuple[str, int, str]]) -> str:
     maxv = max((v for _, v, _ in items), default=0) or 1
@@ -268,7 +292,9 @@ h2 {{ font-size:15px; margin:0 0 12px; color:var(--text-secondary); }}
 .flowlegend {{ display:flex; gap:16px; flex-wrap:wrap; justify-content:center;
   margin-top:10px; font-size:12px; color:var(--text-secondary); }}
 .flowlegend span {{ display:inline-flex; align-items:center; gap:5px; }}
-.flowlegend i {{ width:10px; height:10px; border-radius:3px; display:inline-block; }}
+/* 淺色色塊（未開始）在白底卡片上要有輪廓才看得出來 */
+.flowlegend i {{ width:10px; height:10px; border-radius:3px; display:inline-block;
+  border:1px solid rgba(0,0,0,.12); }}
 .runbar {{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; }}
 .runbtn {{ font:inherit; font-size:14px; font-weight:600; padding:8px 18px; border-radius:8px; cursor:pointer;
   border:1px solid var(--border); background:var(--text-primary); color:var(--surface); }}
@@ -371,12 +397,7 @@ flowchart LR
     match_auditor --> librarian --> recommender
     match_auditor -->|配對可疑 / 低信心| human_review
   </pre>
-  <div class="flowlegend">
-    <span><i style="background:#898781"></i>未開始</span>
-    <span><i style="background:#fab219"></i>執行中</span>
-    <span><i style="background:#0ca30c"></i>完成</span>
-    <span><i style="background:#d03b3b"></i>錯誤</span>
-  </div>
+  <div class="flowlegend">{_flow_legend()}</div>
 </div>
 
 <div class="kpi-grid">{_kpi_tiles(data["kpis"])}</div>
@@ -415,7 +436,7 @@ flowchart LR
 <script>
 mermaid.initialize({{ startOnLoad: true, theme: 'neutral', securityLevel: 'loose' }});
 
-const _NODE_COLOR = {{ pending: '#898781', running: '#fab219', done: '#0ca30c', error: '#d03b3b' }};
+const _NODE_COLOR = {_node_color_js()};
 
 function _updateFlowchart(nodes) {{
   const svg = document.querySelector('#flowchart svg');
