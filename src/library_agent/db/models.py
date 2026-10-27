@@ -71,6 +71,12 @@ class VerifiedBook(Base):
     # 人工審核決定：None（不需/未產生）/ pending / approved / rejected
     review_status: Mapped[str | None] = mapped_column(String(20))
 
+    # match_auditor 的配對稽核：確認「配到的權威記錄」是否真的是原書
+    # None = 尚未稽核（也是重跑時的待辦標記）；same = 同一本；mismatch = 配錯
+    pairing_verdict: Mapped[str | None] = mapped_column(String(10))
+    pairing_judge: Mapped[str | None] = mapped_column(String(10))   # rule | llm
+    pairing_reason: Mapped[str | None] = mapped_column(Text)
+
     citation: Mapped["Citation"] = relationship(back_populates="verified_book")
     holding: Mapped["HoldingCheck | None"] = relationship(back_populates="verified_book")
 

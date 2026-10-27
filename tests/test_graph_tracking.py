@@ -33,7 +33,7 @@ class _FakeSession:
 
 def test_node_names_order_matches_graph_topology():
     assert NODE_NAMES == [
-        "crawler", "parser", "discoverer", "validator",
+        "crawler", "parser", "discoverer", "validator", "match_auditor",
         "librarian", "human_review", "recommender",
     ]
 

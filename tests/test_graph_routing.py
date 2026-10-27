@@ -39,15 +39,15 @@ def test_route_to_discoverer_when_failed_ai_and_under_limit():
         _cleanup("TESTROUTE")
 
 
-def test_route_to_librarian_when_iteration_at_limit():
+def test_route_to_match_auditor_when_iteration_at_limit():
     _seed_failed_ai("TESTROUTE2")
     try:
         state = {"course_ids": ["TESTROUTE2"], "discovery_iteration": _MAX_DISCOVERY_ITERATIONS}
-        assert _route_after_validator(state) == "librarian"
+        assert _route_after_validator(state) == "match_auditor"
     finally:
         _cleanup("TESTROUTE2")
 
 
-def test_route_to_librarian_when_no_failed_ai():
+def test_route_to_match_auditor_when_no_failed_ai():
     state = {"course_ids": ["NONEXISTENT_COURSE"], "discovery_iteration": 0}
-    assert _route_after_validator(state) == "librarian"
+    assert _route_after_validator(state) == "match_auditor"

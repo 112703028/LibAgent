@@ -17,10 +17,11 @@ from pathlib import Path
 from fastapi import Body, FastAPI, File, UploadFile
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 
 from library_agent.agents.crawler import DATA_DIR
 from library_agent.dept_map import DEPARTMENT_MAP
+from library_agent.db.filters import not_superseded, purchasable
 from library_agent.db.models import (
     Citation,
     Course,
@@ -58,13 +59,9 @@ _STATUS_COLOR = {k: c for k, _, c in _STATUS_META}
 _STATUS_LABEL = {k: n for k, n, _ in _STATUS_META}
 
 
-def _not_rejected():
-    return or_(VerifiedBook.review_status.is_(None), VerifiedBook.review_status != "rejected")
-
-
 def _not_superseded():
     """排除被回饋迴路換掉的舊 citation（superseded_by_iteration 非空）。"""
-    return Citation.superseded_by_iteration.is_(None)
+    return not_superseded()
 
 
 def _dedup_course_book(rows: list) -> list:
@@ -108,7 +105,7 @@ def _load_data() -> dict:
             .join(HoldingCheck, HoldingCheck.id == Recommendation.holding_id)
             .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id)
             .join(Citation, Citation.id == VerifiedBook.citation_id)
-            .where(_not_rejected(), _not_superseded())
+            .where(purchasable(), _not_superseded())
             .group_by(Recommendation.priority)
         ).all():
             prio[priority] = cnt
@@ -137,7 +134,7 @@ def _load_data() -> dict:
             .join(HoldingCheck, HoldingCheck.id == Recommendation.holding_id)
             .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id)
             .join(Citation, Citation.id == VerifiedBook.citation_id)
-            .where(_not_rejected(), _not_superseded())
+            .where(purchasable(), _not_superseded())
         ).all()
         recs = sorted(recs, key=lambda r: (_PRIORITY_RANK.get(r[0], 9), r[1] or ""))
         recs = _dedup_course_book(recs)  # 同課同書只留一筆（去重後切掉末兩欄輔助鍵）
