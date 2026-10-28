@@ -448,8 +448,13 @@ flowchart LR
 // curve:'step' 讓連線走直角折線（預設 basis 是貝茲曲線）。
 // 實測過 basis/linear/step/stepBefore/stepAfter，只有 step 系列產生 90 度轉角，
 // 其中 step 的直角比例最高；linear 只是把曲線拉直成斜線，不是直角。
+//
+// rankSpacing 拉大（LR 佈局下就是水平間距，預設 50）：discoverer 與 validator 之間
+// 同時有去程實線和回程虛線，dagre 必定把兩條邊上下錯開，去程邊因此帶一小段 Z 字折。
+// 錯開量本身無法消除（實測 50→140 時它反而從 2.5 長到 4.8），但水平距離增加得更快，
+// 折幅占比從 5.6% 降到 4.5%，線看起來才平。
 mermaid.initialize({{ startOnLoad: true, theme: 'neutral', securityLevel: 'loose',
-                      flowchart: {{ curve: 'step' }} }});
+                      flowchart: {{ curve: 'step', rankSpacing: 90 }} }});
 
 const _NODE_COLOR = {_node_color_js()};
 
