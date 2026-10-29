@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 
+from library_agent import progress
 from library_agent.graph import NODE_NAMES, _init_run, _mark_status, _with_tracking
 
 
@@ -110,3 +111,39 @@ def test_with_tracking_error_marks_error_and_reraises(monkeypatch):
     assert fake.added[0].status == "running"
     assert fake.added[1].status == "error"
     assert fake.added[1].error == "boom"
+
+
+def test_with_tracking_binds_progress_during_fn_and_unbinds_after(monkeypatch):
+    # 節點內的 report() 不帶任何參數，靠這個綁定才知道要寫到哪個 run 的哪個節點
+    monkeypatch.setattr("library_agent.graph.SessionLocal", lambda: _FakeSession())
+    seen = {}
+
+    def fn(state):
+        seen["binding"] = progress._current.get()
+        return {}
+
+    _with_tracking("validator", fn, "run1")({})
+
+    assert seen["binding"].run_id == "run1"
+    assert seen["binding"].node == "validator"
+    assert progress._current.get() is None  # 節點結束後必須解除
+
+
+def test_with_tracking_unbinds_even_when_fn_raises(monkeypatch):
+    # 沒解除的綁定會殘留在這條執行緒，下一個節點的進度就會寫到錯的節點
+    fake = _FakeSession()
+    monkeypatch.setattr("library_agent.graph.SessionLocal", lambda: fake)
+    seen = {}
+
+    def fn(state):
+        seen["during"] = progress._current.get()
+        raise ValueError("boom")
+
+    import pytest
+    with pytest.raises(ValueError, match="boom"):
+        _with_tracking("validator", fn, "run1")({})
+
+    # 先確認「丟例外之前」確實綁定過，否則下面的 None 是空洞地成立（根本沒綁過）
+    assert seen["during"] is not None
+    assert progress._current.get() is None
+    assert fake.added[-1].status == "error"
