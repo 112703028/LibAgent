@@ -9,17 +9,17 @@ FastAPI 服務，讀既有 DB 呈現缺口分析：KPI 概覽、採購優先級�
 import csv
 import html
 import io
-import json
 import threading
 import time
+import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import Body, FastAPI, File, UploadFile
+from fastapi import Body, FastAPI, File, Query, UploadFile
 from fastapi.responses import HTMLResponse, StreamingResponse
-from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select
 
+from library_agent import runlog
 from library_agent.agents.crawler import DATA_DIR
 from library_agent.dept_map import DEPARTMENT_MAP
 from library_agent.db.filters import not_superseded, purchasable
@@ -33,7 +33,6 @@ from library_agent.db.models import (
 from library_agent.db.session import SessionLocal
 
 app = FastAPI(title="Library Agent 採購決策儀表板")
-app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 
 # (key, 顯示名稱, 顏色)  顏色取自 dataviz status palette
 _PRIORITY_META = [
@@ -59,17 +58,6 @@ _PRIORITY_RANK = {k: i for i, (k, _, _) in enumerate(_PRIORITY_META)}
 _STATUS_COLOR = {k: c for k, _, c in _STATUS_META}
 _STATUS_LABEL = {k: n for k, n, _ in _STATUS_META}
 
-# Pipeline 流程圖的節點狀態色（對應 PipelineNodeRun.status）。
-# 圖例與前端上色用的 JS 物件都從這裡產生，避免兩邊各寫一份 hex 改色時脫鉤。
-# pending 用淺灰：節點標籤是深色字，底色太深會讀不到，而且「未開始」本來就該看起來是惰性的。
-_NODE_STATUS_META = [
-    ("pending", "未開始", "#d8dce1"),
-    ("running", "執行中", "#fab219"),
-    ("done", "完成", "#0ca30c"),
-    ("error", "錯誤", "#d03b3b"),
-]
-
-
 def _not_superseded():
     """排除被回饋迴路換掉的舊 citation（superseded_by_iteration 非空）。"""
     return not_superseded()
@@ -92,32 +80,51 @@ def _dedup_course_book(rows: list) -> list:
     return out
 
 
-def _load_data() -> dict:
+def _load_data(departments: list[str] | None = None) -> dict:
+    """departments：系所名清單（UI 上的名稱）。None/空＝不篩，與原本行為完全相同。
+    有值時，KPI、兩張圖、採購建議、待審核明細全部只算這些學系的課；
+    Course.department 為 NULL 的課只在不篩時出現。"""
+    raw = _expand_departments(departments)
+
+    def scoped(q, *, join_course: bool = True):
+        """把查詢限縮到所選學系。q 已經 join 過 Course 的（明細表、待審核）傳 join_course=False，
+        其餘的要補一次 join；統一用這個函式，才不會漏掉某一個計數。"""
+        if raw is None:
+            return q
+        if join_course:
+            q = q.join(Course, Course.course_id == Citation.course_id)
+        return q.where(Course.department.in_(raw))
+
     with SessionLocal() as s:
         kpis = {
-            "courses": s.scalar(select(func.count()).select_from(Course)) or 0,
-            "citations": s.scalar(select(func.count()).select_from(Citation)) or 0,
+            "courses": s.scalar(scoped(select(func.count()).select_from(Course), join_course=False)) or 0,
+            "citations": s.scalar(scoped(select(func.count()).select_from(Citation))) or 0,
             "verified": s.scalar(
-                select(func.count()).select_from(VerifiedBook)
-                .join(Citation, Citation.id == VerifiedBook.citation_id)
-                .where(VerifiedBook.verified.is_(True), _not_superseded())
+                scoped(
+                    select(func.count()).select_from(VerifiedBook)
+                    .join(Citation, Citation.id == VerifiedBook.citation_id)
+                    .where(VerifiedBook.verified.is_(True), _not_superseded())
+                )
             ) or 0,
             "pending": s.scalar(
-                select(func.count()).select_from(VerifiedBook)
-                .join(Citation, Citation.id == VerifiedBook.citation_id)
-                .where(VerifiedBook.review_status == "pending", _not_superseded())
+                scoped(
+                    select(func.count()).select_from(VerifiedBook)
+                    .join(Citation, Citation.id == VerifiedBook.citation_id)
+                    .where(VerifiedBook.review_status == "pending", _not_superseded())
+                )
             ) or 0,
         }
 
         prio = {k: 0 for k, _, _ in _PRIORITY_META}
         copies = 0
         for priority, cnt, csum in s.execute(
-            select(Recommendation.priority, func.count(), func.sum(Recommendation.suggested_copies))
-            .join(HoldingCheck, HoldingCheck.id == Recommendation.holding_id)
-            .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id)
-            .join(Citation, Citation.id == VerifiedBook.citation_id)
-            .where(purchasable(), _not_superseded())
-            .group_by(Recommendation.priority)
+            scoped(
+                select(Recommendation.priority, func.count(), func.sum(Recommendation.suggested_copies))
+                .join(HoldingCheck, HoldingCheck.id == Recommendation.holding_id)
+                .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id)
+                .join(Citation, Citation.id == VerifiedBook.citation_id)
+                .where(purchasable(), _not_superseded())
+            ).group_by(Recommendation.priority)
         ).all():
             prio[priority] = cnt
             if priority != "skip":
@@ -126,56 +133,50 @@ def _load_data() -> dict:
 
         status = {k: 0 for k, _, _ in _STATUS_META}
         for st, cnt in s.execute(
-            select(HoldingCheck.status, func.count())
-            .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id)
-            .join(Citation, Citation.id == VerifiedBook.citation_id)
-            .where(_not_superseded())
-            .group_by(HoldingCheck.status)
+            scoped(
+                select(HoldingCheck.status, func.count())
+                .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id)
+                .join(Citation, Citation.id == VerifiedBook.citation_id)
+                .where(_not_superseded())
+            ).group_by(HoldingCheck.status)
         ).all():
             status[st] = status.get(st, 0) + cnt
 
         recs = s.execute(
-            select(
-                Recommendation.priority, Course.course_name, VerifiedBook.canonical_title,
-                Citation.is_required, HoldingCheck.status, Recommendation.suggested_copies,
-                Recommendation.rationale, Citation.raw_mention,
-                Citation.course_id, VerifiedBook.isbn_13,  # 末兩欄：去重輔助鍵
+            scoped(
+                select(
+                    Recommendation.priority, Course.course_name, VerifiedBook.canonical_title,
+                    Citation.is_required, HoldingCheck.status, Recommendation.suggested_copies,
+                    Recommendation.rationale, Citation.raw_mention,
+                    Citation.course_id, VerifiedBook.isbn_13,  # 末兩欄：去重輔助鍵
+                )
+                .join(Course, Course.course_id == Recommendation.course_id)
+                .join(HoldingCheck, HoldingCheck.id == Recommendation.holding_id)
+                .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id)
+                .join(Citation, Citation.id == VerifiedBook.citation_id)
+                .where(purchasable(), _not_superseded()),
+                join_course=False,
             )
-            .join(Course, Course.course_id == Recommendation.course_id)
-            .join(HoldingCheck, HoldingCheck.id == Recommendation.holding_id)
-            .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id)
-            .join(Citation, Citation.id == VerifiedBook.citation_id)
-            .where(purchasable(), _not_superseded())
         ).all()
         recs = sorted(recs, key=lambda r: (_PRIORITY_RANK.get(r[0], 9), r[1] or ""))
         recs = _dedup_course_book(recs)  # 同課同書只留一筆（去重後切掉末兩欄輔助鍵）
 
         pending = s.execute(
-            select(Course.course_name, Citation.title, Citation.confidence, VerifiedBook.source,
-                   Citation.is_required, Citation.raw_mention)
-            .join(Citation, Citation.id == VerifiedBook.citation_id)
-            .join(Course, Course.course_id == Citation.course_id)
-            .where(VerifiedBook.review_status == "pending", _not_superseded())
-            .order_by(Course.course_name)
+            scoped(
+                select(Course.course_name, Citation.title, Citation.confidence, VerifiedBook.source,
+                       Citation.is_required, Citation.raw_mention)
+                .join(Citation, Citation.id == VerifiedBook.citation_id)
+                .join(Course, Course.course_id == Citation.course_id)
+                .where(VerifiedBook.review_status == "pending", _not_superseded())
+                .order_by(Course.course_name),
+                join_course=False,
+            )
         ).all()
 
     return {"kpis": kpis, "priority": prio, "status": status, "recs": recs, "pending": pending}
 
 
 # ---------- 呈現 ----------
-
-def _flow_legend() -> str:
-    """流程圖下方的狀態色圖例。"""
-    return "".join(
-        f'<span><i style="background:{color}"></i>{html.escape(label)}</span>'
-        for _, label, color in _NODE_STATUS_META
-    )
-
-
-def _node_color_js() -> str:
-    """給前端 _updateFlowchart() 用的 status → 色碼對照表（JS 物件字面值）。"""
-    return json.dumps({k: c for k, _, c in _NODE_STATUS_META}, ensure_ascii=False)
-
 
 def _bars(items: list[tuple[str, int, str]]) -> str:
     maxv = max((v for _, v, _ in items), default=0) or 1
@@ -206,11 +207,13 @@ def _kpi_tiles(k: dict) -> str:
 
 
 def _rec_row(priority: str, course: str, title: str, btype: str, status_html: str,
-             copies_html: str, rationale: str) -> str:
+             copies_html: str, rationale: str, btypes: str) -> str:
+    """btypes：類別 token（required / optional / ai），以空白分隔的清單。現在一列只有一個；
+    第 4 點把同一本書的多門課合併成一列後會有多個，前端用「包含」比對，屆時不必再改。"""
     pcolor = _PRIORITY_COLOR.get(priority, _PENDING_COLOR)
     plabel = _PRIORITY_LABEL.get(priority, _PENDING_LABEL)
     return (
-        f'<tr data-priority="{html.escape(priority)}">'
+        f'<tr data-priority="{html.escape(priority)}" data-btypes="{html.escape(btypes)}">'
         f'<td class="chk"><input type="checkbox" class="rowchk"></td>'
         f'<td><span class="pill" style="background:{pcolor}">{html.escape(plabel)}</span></td>'
         f'<td>{html.escape(course or "")}</td>'
@@ -227,11 +230,29 @@ def _is_ai_recommended(raw_mention: str | None) -> bool:
     return bool(raw_mention) and "AI推薦" in raw_mention
 
 
-def _book_type_label(is_required: bool, raw_mention: str | None) -> str:
-    """類別標籤：AI 推薦 > 指定 > 參考。AI 推薦以橘色標籤與教師指定/參考區隔。"""
+def _book_type_key(is_required: bool, raw_mention: str | None) -> str:
+    """類別判定：AI 推薦 > 指定 > 參考。回傳 "ai" / "required" / "optional"。"""
     if _is_ai_recommended(raw_mention):
-        return f'<span class="tag tag-ai">AI推薦</span>'
-    return f'<span class="tag">{"指定" if is_required else "參考"}</span>'
+        return "ai"
+    return "required" if is_required else "optional"
+
+
+def _book_type_label(is_required: bool, raw_mention: str | None) -> str:
+    """類別標籤。AI 推薦以橘色標籤與教師指定/參考區隔。"""
+    key = _book_type_key(is_required, raw_mention)
+    if key == "ai":
+        return '<span class="tag tag-ai">AI推薦</span>'
+    return f'<span class="tag">{"指定" if key == "required" else "參考"}</span>'
+
+
+# 類別篩選按鈕：(token, 顯示文字)。token 與 _book_type_key 的回傳值、列上的 data-btypes 一致。
+_CATEGORY_META = [("required", "指定"), ("optional", "參考"), ("ai", "AI 推薦")]
+
+
+def _category_btns() -> str:
+    return '<button class="cbtn active" data-c="all">全部</button>' + "".join(
+        f'<button class="cbtn" data-c="{k}">{html.escape(n)}</button>' for k, n in _CATEGORY_META
+    )
 
 
 def _rec_table(recs: list, pending: list) -> str:
@@ -243,12 +264,14 @@ def _rec_table(recs: list, pending: list) -> str:
         slabel = _STATUS_LABEL.get(status, status)
         btype = _book_type_label(is_required, raw_mention)
         status_html = f'<span class="pill" style="background:{scolor}">{html.escape(slabel)}</span>'
-        body.append(_rec_row(priority, course, title, btype, status_html, str(copies), rationale))
+        body.append(_rec_row(priority, course, title, btype, status_html, str(copies), rationale,
+                             _book_type_key(is_required, raw_mention)))
     # 待審核的書還沒進 librarian/recommender，沒有館藏狀態/冊數，理由欄改顯示驗證信心分數與來源
     for course, title, confidence, source, is_required, raw_mention in pending:
         rationale = f"confidence {confidence:.2f} · {source or ''}"
         btype = _book_type_label(is_required, raw_mention)
-        body.append(_rec_row("pending", course, title, btype, "—", "—", rationale))
+        body.append(_rec_row("pending", course, title, btype, "—", "—", rationale,
+                             _book_type_key(is_required, raw_mention)))
     return (
         '<table id="rectable"><thead><tr>'
         '<th class="chk"><input type="checkbox" id="rowchkall" title="全選/全不選"></th>'
@@ -275,7 +298,6 @@ def _render(data: dict) -> str:
     return f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>採購決策儀表板</title>
-<script src="/static/mermaid.min.js"></script>
 <style>
 :root {{
   color-scheme: light;                /* 強制淺色，不隨 OS 深色模式變黑 */
@@ -291,13 +313,11 @@ h1 {{ font-size:22px; margin:0 0 4px; }}
 .sub {{ color:var(--text-secondary); font-size:13px; margin-bottom:20px; }}
 h2 {{ font-size:15px; margin:0 0 12px; color:var(--text-secondary); }}
 .card {{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 18px; margin-bottom:16px; }}
-.mermaid {{ margin:0; text-align:center; overflow-x:auto; }}
-.flowlegend {{ display:flex; gap:16px; flex-wrap:wrap; justify-content:center;
-  margin-top:10px; font-size:12px; color:var(--text-secondary); }}
-.flowlegend span {{ display:inline-flex; align-items:center; gap:5px; }}
-/* 淺色色塊（未開始）在白底卡片上要有輪廓才看得出來 */
-.flowlegend i {{ width:10px; height:10px; border-radius:3px; display:inline-block;
-  border:1px solid rgba(0,0,0,.12); }}
+/* 終端文字 log：深色底、等寬字，空的時候顯示提示 */
+.runlog {{ margin:0; padding:12px 14px; border-radius:8px; background:#1f2328; color:#e6edf3;
+  font:12px/1.55 ui-monospace,SFMono-Regular,Consolas,"Microsoft JhengHei",monospace;
+  max-height:340px; min-height:120px; overflow:auto; white-space:pre-wrap; word-break:break-all; }}
+.runlog:empty::before {{ content:"（尚無執行紀錄；按「執行」後這裡會即時顯示終端機的輸出）"; color:#8b949e; }}
 .flownote {{ margin:8px 0 0; text-align:center; font-size:12px; line-height:1.6;
   color:var(--text-secondary); }}
 .flownote b {{ color:var(--text-primary); font-weight:600; }}
@@ -343,10 +363,11 @@ h2 {{ font-size:15px; margin:0 0 12px; color:var(--text-secondary); }}
 .bar-fill {{ height:100%; border-radius:0 4px 4px 0; min-width:2px; display:block; }}
 .bar-value {{ width:44px; flex:none; font-weight:600; font-variant-numeric:tabular-nums; }}
 .bar-row:hover .bar-fill {{ filter:brightness(1.08); }}
-.filters {{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }}
-.fbtn, .sfbtn {{ font:inherit; font-size:12.5px; padding:4px 12px; border-radius:99px; cursor:pointer;
+.filters {{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }}
+.fsep {{ width:1px; height:18px; background:var(--border); margin:0 6px; }}
+.fbtn, .cbtn {{ font:inherit; font-size:12.5px; padding:4px 12px; border-radius:99px; cursor:pointer;
   border:1px solid var(--border); background:transparent; color:var(--text-secondary); }}
-.fbtn.active, .sfbtn.active {{ background:var(--text-primary); color:var(--surface); border-color:var(--text-primary); }}
+.fbtn.active, .cbtn.active {{ background:var(--text-primary); color:var(--surface); border-color:var(--text-primary); }}
 table {{ border-collapse:collapse; width:100%; font-size:13px; }}
 th,td {{ border-bottom:1px solid var(--gridline); padding:8px 10px; text-align:left; vertical-align:top; }}
 th {{ color:var(--text-secondary); font-weight:600; white-space:nowrap; }}
@@ -386,26 +407,10 @@ th.chk, td.chk {{ width:28px; text-align:center; padding-left:6px; padding-right
 </div>
 
 <div class="card">
-  <h2>Pipeline 進度</h2>
-  <pre class="mermaid" id="flowchart">
-flowchart LR
-    crawler["crawler<br/>爬取課綱"]
-    parser["parser<br/>解析書目"]
-    discoverer["discoverer<br/>AI 推薦補書"]
-    validator["validator<br/>書目驗證"]
-    match_auditor["match_auditor<br/>配對稽核"]
-    librarian["librarian<br/>館藏查詢"]
-    recommender["recommender<br/>採購建議"]
-    human_review["human_review<br/>人工審核"]
-    crawler --> parser --> discoverer --> validator
-    validator -.-> discoverer
-    validator --> match_auditor
-    match_auditor --> librarian --> recommender
-    match_auditor --> human_review
-  </pre>
-  <div class="flowlegend">{_flow_legend()}</div>
+  <h2>Pipeline 執行紀錄</h2>
+  <pre id="runlog" class="runlog"></pre>
   <p class="flownote">
-    <b>虛線</b>為條件邊：AI 推薦書驗證失敗時回 discoverer 重推（最多 {_MAX_DISCOVERY_ITERATIONS - 1} 輪）。
+    <b>validator</b> 之後若有 AI 推薦書驗證失敗，會回到 discoverer 重推（最多 {_MAX_DISCOVERY_ITERATIONS - 1} 輪）；
     <b>match_auditor</b> 會把配對可疑、或抽取信心度不足的書送進 human_review 佇列，
     並排除在採購建議之外。
   </p>
@@ -439,44 +444,57 @@ flowchart LR
         </div>
       </div>
     </div>
-    <div class="filters">{filter_btns}</div>
+    <div class="filters">{filter_btns}<span class="fsep"></span>{_category_btns()}</div>
     {_rec_table(data["recs"], data["pending"])}
   </div>
 </div>
 </div>
 <script>
-// curve:'step' 讓連線走直角折線（預設 basis 是貝茲曲線）。
-// 實測過 basis/linear/step/stepBefore/stepAfter，只有 step 系列產生 90 度轉角，
-// 其中 step 的直角比例最高；linear 只是把曲線拉直成斜線，不是直角。
-//
-// rankSpacing 拉大（LR 佈局下就是水平間距，預設 50）：discoverer 與 validator 之間
-// 同時有去程實線和回程虛線，dagre 必定把兩條邊上下錯開，去程邊因此帶一小段 Z 字折。
-// 錯開量本身無法消除（實測 50→140 時它反而從 2.5 長到 4.8），但水平距離增加得更快，
-// 折幅占比從 5.6% 降到 4.5%，線看起來才平。
-mermaid.initialize({{ startOnLoad: true, theme: 'neutral', securityLevel: 'loose',
-                      flowchart: {{ curve: 'step', rankSpacing: 90 }} }});
-
-const _NODE_COLOR = {_node_color_js()};
-
-function _updateFlowchart(nodes) {{
-  const svg = document.querySelector('#flowchart svg');
-  if (!svg) return;  // Mermaid 尚未完成首次渲染
-  nodes.forEach(function(n) {{
-    const g = svg.querySelector(`[id*="flowchart-${{n.name}}-"]`);
-    if (!g) return;
-    const shape = g.querySelector('rect, polygon, .node-bkg') || g.querySelector('*');
-    if (shape) shape.style.fill = _NODE_COLOR[n.status] || _NODE_COLOR.pending;
-  }});
+// ---- 執行紀錄：把後端複製的終端文字接在文字框後面 ----
+let _logEpoch = null, _logCursor = 0, _logLines = [];
+let _logLoop = false, _logBusy = false, _logTimer = null;
+const _LOG_MAX = 2000;
+async function _pollLog() {{
+  // 同一時間只讓一個請求在飛：頁面載入時的一次性抓取與「發現正在跑」觸發的輪詢可能重疊，
+  // 兩個請求會拿到同一批行，各接一次就重複了。
+  if (_logBusy) return;
+  _logBusy = true;
+  try {{
+    const q = '/log?after=' + _logCursor + (_logEpoch !== null ? '&epoch=' + _logEpoch : '');
+    const d = await (await fetch(q)).json();
+    let changed = false;
+    if (d.epoch !== _logEpoch) {{   // 新的一次執行：清空重來，即使它還沒有任何輸出也要清掉
+      _logLines = []; _logEpoch = d.epoch; changed = true;
+    }}
+    _logCursor = d.last;
+    if (d.lines.length) {{
+      _logLines = _logLines.concat(d.lines).slice(-_LOG_MAX);
+      changed = true;
+    }}
+    if (changed) {{
+      const box = _el('runlog');
+      const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 24;  // 使用者往上捲看舊的就不要硬拉到底
+      box.textContent = _logLines.join('\\n');
+      if (atBottom) box.scrollTop = box.scrollHeight;
+    }}
+  }} catch (e) {{ /* 暫時連不上，下一輪再試 */ }}
+  _logBusy = false;
+  if (_logLoop && !_logTimer) {{
+    _logTimer = setTimeout(function() {{ _logTimer = null; _pollLog(); }}, 1000);
+  }}
 }}
 
-// 套用表格顯示：有搜尋字時只看搜尋（無視篩選按鈕）；否則看選中的篩選按鈕。
-// tableId=表格 id；dataKey=data-priority / data-status；btnSel=篩選按鈕 class；searchId=搜尋框 id
-function _applyTableView(tableId, dataKey, btnSel, searchId) {{
-  const table = document.getElementById(tableId);
+// 套用明細表的篩選：優先級按鈕與類別按鈕取交集；搜尋框有字時只看搜尋（無視兩組按鈕，維持原行為）。
+// 類別比對用 data-btypes 的 token 清單做「包含」：現在一列只有一個 token，
+// 第 4 點把同一本書的多門課合併成一列後會有多個，這裡不必再改。
+function _applyRecFilters() {{
+  const table = document.getElementById('rectable');
   if (!table) return;
-  const kw = (document.getElementById(searchId).value || '').trim().toLowerCase();
-  const active = document.querySelector(btnSel + '.active');
-  const f = active ? active.dataset[dataKey === 'priority' ? 'f' : 'sf'] : 'all';
+  const kw = (document.getElementById('recsearch').value || '').trim().toLowerCase();
+  const pa = document.querySelector('.fbtn.active');
+  const ca = document.querySelector('.cbtn.active');
+  const f = pa ? pa.dataset.f : 'all';
+  const c = ca ? ca.dataset.c : 'all';
   table.querySelectorAll('tbody tr').forEach(function(tr){{
     let show;
     if (kw) {{
@@ -486,22 +504,23 @@ function _applyTableView(tableId, dataKey, btnSel, searchId) {{
       const title = (tds[3] ? tds[3].textContent : '').toLowerCase();
       show = course.includes(kw) || title.includes(kw);
     }} else {{
-      show = (f === 'all' || tr.dataset[dataKey] === f);
+      const types = (tr.dataset.btypes || '').split(' ');
+      show = (f === 'all' || tr.dataset.priority === f) && (c === 'all' || types.includes(c));
     }}
     tr.style.display = show ? '' : 'none';
   }});
 }}
 
-document.querySelectorAll('.fbtn').forEach(function(b){{
-  b.addEventListener('click', function(){{
-    document.querySelectorAll('.fbtn').forEach(x=>x.classList.remove('active'));
-    b.classList.add('active');
-    _applyTableView('rectable', 'priority', '.fbtn', 'recsearch');
+['.fbtn', '.cbtn'].forEach(function(sel){{
+  document.querySelectorAll(sel).forEach(function(b){{
+    b.addEventListener('click', function(){{
+      document.querySelectorAll(sel).forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      _applyRecFilters();
+    }});
   }});
 }});
-document.getElementById('recsearch').addEventListener('input', function(){{
-  _applyTableView('rectable', 'priority', '.fbtn', 'recsearch');
-}});
+document.getElementById('recsearch').addEventListener('input', _applyRecFilters);
 
 const _el = id => document.getElementById(id);
 let _sawRunning = false;  // 這個分頁是否親眼看過 running；只有這樣才代表「這次是我觸發的」
@@ -515,9 +534,10 @@ async function _poll() {{
     _el('runstatus').textContent = label[d.status] || d.status;
     _el('runstatus').className = 'runstatus ' + d.status;
     _el('runbtn').disabled = (d.status === 'running');
-    if (d.nodes) _updateFlowchart(d.nodes);
+    _logLoop = (d.status === 'running');  // 只在執行中輪詢 /log，閒置時不要讓終端機被 GET /log 洗版
     if (d.status === 'running') {{
       _sawRunning = true;
+      _pollLog();
       setTimeout(_poll, 3000);
     }} else if (_sawRunning && (d.status === 'done' || d.status === 'error')) {{
       // 親眼看過它從 running 跑到這裡結束 → 整頁資料（KPI/圖表/建議明細）都舊了，重整一次
@@ -541,7 +561,31 @@ function _updateDeptLabel() {{
   _el('deptbtn').textContent = '學系 (' + txt + ')';
 }}
 
-// 載入「學院 → 系所」兩層樹，畫成可展開/勾選的清單（預設全勾）
+// ---- 學系篩選：選擇記在網址（?departments=甲&departments=乙），關閉面板時套用 ----
+// 記在網址而不是只記在勾選框：pipeline 跑完頁面會自動 location.reload()，重整的就是這個網址，
+// 篩選才不會掉回「全部」。用重複參數而不是逗號串接，系所名稱含逗號也不會切錯。
+const _deptFromUrl = new URLSearchParams(location.search).getAll('departments');  // 載入時的篩選，空＝全部
+let _navigate = function(url) {{ location.href = url; }};  // 獨立成函式，驗證時可以替換
+
+function _deptUrl(names) {{
+  if (!names.length) return location.pathname;   // 全部：網址保持乾淨
+  const q = new URLSearchParams();
+  names.forEach(n => q.append('departments', n));
+  return location.pathname + '?' + q.toString();
+}}
+
+function _applyDeptFilter() {{
+  // 選擇器沒載入成功（一個勾選框都沒有）：不動網址，否則一次網路錯誤就會悄悄清掉使用者的篩選
+  if (!document.querySelector('.deptchk')) return;
+  const picked = _collectChecked('.deptchk');            // null＝全部勾選；[]＝全不勾
+  if (picked !== null && picked.length === 0) return;     // 全不勾：不導向（「執行」鈕另有擋）
+  const now = picked === null ? [] : picked;
+  const same = now.length === _deptFromUrl.length && now.every(d => _deptFromUrl.includes(d));
+  if (same) return;                                       // 沒有變就不要重載
+  _navigate(_deptUrl(now));
+}}
+
+// 載入「學院 → 系所」兩層樹，畫成可展開/勾選的清單（預設全勾；網址有篩選就只勾名單內的）
 async function _loadDepts() {{
   try {{
     const d = await (await fetch('/departments')).json();
@@ -579,17 +623,28 @@ async function _loadDepts() {{
       box.querySelectorAll('.deptchk, .colchk').forEach(c => {{ c.checked = on; }});
       _updateDeptLabel();
     }}));
+    // 從網址還原勾選：沒有 departments 參數＝維持預設全勾；有就只勾名單內的，學院框跟著重算
+    if (_deptFromUrl.length) {{
+      box.querySelectorAll('.deptchk').forEach(c => {{ c.checked = _deptFromUrl.includes(c.value); }});
+      box.querySelectorAll('.dept-college').forEach(function(sec){{
+        sec.querySelector('.colchk').checked =
+          Array.from(sec.querySelectorAll('.deptchk')).every(x => x.checked);
+      }});
+    }}
     _updateDeptLabel();
   }} catch (e) {{ _el('deptfilter').innerHTML = '<span class="ff-empty">無法載入系所清單</span>'; }}
 }}
 _el('deptbtn').addEventListener('click', function(ev){{
   ev.stopPropagation();
-  _el('deptfilter').hidden = !_el('deptfilter').hidden;
+  const panel = _el('deptfilter');
+  panel.hidden = !panel.hidden;
+  if (panel.hidden) _applyDeptFilter();   // 按按鈕關閉面板也算「關閉」
 }});
 document.addEventListener('click', function(ev){{
   const panel = _el('deptfilter');
   if (!panel.hidden && !panel.contains(ev.target) && ev.target !== _el('deptbtn')) {{
     panel.hidden = true;
+    _applyDeptFilter();   // 點面板外關閉：選擇有變才導向
   }}
 }});
 
@@ -729,13 +784,14 @@ _el('expgo').addEventListener('click', function(){{
 _loadFiles();
 _loadDepts();
 _poll();
+_pollLog();
 </script>
 </body></html>"""
 
 
 @app.get("/", response_class=HTMLResponse)
-def index() -> str:
-    return _render(_load_data())
+def index(departments: list[str] | None = Query(None)) -> str:
+    return _render(_load_data(departments))
 
 
 # ---------- CSV 匯出 ----------
@@ -805,11 +861,16 @@ def _run_pipeline(run_id: str, source_files: list[str] | None, departments: list
         initial["source_files"] = source_files
     if departments:
         initial["departments"] = departments
+    runlog.reset()
+    runlog.install()  # 把 print()/stderr 多存一份給網頁的執行紀錄；終端機輸出不變
     try:
         build_graph(run_id).invoke(initial)
         status, error = "done", None
     except Exception as e:  # 背景執行緒的例外要自己接，否則靜默消失
+        traceback.print_exc()  # 走 stderr：終端機與網頁 log 都看得到錯誤出在哪
         status, error = "error", str(e)[:500]
+    finally:
+        runlog.uninstall()  # 成功或失敗都要還原，不能讓 stdout 永遠被換掉
     with _run_lock:
         _run_state.update(status=status, finished_at=time.time(), error=error)
 
@@ -820,6 +881,18 @@ for _raw, (_col, _dep) in DEPARTMENT_MAP.items():
     _DEPT_TO_RAW.setdefault(_dep, []).append(_raw)
 
 
+def _expand_departments(names: list[str] | None) -> list[str] | None:
+    """系所名（UI 上看到、/departments 回傳的名稱）→ 展平成原始系級值，供 SQL 比對 Course.department。
+    None 或空清單＝不篩（回 None）。未知的系所名原樣保留，例如「其他」歸類的原始值本身。
+    /run（決定分析哪些課）與首頁（決定顯示哪些資料）共用，兩邊的「學系」才會是同一個意思。"""
+    if not names:
+        return None
+    expanded: list[str] = []
+    for name in names:
+        expanded.extend(_DEPT_TO_RAW.get(name, [name]))
+    return expanded
+
+
 @app.post("/run")
 def start_run(body: dict = Body(default={})) -> dict:
     """在背景執行緒啟動整條 pipeline。source_files/departments 為 None/空＝全部；一次只准一個。
@@ -828,19 +901,14 @@ def start_run(body: dict = Body(default={})) -> dict:
 
     source_files = body.get("source_files") if isinstance(body, dict) else None
     dept_names = body.get("departments") if isinstance(body, dict) else None
-    # 系所名 → 原始系級值（展平）；未知系所名原樣保留（例如「其他」歸類的原始值本身）
-    departments = None
-    if dept_names:
-        expanded: list[str] = []
-        for name in dept_names:
-            expanded.extend(_DEPT_TO_RAW.get(name, [name]))
-        departments = expanded
+    departments = _expand_departments(dept_names)
     with _run_lock:
         if _run_state["status"] == "running":
             return {"ok": False, "message": "pipeline 已在執行中"}
         run_id = str(time.time())
         _init_run(run_id)
         _run_state.update(status="running", started_at=time.time(), finished_at=None, error=None, run_id=run_id)
+    runlog.reset()
     threading.Thread(target=_run_pipeline, args=(run_id, source_files, departments), daemon=True).start()
     return {"ok": True}
 
@@ -881,6 +949,12 @@ async def upload_file(file: UploadFile = File(...)) -> dict:
     with open(dest, "wb") as f:
         f.write(await file.read())
     return {"ok": True, "filename": name}
+
+
+@app.get("/log")
+def get_log(after: int = 0, epoch: int | None = None) -> dict:
+    """執行紀錄（終端文字）。after=上次拿到的流水號；epoch 與目前不同（新的一次執行）就整份重給。"""
+    return runlog.read(after, epoch)
 
 
 @app.get("/status")
