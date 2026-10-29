@@ -42,9 +42,27 @@ python src/library_agent/agents/parser.py 20
 # 3. 驗證書目（英文 → LOC / Google Books，中文 → NCL/NBINet SRU）
 python src/library_agent/agents/validator.py
 
-# 4. 查詢館藏狀態（Alma SRU）
+# 4. 稽核配對：確認驗證器配到的記錄真的是原書（配錯 → 送人工審核並擋下採購）
+python src/library_agent/agents/match_auditor.py
+python src/library_agent/agents/match_auditor.py 20   # 測試用，只跑前 N 筆
+
+# 5. 查詢館藏狀態（Alma SRU）
 python src/library_agent/agents/librarian.py
 ```
+
+### 配對稽核（match_auditor）
+
+validator 只要查得到記錄就算 `verified=True`，實測有相當比例配到的是別的書
+（最常見：書名相同但作者不同的教科書，如不同作者的 *Macroeconomics*）。
+階梯式判斷，門檻與方法都在 300 筆人工標註上比較過（`experiments/same_book_judge_compare.py`）：
+
+1. 字串規則（書名正規化後比 bigram Jaccard，門檻 0.6）判「不同本」→ 直接標記，省下 LLM 呼叫
+2. 規則判「同一本」→ 問 `LLM_MODEL_MINI` 複核（書名相同但作者不同只有這層抓得到）
+
+結果寫在 `verified_books.pairing_verdict / pairing_judge / pairing_reason`；
+`pairing_verdict IS NULL` 代表還沒稽核，重跑只處理這些列，不會重複付 LLM 費用。
+判為 `mismatch` 的書會進人工審核佇列，並被 `db/filters.py` 的 `purchasable()`
+擋在採購建議/報表/dashboard 之外，直到人工改成 `approved`。
 
 ## 資料庫
 

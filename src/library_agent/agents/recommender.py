@@ -1,9 +1,10 @@
 import math
 
 from openai import OpenAI
-from sqlalchemy import delete, or_, select, update
+from sqlalchemy import delete, select, update
 
 from library_agent.config import get_settings
+from library_agent.db.filters import purchasable
 from library_agent.db.models import (
     Citation,
     Course,
@@ -129,9 +130,9 @@ def recommender_node(_state: AgentState) -> AgentState:
             .join(VerifiedBookDB, VerifiedBookDB.id == HoldingCheckDB.verified_book_id)
             .join(Citation, Citation.id == VerifiedBookDB.citation_id)
             .join(Course, Course.course_id == Citation.course_id)
-            # 排除人工審核退回的書
-            .where(or_(VerifiedBookDB.review_status.is_(None),
-                       VerifiedBookDB.review_status != "rejected"))
+            # 排除人工審核退回的書、match_auditor 判定配錯的書、已被回饋迴路換掉的舊 citation
+            .where(purchasable())
+            .where(Citation.superseded_by_iteration.is_(None))
         )
         if course_ids:
             q = q.where(Citation.course_id.in_(course_ids))

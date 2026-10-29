@@ -1,0 +1,181 @@
+﻿序號,citation_id,書目來源(AI推薦/課綱抽取),課程ID,分層,原始書名(生成),原始作者,配到的書名(canonical),配到的作者,配到ISBN,來源,標註_生成正確(對/錯),標註_配對正確(對/錯),備註
+1,734,課綱抽取,31004041,same,唐詩選注,葛兆光,唐詩選注,余冠英,,ncl,t,f,建議配對=對
+2,1656,課綱抽取,42137001,same,司改十年：回顧與展望,民間司改會,司改十年 : 回顧與展望,民間司改會,,ncl,t,t,建議配對=對
+3,2813,課綱抽取,90069001,same,眼球解剖與生理學,"Lens, A et al.",眼球解剖與生理學,"藍斯 / 陳牧君 / Lens, Ai.",,ncl,t,t,建議配對=對
+4,3014,課綱抽取,100813001,same,戦争と向き合って―満洲事変～日本敗戦,趙景達 / 原田敬一 / 村田雄二郎 / 安田常雄,戦争と向き合って,趙景達 / 原田敬一 / 村田雄二郎 / 安田常雄,,google_books,t,t,建議配對=對
+5,1132,課綱抽取,31024001,same,"When the Yellow River Floods: Water, Technology, and Nation-Building in Early Twentieth-Century Chinese Literature","Hsu, Hui-Lin",When the Yellow River Floods,Hui-Lin Hsu,9.79E+12,google_books,t,t,建議配對=對
+6,241,課綱抽取,604021,same,變動中的公司法制,曾宛如,變動中的公司法制 : 17堂案例學會<<公司法>>,方嘉麟 / 黃銘傑 / 朱德芳 / 張心悌 / 洪令家 / 陳彥良 / 曾宛如 / 林國彬 / 周振鋒 / 洪秀芬 / 馬秀如 / 蘇怡慈 / 方元沂 / 杜怡靜,9.79E+12,ncl,t,t,建議配對=對
+7,1893,AI推薦,10123021,same,Korean Grammar in Use: Intermediate,Ahn Jean-myung / Lee Kyung-ah / Han Hoo-youn,Korean Grammar in Use - Intermediate (English ver.) (영어판),"민진영, 안진명",9.79E+12,google_books,t,t,建議配對=對
+8,2743,課綱抽取,70377001,same,The Routledge handbook of educational linguistics,M. Bigelow / J. Ennser-Kananen,The Routledge Handbook of Educational Linguistics,Martha Bigelow / Johanna Ennser-Kananen,9.78E+12,google_books,t,t,建議配對=對
+9,2820,課綱抽取,90101001,same,"Romanesque: Architecture, Sculpture, Painting",R. Toman,Romanesque,Rolf Toman,,google_books,t,t,建議配對=對
+10,3175,AI推薦,507026002,same,College Korean,Michael C. Rogers / Clare You / Kyungnyun K. Richards,College Korean = [Taehak Hanʼgugŏ],"Rogers, Michael C. / You, Clare. / Richards, Kyungnyun K.",9.78E+12,loc,t,t,建議配對=對
+11,938,課綱抽取,31013021,same,呂赫若小說全集,呂赫若,呂赫若小說全集 : 台灣第一才子,"呂, 赫若 / 林至潔",9.79E+12,ncl,t,t,建議配對=對
+12,178,課綱抽取,359051,same,統計學,林慧玲 / 陳正滄,[初級] 統計學,"陳啟崗 / 何爾 / Hoel, Paul G",,ncl,t,f,建議配對=對
+13,2465,課綱抽取,70281001,same,The World in the Twentieth Century: From Empires to Nations,Daniel R. Brower / Thomas Sanders,The World in the Twentieth Century,Daniel R. Brower,9.78E+12,google_books,t,t,建議配對=對
+14,148,課綱抽取,351011,same,Investment Analysis and Portfolio Management,"Reilly, Frank K / Keith C. Brown / Sanford J. Leeds",Investment Analysis and Portfolio Management,Frank K. Reilly / Keith C. Brown,9.79E+12,google_books,t,t,建議配對=對
+15,2504,AI推薦,43043001,same,How Games Move Us: Emotion by Design,Katherine Isbister,How Games Move Us,Katherine Isbister,9.78E+12,google_books,t,t,建議配對=對
+16,41,課綱抽取,219571,same,Principles of Economics,N. Gregory Mankiw,Principles of economics,"Mankiw, N. Gregory.",9.78E+12,loc,t,t,建議配對=對
+17,421,課綱抽取,2337001,same,運動指導法,林正常,彈簧@@運動指導法,黃文忠,,ncl,t,f,建議配對=對
+18,57,課綱抽取,226011,same,當代政治學：從政治基礎到國際關係,游清鑫 / 陳義彥,當代政治學 : 從政治基礎到國際政治,游清鑫 / 陳義彥,9.79E+12,ncl,t,t,建議配對=對
+19,2376,課綱抽取,70216001,same,多媒體概論：數位世代的影音、動畫、架站與新媒體,鄭苑鳳 / 吳燦銘,多媒體概論 : 多媒體光碟節目企劃與製作,華之鳳,,ncl,t,f,建議配對=對
+20,1900,AI推薦,10125001,same,A Reference Grammar of Korean: A Complete Guide to the Grammar and History of the Korean Language,Samuel E. Martin,A Reference Grammar of Korean,Samuel E. Martin,,google_books,t,t,建議配對=對
+21,2555,課綱抽取,70305001,same,ぶぬん蕃語集,二宮力,ぶぬん蕃語集,二宮力,,ncl,t,t,建議配對=對
+22,3309,AI推薦,502115002,same,Arabic Grammar in Context,Mohammad T. Alhawary,Arabic grammar in context,"Alhawary, Mohammad T.",9.78E+12,loc,t,t,建議配對=對
+23,2285,課綱抽取,45024001,same,圖書資訊學導論,王梅玲 / 謝寶煖,圖書資訊學導論,胡述兆 / 王梅玲,,ncl,t,t,建議配對=對
+24,3387,AI推薦,601330001,same,行政救濟法新論,蔡志方,行政救濟法新論,蔡志方,,ncl,t,t,建議配對=對
+25,2991,課綱抽取,100831001,same,晚明風雅,大木康,晚明風雅,大木康,9.79E+12,google_books,t,t,建議配對=對
+26,58,課綱抽取,226011,same,Politics,Andrew Heywood,Politics,Andrew Heywood,9.78E+12,google_books,t,t,建議配對=對
+27,1952,AI推薦,32001231,same,Academic Writing: A Handbook for International Students,Stephen Bailey,Academic Writing,Stephen Bailey,9.78E+12,google_books,t,t,建議配對=對
+28,1272,課綱抽取,32001811,same,Perspectives 4,Amanda Jeffries / Lewis Landsford / Daniel Barber,Perspectives 4,National Geographic Learning,9.78E+12,google_books,t,t,建議配對=對
+29,801,課綱抽取,31004111,same,唐詩三百首詳析,喻守真,"民國時期文學研究叢書. 喻守真<<唐詩三百首詳析>>, 許舜屏<<白話注釋唐詩三百首>>",張高評,9.79E+12,ncl,t,f,建議配對=對
+30,3305,AI推薦,501871001,same,English Phonetics and Phonology: A Practical Course,Peter Roach,English phonetics and phonology : a practical course,"Roach, Peter",9.78E+12,loc,t,t,建議配對=對
+31,984,課綱抽取,31014031,same,中國哲學史,勞思光,"""金岳霖問題""與中國哲學史學科獨立性的探求",陳衛平,,ncl,t,f,建議配對=對
+32,3234,AI推薦,509907001,same,Manual de escritura académica y profesional: Estrategias gramaticales y discursivas,Estrella Montolío,Manual de escritura académica y profesional (Vol. I),Estrella Montolío,9.79E+12,google_books,t,t,建議配對=對
+33,1060,課綱抽取,31023001,same,臺灣語言的分類與分區：理論與方法,洪惟仁,(修訂)臺灣語言的分類與分區 : 理論與方法 = Classification and regionalization of languages in Taiwan : theories and methodologies,洪惟仁,9.79E+12,ncl,t,t,建議配對=對
+34,1912,AI推薦,32001011,same,Writing Academic English,Alice Oshima / Ann Hogue,Writing Academic English,Alice Oshima / Ann Hogue,9.78E+12,google_books,t,t,建議配對=對
+35,1181,課綱抽取,31031021,same,中國雜文史,吳興人,20世紀中國雜文史,姚春樹 / 袁勇麟,9.79E+12,ncl,t,f,建議配對=對
+36,930,課綱抽取,31013021,same,戴墨鏡的飛鼠,瓦歷斯．諾幹,戴墨鏡的飛鼠 : 林管處的巡山員發給每隻可愛的飛鼠一隻墨鏡...,瓦歷斯諾幹,,ncl,t,t,建議配對=對
+37,1202,課綱抽取,31031041,same,前朝夢憶：張岱的浮華與蒼涼,史景遷 (Jonathan D. Spence),還歸龍山 : 張岱的前朝夢憶,"史景遷 / 溫洽溢 / Spence, Jonathan D",9.79E+12,ncl,t,t,建議配對=對
+38,418,課綱抽取,2337001,same,羽球教練理論與實際,程嘉彥,羽球教練理論與實際,程嘉彥,,ncl,t,t,建議配對=對
+39,3271,AI推薦,101691001,same,The Wu Liang Shrine: The Ideology of Early Chinese Pictorial Art,Wu Hung,The Wu Liang Shrine : the ideology of early Chinese pictorial art,Wu Hung,9.78E+12,loc,t,t,建議配對=對
+40,141,課綱抽取,350011,same,Marketing: An Introduction,Gary Armstrong / Philip Kotler / Marc Oliver Opresnik,Marketing,Gary M. Armstrong / Philip Kotler,,google_books,t,t,建議配對=對
+41,1077,課綱抽取,31023011,same,成為原住民：文學、知識與世界想像,陳芷凡,"成為原住民 : 文學、知識與世界想像 = Being and becoming indigenous people : literature, indigenous knowledge, and imagination of the world",陳芷凡,9.79E+12,ncl,t,t,建議配對=對
+42,3043,AI推薦,100M06001,same,The Poetics of Space,Gaston Bachelard,The Poetics of Space,Gaston Bachelard,9.78E+12,google_books,t,t,建議配對=對
+43,1936,AI推薦,32001081,same,Study Writing: A Course in Writing Skills for Academic Purposes,Liz Hamp-Lyons / Ben Heasley,Study Writing,Liz Hamp-Lyons / Ben Heasley,9.78E+12,google_books,t,t,建議配對=對
+44,2457,課綱抽取,70281001,same,地緣政治入門：從50個關鍵議題了解國際局勢,Pascal Boniface,地緣政治入門 : 從50個關鍵議題了解國際局勢 = La géopolitique : 50 fiches pour comprendre l'actualité,"博尼法斯 / 粘耿嘉 / Boniface, Pascal",9.79E+12,ncl,t,t,建議配對=對
+45,388,課綱抽取,2325001,same,運動訓練法,林正常,國際撞球運動訓練法研討會. ISBT會議手冊暨論文集,劉姿怡,9.79E+12,ncl,t,f,建議配對=對
+46,1608,課綱抽取,42096001,same,歐盟台灣中國三邊關係剖析,王萬里,歐盟、台灣、中國三邊關係剖析,王萬里,9.79E+12,ncl,t,t,建議配對=對
+47,2369,課綱抽取,70221001,same,木柵人：閱讀1950年代木柵人的生活影像,郎豪華 / Howard Rusk Long / 陳慧靜,木柵人 : 閱讀1950年代木柵人的生活影像,郎豪華 / 陳慧靜,,ncl,t,t,建議配對=對
+48,1294,課綱抽取,41042011,same,好萊塢類型電影,Thomas Schatz,好萊塢類型電影 : 公式、電影製作與片廠制度,"雪茲 / Schatz, Thomas / 李亞梅",,ncl,t,t,建議配對=對
+49,1914,AI推薦,32001011,same,Academic Vocabulary in Use,Michael McCarthy / Felicity O'Dell,Academic Vocabulary in Use,Michael McCarthy / Felicity O'Dell,,google_books,t,t,建議配對=對
+50,821,課綱抽取,31008011,same,唐代小說承衍的敘事研究,康韻梅,唐代小說承衍的敘事研究,康韻梅,,ncl,t,t,建議配對=對
+51,769,課綱抽取,31004091,same,葉嘉瑩說陶淵明飲酒及擬古詩,葉嘉瑩,葉嘉瑩說陶淵明飲酒及擬古詩,葉嘉瑩,9.79E+12,ncl,t,t,建議配對=對
+52,2389,課綱抽取,70260001,same,"榮格取向藝術治療：夢、意象和分析心理學指南（Jungian Art Therapy: Dreams, Images, and Analytical Psychology）",Nora Swan-Foster,"榮格取向藝術治療 : 夢、意象和分析心理學指南 = Jungian art therapy : dreams, images, and analytical psychology","史旺福斯特 / 丁凡 / Swan-Foster, Nora",9.79E+12,ncl,t,t,建議配對=對
+53,815,課綱抽取,31008011,same,唐五代志怪傳奇敘錄,李劍國,唐五代志怪傳奇敘錄 : 增訂本,李劍國,9.79E+12,ncl,t,t,建議配對=對
+54,1310,課綱抽取,41100041,same,"An Introduction to Buddhist Ethics: Foundations, Values, and Issues",Peter Harvey,An Introduction to Buddhist Ethics,,,google_books,t,t,建議配對=對
+55,3280,AI推薦,303021011,same,Auditing & Assurance Services,Timothy J. Louwers / Robert J. Ramsay / David H. Sinason / Jerry R. Strawser / Jay C. Thibodeau,Auditing & assurance services,"Louwers, Timothy J.",9.78E+12,loc,t,t,建議配對=對
+56,1219,課綱抽取,31032011,same,國民散文讀本,楊佳嫻等,國民散文讀本 : 靈魂的領地,凌性傑 / 楊佳嫻,9.79E+12,ncl,t,t,建議配對=對
+57,1689,課綱抽取,42156001,same,解讀中國經濟,林義夫,撥開中國經濟迷霧 : 與大師對談 : 諾貝爾經濟學獎獲得者約瑟夫.史迪格里茲與中國專家為您解讀中國經濟的未來!,朱敏,9.79E+12,ncl,t,f,建議配對=對
+58,1625,課綱抽取,42116011,same,經濟學概要,朱敬一等七人,房屋工程 : 經濟學概要 = Revision notes on building economics,桑德 / 林由智 / 盧堅,,ncl,t,f,建議配對=對
+59,3395,AI推薦,10060001,same,GENKI II: An Integrated Course in Elementary Japanese,Eri Banno / Yoko Ikeda / Yutaka Ohno / Chikako Shinagawa / Kyoko Tokashiki,Genki,Eri Banno / Yutaka Ōno,9.78E+12,google_books,t,t,建議配對=對
+60,859,課綱抽取,31010011,same,當代台灣新詩理論,孟樊,當代台灣新詩理論,陳俊榮,,ncl,t,t,兩個名字是同一個人 一個是筆名一個是本名
+61,176,課綱抽取,359051,diff,Statistics for Business and Economics,Andersin / Sweeney / Williams / Camm / Cochran,商务与经济统计,D.R.·安德森,9.79E+12,google_books,t,t,建議配對=錯
+62,2649,課綱抽取,70335001,diff,原住民族語文教材,,北排灣語 : 教師手冊 = Pinayuanan a tjinuvirian,,9.79E+12,ncl,t,f,建議配對=錯
+63,932,課綱抽取,31013021,diff,神祕列車,甘耀明,科學偵探謎野洛實,佐東綠 / 木木 / 黃薇嬪,9.79E+12,ncl,t,f,建議配對=錯
+64,2411,課綱抽取,70225001,diff,中國文學通史系列,中國社科院文學研究所,南北朝文學史,曹道衡 / 沈玉成,,ncl,t,f,建議配對=錯
+65,2789,課綱抽取,216011,diff,Invitation to sociology,Berger,Comprendre la sociologie,Peter L. Berger,,google_books,t,f,建議配對=錯
+66,2757,課綱抽取,70384001,diff,Écologie et politique - Écologie et liberté,Michel Bosquet,Ecologie et politique suivi de Ecologie et liberté,Michel Bosquet,9.78E+12,google_books,t,t,建議配對=錯
+67,2917,課綱抽取,100713001,diff,如何培養美感,漢寶德,點字數位圖書館.,漢寶德,,ncl,t,f,建議配對=錯
+68,816,課綱抽取,31008011,diff,仙境與遊歷：神仙世界的想象,李豐楙,仙境与游历 : 神仙世界的想象,李豐楙,9.79E+12,ncl,t,t,建議配對=錯
+69,914,課綱抽取,31013011,diff,文學理論導讀,Terry Eagleton,當代文學理論,"伊格頓 / Eagleton, Terry / 鍾嘉文",,ncl,t,f,建議配對=錯
+70,2636,課綱抽取,70329001,diff,泰雅語語法概論,黃美金 / 吳新生,臺灣南島語言叢書,吳靜蘭 / 黃美金,9.79E+12,ncl,t,f,建議配對=錯
+71,1907,AI推薦,31004031,diff,詩詞格律,王力,词律综述,林克勝,9.79E+12,ncl,t,f,建議配對=錯
+72,2750,課綱抽取,70380001,diff,全民參與社區設計的時代,山崎亮 Yamazaki Ryo,全民参与社区设计的时代,山崎亮 / 林明月 / 付奇鑫 / 黃澤民,9.79E+12,ncl,t,t,建議配對=錯
+73,3212,AI推薦,265827001,diff,Geographic Information Science and Systems,Paul A. Longley / Michael F. Goodchild / David J. Maguire / David W. Rhind,Geographic information science & systems,"Longley, Paul.",9.78E+12,loc,t,t,建議配對=錯
+74,1409,課綱抽取,41133011,diff,臺灣現代化的推手：蔣經國傳,"陶涵 / Taylor, Jay",東、西洋人眼中的劉銘傳,尹章義,,ncl,t,f,建議配對=錯
+75,3263,AI推薦,101069001,diff,散曲概論,任中敏,散曲叢刊十五種,任中敏,,ncl,f,f,這個不確定要怎麼標 因為原本推薦的是錯的 但是ncl回傳的確實有這本書
+76,380,課綱抽取,2305031,diff,慢速壘球規則,,國際比賽規則,,,ncl,t,f,建議配對=錯
+77,2856,課綱抽取,101001011,diff,漢字文化學,何九盈,汉字文化学,何九盈,9.79E+12,ncl,t,t,建議配對=對
+78,2976,課綱抽取,101002001,diff,中國聲韻學,姜亮夫,集韻,丁度籌 / 吳予天 / 張世祿 / 方成珪,,ncl,t,f,建議配對=錯
+79,1789,課綱抽取,42202001,diff,社會救助,曾薔霓,「二十一世紀台灣社會福利願景」學術研討會 : 會議論文,曾薔霓,,ncl,t,f,建議配對=錯
+80,1038,課綱抽取,31017041,diff,漢語動詞和動詞性結構,馬慶株,漢語動詞和動詞性結构 = The Chinese Verb and Verbal Constructions,馬慶株,9.79E+12,ncl,t,t,建議配對=錯
+81,955,課綱抽取,31013021,diff,日據時期臺灣小說選讀,許俊雅,日據時期台灣小說選讀,許俊雅,,ncl,t,t,建議配對=對
+82,878,課綱抽取,31010011,diff,台灣新詩十家論,陶保璽,臺灣新詩十家論,陶保璽,,ncl,t,t,建議配對=對
+83,1386,課綱抽取,41133011,diff,亞細亞的孤兒,吳濁流,出發.終點站,縱貫線 / 李宗盛 / 羅大佑 / 周華健 / 張震嶽,,ncl,t,f,建議配對=錯
+84,791,課綱抽取,31004111,diff,中國音樂文學史,朱謙之,詩經音樂文學之研究,白惇仁,,ncl,t,f,建議配對=錯
+85,2417,課綱抽取,70225001,diff,劍橋中國文學史,宇文所安,"“文学文化史""观念下的中国文学史写作 : 以《剑桥中国文学史》为例",李俏梅,,ncl,t,f,建議配對=錯
+86,1225,課綱抽取,31033011,diff,語法講義,朱德熙,对外汉语教学语法讲义,呂文華,9.79E+12,ncl,t,f,建議配對=錯
+87,1482,課綱抽取,41198001,diff,哀豔是童年,胡淑雯,哀艷是童年,胡淑雯,9.79E+12,ncl,t,t,建議配對=錯
+88,1074,課綱抽取,31023011,diff,台湾原住民研究：日本と台湾における回顧と展望,台湾原住民研究シンポジウム実行委員会,都市邊緣化下原住民族部落認同與重建 : 以新北市新三鶯部落為例,"江, 雯 / 紀, 舜傑",,ncl,t,f,建議配對=錯
+89,2903,課綱抽取,100713001,diff,詩學 (Poetics),亞里斯多德 (Aristotle),道家詩學.,鄭振偉.,,ncl,t,f,建議配對=錯
+90,2517,AI推薦,45040001,diff,GIMP 2.10 for Photographers: Image Editing with Open Source Software,Klaus Goelker,The Natural Light Portrait Book,Scott Kelby,9.78E+12,google_books,t,f,建議配對=錯
+91,833,課綱抽取,31008011,diff,小說面面觀,"佛斯特（Forster, E. M）",明代小说面面观 : 明代小说囯际学术硏讨会论文集,辜美高 / 黄霖,9.79E+12,ncl,t,f,建議配對=錯
+92,508,課綱抽取,2386001,diff,游泳,周靜玉,(增訂)小學生文庫,王雲五 / 鍾小祥 / 王東平 / 邵祚禮 / 劉一之 / 朱垂鍸 / 俞崇岳 / 王壽松 / 胡慤風 / 應觀興 / 胡蘇民 / 王大文 / 徐庸 / 趙景源 / 趙景源 / 杜周 / 魏志澄 / 杜周 / 張宗麟 / 王惠 / 王孟元 / 劉光華 / 朱智賢 / 孫寒冰 / 蔣學楷 / 張契渠 / 林式 / 樓桐孫 / 孫寒冰 / 胡懷琛 / 魏智澄 / 吳道存 / 劉南陔 / 胡去非 / 徐百齊 / 鄭昊樟 / 徐子成 / 徐子成 / 徐應昶 / 蔣千 / 徐子成 / 吳銘之 / 趙竹光 / 王庚 / 王庚 / 趙竹光 / 趙竹光 / 趙竹光 / 阮良 / 柯文 / 林履彬 / 陳嶽生 / 陳濟芸 / 方賓觀 / 胡懷琛 / 齊鐵恨 / 胡懷琛 / 徐則敏 / 徐則敏 / 沈亦芳 / 胡懷琛 / 杜周 / 俞煥斗 / 胡懷琛 / 胡懷琛 / 吳增芥 / 吳增芥 / 吳增芥 / 吳增芥 / 吳增芥 / 胡懷琛 / 吳增芥 / 殷珮斯 / 陳芳 / 姜元琴 / 嚴大椿 / 俞煥斗 / 劉百川 / 劉百川 / 陸仁壽 / 陳嶽生 / 胡達聰 / 譚斐然 / 胡顏立 / 徐應昶 / 陸仁壽 / 陸仁壽 / 李宗法 / 李宗法 / 石仲衍 / 徐應昶 / 徐應昶 / 徐應昶 / 徐應昶 / 徐應昶 / 陸維承 / 陳忠杰 / 林富田 / 陳富美 / 吳道良 / 殷倚德 / 吳真惠 / 徐應昶 / 徐應昶 / 鄭子政 / 趙景源 / 呂一舟 / 凌鴻瑤 / 凌鴻瑤 / 凌鴻瑤 / 孫伯才 / 束雲逵 / 徐應昶 / 徐亞生 / 胡鍾瑞 / 李宗法 / 李宗法 / 李宗法 / 束雲逵 / 徐應昶 / 凌鴻瑤 / 凌鴻瑤 / 李宗法 / 李宗法 / 嚴大椿 / 李宗法 / 胡鍾瑞 / 韋息予 / 束雲逵 / 韋息予 / 孫伯才 / 徐應昶 / 徐亞生 / 韋息予 / 林履彬 / 陳嶽生 / 林履彬 / 林履彬 / 林履彬 / 潘錫純 / 張達善 / 楊彬如 / 楊彬如 / 陳嶽生 / 宗亮寰 / 林履彬 / 陳嶽生 / 林履彬 / 陳澤鳳 / 林履彬,,ncl,t,f,建議配對=錯
+93,2825,課綱抽取,90106001,diff,健康與生活：開創樂活幸福人生,張李淑女 等13人,<完全圖解>身體的疾病,張李淑女 等13人,9.79E+12,ncl,t,f,建議配對=錯
+94,944,課綱抽取,31013021,diff,山豬飛鼠撒可努,亞榮隆．撒可努,山猪.飛鼠.撒可努,亞榮隆撒可努,,ncl,t,t,建議配對=錯
+95,1340,課綱抽取,41133001,diff,蔣經國傳,江南,蒋经国传,嚴如平,9.79E+12,ncl,t,f,建議配對=錯
+96,173,課綱抽取,359031,diff,Statistics for Business and Economics,D. R. Anderson / D. J. Sweeney / T. A. Williams / J. D. Camm / J. J. Cochran,商务与经济统计,D.R.·安德森,9.79E+12,google_books,t,t,一個中文一個英文
+97,1467,課綱抽取,41187001,diff,臥遊：中國山水畫的世界,小川裕充,葆光祿,龍明子 / 張耒 / 吳枋 / 洪皓 / 梅堯臣 / 方嶽 / 李方叔 / 俞成 / 吳淑 / 李洛非 / 蕭洵 / 王瑩 / 吳祖謙 / 林洪,,ncl,t,f,建議配對=錯
+98,1752,課綱抽取,42181011,diff,哲學的慰藉,"Alain de Botton, A.",哲学的慰藉,狄波頓 / 資中筠,9.79E+12,ncl,t,t,建議配對=對
+99,782,課綱抽取,31004111,diff,毛詩鄭箋,鄭玄,叢書集成續編,鄭玄,,ncl,t,f,建議配對=錯
+100,2031,AI推薦,42200001,diff,勞動法新論,黃越欽,劳动法新论,強磊 :著.,,ncl,t,f,建議配對=錯
+101,1672,課綱抽取,42143001,diff,Negotiation（談判學）,R.J. Lewicki / D.M. Saunders / B. Barry,1 1/2 : 性別協商的理論遊戲和運動實踐 = Between one and two : outline of the match theory for gender negotiation,吳鄭重,9.79E+12,ncl,t,f,建議配對=錯
+102,2496,AI推薦,43010001,diff,The Physics of Everyday Phenomena: A Conceptual Introduction to Physics,W. Thomas Griffith / Juliet W. Brosing,Physics of Everyday Phenomena 9e,GRIFFITH / Juliet Brosing,9.78E+12,google_books,t,t,建議配對=錯
+103,886,課綱抽取,31010011,diff,青春構詩：七〇年代新興詩社與一九五〇年世代詩人的詩學建構策略,解昆樺,靑春構詩 : 七0年代新興詩社與1950年世代詩人的詩學建構策略,解昆樺,9.79E+12,ncl,t,t,建議配對=錯
+104,1456,課綱抽取,41169001,diff,Culinary Cultures of the Middle East,Sami Zubaida / Richard Tapper,A Taste of Thyme,Sami Zubaida / Richard Tapper,,google_books,t,f,建議配對=錯
+105,962,課綱抽取,31013021,diff,轉山,謝旺霖,愛悅讀,謝旺霖,,ncl,t,f,建議配對=錯
+106,2747,課綱抽取,70380001,diff,社區設計的時代：用「不造物的設計」概念打造二十一世紀理想社會，全面探究社區設計的工作奧義、設計總體方針，以及如何與社群團體培養合作默契,山崎亮 Yamazaki Ryo,全民参与社区设计的时代,山崎亮 / 林明月 / 付奇鑫 / 黃澤民,9.79E+12,ncl,t,f,建議配對=錯
+107,896,課綱抽取,31010021,diff,機械複製時代的藝術作品,班雅明 / Walter Benjamin,机械复制时代的艺术作品,本雅明 / 王才勇,,ncl,t,t,建議配對=錯
+108,3236,AI推薦,509907001,diff,Diccionario combinatorio práctico del español contemporáneo: Las palabras en su contexto,Ignacio Bosque,Redes. Diccionario combinatorio del español contemporáneo,Ignacio Bosque,9.79E+12,google_books,t,f,建議配對=錯
+109,998,課綱抽取,31014041,diff,臺灣宗教文選,康來新 / 林淑媛,台灣宗教文選,康來新 / 林淑媛,,ncl,t,t,建議配對=對
+110,2373,課綱抽取,70216001,diff,詩學 (Poetics),亞里斯多德 (Aristotle),道家詩學.,鄭振偉.,,ncl,t,f,建議配對=錯
+111,1362,課綱抽取,41133001,diff,謝雪紅評傳,陳芳明,謝雪紅.野の花は枯れず : ある台湾人女性革命家の生涯,陳芳明 / 森幹夫,9.78E+12,ncl,t,t,建議配對=錯
+112,935,課綱抽取,31013021,diff,想我眷村的兄弟們,朱天心,文學過家說演劇場.,朱天心,,ncl,t,f,建議配對=錯
+113,440,課綱抽取,2343011,diff,學校體育教材教法與評量橄欖球,教育部,"學校體育敎材敎法與評量 : 橄欖球 = Teaching methods, materials, and assessment in physical education : rugby",林靜萍 / 陳良乾,9.79E+12,ncl,t,t,建議配對=錯
+114,1697,課綱抽取,42156001,diff,尋求安全感的中國：從中國人的角度看中國的對外關係,黎安友 / 施道安,"沒有安全感的強國 : 從鎖國、開放到崛起,中國對外關係70年","黎安友 / 何大明 / Nathan, Andrew J. / 施道安 / Scobell, Andrew",9.79E+12,ncl,t,f,建議配對=錯
+115,1818,AI推薦,601011,diff,民法物權論,謝在全,民法精義,蔡肇璜 / 蔡肇璜 / 李謨 / 韋維清 / 張企泰 / 羅鼎 / 羅鼎 / 陶百川,,ncl,t,f,建議配對=錯
+116,2413,課綱抽取,70225001,diff,先秦文學史參考資料,北京大學,先秦文學史参考資料,北京大學,,ncl,t,t,建議配對=錯
+117,762,課綱抽取,31004091,diff,詩言志辨,朱自清,民国诗歌史着集成,陳引馳 / 周興陸,9.79E+12,ncl,t,f,建議配對=錯
+118,990,課綱抽取,31014041,diff,中國近世宗教倫理與商人精神,余英時,中國近世宗敎倫理與商人精神,"余, 英時",9.79E+12,ncl,t,t,建議配對=錯
+119,660,課綱抽取,10120001,diff,審計準則公報,中華民國會計研究發展基金會,比較財務報表之查核報告,中華民國會計研究發展基金會,,ncl,t,f,建議配對=錯
+120,934,課綱抽取,31013021,diff,手卷,西西,百花圖,惲格,9.79E+12,ncl,t,f,建議配對=錯
+121,954,課綱抽取,31013021,diff,準台北人,陳又津,青春愛讀書.,謝哲青,,ncl,t,f,建議配對=錯
+122,3186,AI推薦,154272001,diff,The Nyāya-Mañjarī of Jayanta Bhaṭṭa,Jayanta Bhaṭṭa / Ganganatha Jha,The Nyayamanjari of Jayanta Bhatta,Gautama (Authority on Nyāyaśāstra),,google_books,t,t,建議配對=錯
+123,692,課綱抽取,10132021,diff,日本語会話,北嶋千鶴子,(實用)日本語會話,星野和義 / 小栗山雪枝,,ncl,t,f,建議配對=錯
+124,1420,課綱抽取,41133011,diff,台灣國際政治史,戴天昭,台湾国際政治史研究,戴天昭,,ncl,t,t,建議配對=對
+125,949,課綱抽取,31013021,diff,華麗緣：散文集一,張愛玲,陳姑自盡,張愛玲,,ncl,t,f,建議配對=錯
+126,431,課綱抽取,2339011,diff,輕鬆學木球,李俊秀,輕松學木球,李俊秀,,ncl,t,t,建議配對=錯
+127,180,課綱抽取,359061,diff,Statistics for Business and Economics,D. R. Anderson / D. J. Sweeney / T. A. Williams / J. D. Camm / J. J. Cochran,商务与经济统计,D.R.·安德森,9.79E+12,google_books,t,t,建議配對=錯
+128,1205,課綱抽取,31031041,diff,散文課,周芬伶,散文课 = Creative prose,張怡微,9.79E+12,ncl,t,f,建議配對=錯
+129,1906,AI推薦,31004031,diff,中國詩歌藝術研究,袁行霈,中囯诗歌艺朮硏究,袁行霈,,ncl,t,t,建議配對=錯
+130,1433,課綱抽取,41135001,diff,烏托邦,湯馬斯·摩爾,2011 KYU Architecture & Interior design : a good place that dose not exist,湯馬斯·摩爾,,ncl,t,f,建議配對=錯
+131,1580,課綱抽取,42089001,diff,美味關係,槙村怜,茀羅拉的愛之特選食譜,茀羅拉淑芬),,ncl,t,f,建議配對=錯
+132,2860,課綱抽取,101001011,diff,說文解字通論,黃天樹,说文解字通论,陸宗達,,ncl,t,f,建議配對=錯
+133,747,課綱抽取,31004051,diff,唐詩選（上）（中）（下）,前野直彬,"""唐诗选学""论纲",李定廣,,ncl,t,f,建議配對=錯
+134,911,課綱抽取,31013011,diff,台灣新文學史,陳芳明,闡釋臺灣的焦慮,劉小新,9.79E+12,ncl,t,f,建議配對=錯
+135,1107,課綱抽取,31024001,diff,海上花落,張愛玲,國語海上花列傳,張愛玲 / 張愛玲 / 韓子雲 / 張愛玲 / 張愛玲 / 韓子雲,,ncl,t,t,建議配對=錯
+136,1643,課綱抽取,42133001,diff,崩世代：財團化、貧窮化與少子女化的危機,林宗弘等,"20幾歲,就定位.",袁岳,9.79E+12,ncl,t,f,建議配對=錯
+137,1096,課綱抽取,31024001,diff,中國近代小說大系,上海復旦大學中文系,痴人說夢記,旅生 / 荒江釣叟 / 碧荷館主人,,ncl,t,f,建議配對=錯
+138,2381,課綱抽取,70216001,diff,遇見新故宮,林正儀,新故宮との出會い = Meet the new National Palace Museum,張欽祥,9.79E+12,ncl,t,f,建議配對=錯
+139,1637,課綱抽取,42133001,diff,基礎社會學,片桐新自等人,基礎社会学講義 : 社会学的分析の基本枠組 = Fundamental framework of sociological analysis,小林久高,9.78E+12,ncl,t,f,建議配對=錯
+140,1208,課綱抽取,31031041,diff,中國散文小說史,陳平原,中国散文小说史,陳平原,9.79E+12,ncl,t,t,建議配對=對
+141,2437,課綱抽取,70298001,diff,南島語言,BLUST,阿美語參考語法,吳靜蘭,,ncl,t,f,建議配對=錯
+142,3374,AI推薦,300732001,diff,"Inclusion: Diversity, The New Workplace & The Will To Change",Jennifer Brown,How to be an inclusive leader : your role in creating cultures of belonging where everyone can thrive,"Brown, Jennifer",9.78E+12,loc,t,f,建議配對=錯
+143,1658,課綱抽取,42138011,diff,AI時代的數位傳播素養教育,王維菁 / 林玉鵬 / 王俐容,AI時代的數位傳播素養敎育,"王, 維菁 / 林, 玉鵬 / 王, 俐容",9.79E+12,ncl,t,t,建議配對=錯
+144,1401,課綱抽取,41133011,diff,台灣第一,莊永明,"<<流 : 移動的生命力, 浪潮中的臺灣>> : 第一、二屆移民工文學獎 得獎作品集",莊永明,9.79E+12,ncl,t,f,建議配對=對
+145,1619,課綱抽取,42112081,diff,政治學與台灣政治,王業立,政治學與臺灣政治 (三版),王業立,9.79E+12,ncl,t,t,建議配對=對
+146,1439,課綱抽取,41135001,diff,格理弗遊記,綏夫特,大人國遊記 = A voyage to Brobdingnag,"施惠夫脫 / Swift, Jonathan / 摩頓 / Morten, Thomas / 史,偉志",9.79E+12,ncl,t,f,建議配對=錯
+147,797,課綱抽取,31004111,diff,唐詩選,馬茂元,"""唐诗选学""论纲",李定廣,,ncl,t,f,建議配對=錯
+148,2988,課綱抽取,100831001,diff,王漁洋與康熙詩壇,蔣寅,王漁洋与康熙詩壇,蔣寅,,ncl,t,t,建議配對=錯
+149,446,課綱抽取,2350001,diff,武術匯宗,萬籟聲,世界體育史綱要,程登科 / 民國叢書編輯委員會編,,ncl,t,f,建議配對=錯
+150,1055,課綱抽取,31023001,diff,南島語言,Robert Blust,阿美語參考語法,吳靜蘭,,ncl,t,f,建議配對=錯
+151,1087,課綱抽取,31023011,diff,寫作課：一隻鳥接著一隻鳥寫就對了！,"拉莫特（Lamott, Anne）",[國立臺北大學教師升等資料 : 人文學院.,張中倩,,ncl,t,f,建議配對=錯
+152,2414,課綱抽取,70225001,diff,兩漢文學史參考資料,北京大學,兩漢文學史参考資料,北京大學,,ncl,t,t,建議配對=錯
+153,1163,課綱抽取,31031021,diff,新唐書,,<<新唐书.艺文志>>“著录”探源,武秀成,,ncl,t,t,建議配對=對
+154,1320,課綱抽取,41114001,diff,日本經濟史,石井寬治,"""計劃化""和""民主化""",中村隆英 / 胡企林 / 胡靖 / 林華,,ncl,t,f,建議配對=錯
+155,1145,課綱抽取,31031011,diff,歐陽修全集,歐陽修,"歐陽文忠公全集 二十種,目錄一卷,附錄五卷,跋一卷",歐陽修. / 周必大.,,ncl,t,f,建議配對=錯
+156,1437,課綱抽取,41135001,diff,失樂園,密爾頓,『人文、社會、跨世紀』學術研討會論文集 艾良德﹝Mircea Eliade﹞「中心」象徵系統的揭示,密爾頓,,ncl,t,f,建議配對=錯
+157,2405,課綱抽取,70172011,diff,Communication Strategies 4,J. Liu / K. Harper,Chapter 4,Johnson,,google_books,t,f,建議配對=錯
+158,1137,課綱抽取,31024001,diff,巴黎茶花女遺事,林紓,林纾译著经典,林紓,9.79E+12,ncl,t,f,建議配對=錯
+159,1568,課綱抽取,42089001,diff,醫界風雲,佐藤秀峰,帥哥醫生 Say hello to black Jack,佐藤秀峰 / 妻夫木聰 / 鈴木京香 / 加藤浩次 / 國仲涼子,,ncl,t,t,建議配對=錯
+160,1591,課綱抽取,42089001,diff,藏人,尾瀨朗,"2隻魚, 游啊游上岸",王啓在 / 葦苓 / 林囿成 / 邱秀敏,,ncl,t,f,建議配對=錯
+161,1155,課綱抽取,31031011,diff,中國古典散文：從中世紀到近代的散文、遊記、筆記和書信,顧彬（Wolfgang Kubin）,中国古典散文精选注译,傅璇琮 / 邓安生 / 李玉奇,9.79E+12,ncl,t,f,建議配對=對
+162,3336,AI推薦,158743001,diff,清代臺灣移民社會研究,陳孔立,清代台湾移民社会研究,陳孔立,,ncl,t,t,建議配對=錯
+163,3332,AI推薦,158743001,diff,清代臺灣之鄉治,戴炎輝,清代台灣之鄉治,戴炎輝,,ncl,t,t,建議配對=對
+164,289,課綱抽取,2012021,diff,羽球指引,樊正治,圖解游泳指引,"H, Robertson David / 謝璨玲",,ncl,t,f,建議配對=錯
+165,2262,課綱抽取,70028001,diff,漢字文化學,何九盈,汉字文化学,何九盈,9.79E+12,ncl,t,t,建議配對=對
+166,917,課綱抽取,31013011,diff,中心到邊陲的重軌與分軌：日本帝國與台灣文學‧文化研究,吳佩珍,鏡像⋅臺灣 : 臺灣文史研究譯叢,薛化元 / 吳佩珍 / 李奭學 / 邱子修,9.79E+12,ncl,t,f,建議配對=錯
+167,721,課綱抽取,31004021,diff,古詩今唱,,愛恨生死 : 衣帶漸寬終不悔,蔡英俊,9.79E+12,ncl,t,f,建議配對=錯
+168,720,課綱抽取,31004021,diff,歷代詩選注,陳文華,歴代詩選注,鄭文惠,,ncl,t,t,兩個人其實都是作者
+169,455,課綱抽取,2362011,diff,瑜珈慢慢來,諾亞貝琳,瑜伽手冊,"貝琳 / 索娃 / Belling, Noa.",,ncl,t,t,兩本書雖然書名布一樣 但是從課綱抽取的是改版後的名字
+170,279,課綱抽取,2012011,diff,羽球指引,樊正治,圖解游泳指引,"H, Robertson David / 謝璨玲",,ncl,t,f,建議配對=錯
+171,235,課綱抽取,604001,diff,公司法論,王文宇,法律學研究.,賴源河,,ncl,t,f,建議配對=錯
+172,242,課綱抽取,605001,diff,公司法論,王文宇,法律學研究.,賴源河,,ncl,t,f,建議配對=錯
+173,937,課綱抽取,31013021,diff,天橋上的魔術師,吳明益,「點字書、數位有聲書製作暨閱讀推廣活動」圖書光碟.,吳明益,,ncl,t,f,建議配對=錯
+174,2372,課綱抽取,70221001,diff,臺灣抗日運動史研究,若林正丈,台湾抗日運動史研究,若林正丈,,ncl,t,t,建議配對=對
+175,1210,課綱抽取,31031041,diff,中國文學批評史,郭紹虞,"""这是多大的使命呀"" : 试论郭绍虞《中国文学批评史》的贡献",戴燕,,ncl,t,f,建議配對=錯
+176,1143,課綱抽取,31024001,diff,海上繁華夢,孫家振,海上繁华梦,王安憶,,ncl,t,f,只是同名 作者不同
+177,964,課綱抽取,31013021,diff,台灣新文學史,陳芳明,闡釋臺灣的焦慮,劉小新,9.79E+12,ncl,t,f,建議配對=錯
+178,1870,AI推薦,2374001,diff,Coaching Youth Track & Field,American Sport Education Program / USA Track & Field,Coaching Youth Track and Field,American Sport Education Program,9.78E+12,google_books,t,t,建議配對=錯
+179,1606,課綱抽取,42089001,diff,家,尾瀨朗,#NAME?,陸大榮,,ncl,t,f,建議配對=錯
+180,1001,課綱抽取,31014041,diff,死亡的尊嚴與生命的尊嚴,傅偉勳,死亡的尊嚴与生命的尊嚴 : 從臨終精神醫學到現代生死學,傅偉勳,9.79E+12,ncl,t,t,建議配對=錯

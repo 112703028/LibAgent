@@ -50,6 +50,8 @@ class Citation(Base):
     is_required: Mapped[bool] = mapped_column(Boolean, default=True)
     raw_mention: Mapped[str | None] = mapped_column(Text)
     confidence: Mapped[float] = mapped_column(Float, default=0.0)
+    # AI 推薦書驗證失敗被回饋迴路換掉時，標記在第幾輪被取代（None=仍有效）。保留舊列供實驗追溯。
+    superseded_by_iteration: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     course: Mapped["Course"] = relationship(back_populates="citations")
     verified_book: Mapped["VerifiedBook | None"] = relationship(back_populates="citation")
@@ -68,6 +70,12 @@ class VerifiedBook(Base):
     requires_human_review: Mapped[bool] = mapped_column(Boolean, default=False)
     # 人工審核決定：None（不需/未產生）/ pending / approved / rejected
     review_status: Mapped[str | None] = mapped_column(String(20))
+
+    # match_auditor 的配對稽核：確認「配到的權威記錄」是否真的是原書
+    # None = 尚未稽核（也是重跑時的待辦標記）；same = 同一本；mismatch = 配錯
+    pairing_verdict: Mapped[str | None] = mapped_column(String(10))
+    pairing_judge: Mapped[str | None] = mapped_column(String(10))   # rule | llm
+    pairing_reason: Mapped[str | None] = mapped_column(Text)
 
     citation: Mapped["Citation"] = relationship(back_populates="verified_book")
     holding: Mapped["HoldingCheck | None"] = relationship(back_populates="verified_book")

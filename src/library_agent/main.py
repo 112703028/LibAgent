@@ -3,8 +3,9 @@ import csv
 import sys
 from datetime import datetime, timezone
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 
+from library_agent.db.filters import purchasable
 from library_agent.db.models import (
     Citation,
     Course,
@@ -31,8 +32,7 @@ def _fetch_report_rows() -> list[dict]:
             .join(HoldingCheck, HoldingCheck.id == Recommendation.holding_id)
             .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id)
             .join(Citation, Citation.id == VerifiedBook.citation_id)
-            .where(or_(VerifiedBook.review_status.is_(None),
-                       VerifiedBook.review_status != "rejected"))
+            .where(purchasable())
             .order_by(Recommendation.priority, Course.course_name)
         ).all()
 
@@ -141,9 +141,20 @@ def review() -> None:
 
         print(f"待審 {len(rows)} 筆。每筆指令：(a)核准 (r)退回 (e)修正書名 (s)跳過 (q)離開\n")
         for vb, cit, course in rows:
-            reason = "低信心" if vb.verified else f"查無此書（{vb.source}）"
+            if vb.pairing_verdict == "mismatch":
+                reason = "配對可疑"
+            elif vb.verified:
+                reason = "低信心"
+            else:
+                reason = f"查無此書（{vb.source}）"
             print(f"[{course.course_name}] {cit.title}")
             print(f"  信心={cit.confidence:.2f}  來源={vb.source}  verified={vb.verified}  原因={reason}")
+            # 配對可疑時要看得到「配到的是哪本書」，否則無法判斷該不該放行
+            if vb.pairing_verdict == "mismatch":
+                print(f"  ⚠ 配到：{vb.canonical_title}")
+                print(f"    原書作者：{cit.authors or '[]'}")
+                print(f"    配到作者：{vb.canonical_authors or '[]'}")
+                print(f"    稽核理由（{vb.pairing_judge}）：{vb.pairing_reason}")
             ans = input("  > ").strip().lower()
             if ans == "q":
                 break

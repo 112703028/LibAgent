@@ -76,3 +76,4 @@ class AgentState(TypedDict, total=False):
     course_ids: list[str] | None  # crawler 傳給下游的課程 ID 清單（limit 時使用）
     source_files: list[str] | None  # 這次只讀 data/ 裡這些 xlsx 檔名（None/空＝全部）
     departments: list[str] | None  # 這次只處理這些開課系級的課（None/空＝全部）
+    discovery_iteration: int  # 回饋迴路目前第幾輪 discovery（0/未設=初次，>=1=重推）

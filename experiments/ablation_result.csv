@@ -1,0 +1,4 @@
+﻿variant,correct,wrong,reject,error_pct
+current,53,39,0,42.4
+no_author,46,46,0,50.0
+reject,42,8,42,16.0

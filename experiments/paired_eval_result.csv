@@ -1,0 +1,10 @@
+﻿metric,value
+n,120
+gen_correct->pair_correct,55
+gen_correct->pair_wrong,65
+gen_wrong->pair_correct,0
+gen_wrong->pair_wrong,0
+generation_correctness_pct,100.0
+same_pairing_error_pct,27.5
+diff_pairing_error_pct,67.5
+corpus_weighted_error_pct,35.4

@@ -9,6 +9,7 @@ FastAPI 服務，讀既有 DB 呈現缺口分析：KPI 概覽、採購優先級�
 import csv
 import html
 import io
+import json
 import threading
 import time
 from datetime import datetime, timezone
@@ -17,9 +18,11 @@ from pathlib import Path
 from fastapi import Body, FastAPI, File, UploadFile
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 
 from library_agent.agents.crawler import DATA_DIR
+from library_agent.dept_map import DEPARTMENT_MAP
+from library_agent.db.filters import not_superseded, purchasable
 from library_agent.db.models import (
     Citation,
     Course,
@@ -56,9 +59,20 @@ _PRIORITY_RANK = {k: i for i, (k, _, _) in enumerate(_PRIORITY_META)}
 _STATUS_COLOR = {k: c for k, _, c in _STATUS_META}
 _STATUS_LABEL = {k: n for k, n, _ in _STATUS_META}
 
+# Pipeline 流程圖的節點狀態色（對應 PipelineNodeRun.status）。
+# 圖例與前端上色用的 JS 物件都從這裡產生，避免兩邊各寫一份 hex 改色時脫鉤。
+# pending 用淺灰：節點標籤是深色字，底色太深會讀不到，而且「未開始」本來就該看起來是惰性的。
+_NODE_STATUS_META = [
+    ("pending", "未開始", "#d8dce1"),
+    ("running", "執行中", "#fab219"),
+    ("done", "完成", "#0ca30c"),
+    ("error", "錯誤", "#d03b3b"),
+]
 
-def _not_rejected():
-    return or_(VerifiedBook.review_status.is_(None), VerifiedBook.review_status != "rejected")
+
+def _not_superseded():
+    """排除被回饋迴路換掉的舊 citation（superseded_by_iteration 非空）。"""
+    return not_superseded()
 
 
 def _dedup_course_book(rows: list) -> list:
@@ -84,10 +98,14 @@ def _load_data() -> dict:
             "courses": s.scalar(select(func.count()).select_from(Course)) or 0,
             "citations": s.scalar(select(func.count()).select_from(Citation)) or 0,
             "verified": s.scalar(
-                select(func.count()).select_from(VerifiedBook).where(VerifiedBook.verified.is_(True))
+                select(func.count()).select_from(VerifiedBook)
+                .join(Citation, Citation.id == VerifiedBook.citation_id)
+                .where(VerifiedBook.verified.is_(True), _not_superseded())
             ) or 0,
             "pending": s.scalar(
-                select(func.count()).select_from(VerifiedBook).where(VerifiedBook.review_status == "pending")
+                select(func.count()).select_from(VerifiedBook)
+                .join(Citation, Citation.id == VerifiedBook.citation_id)
+                .where(VerifiedBook.review_status == "pending", _not_superseded())
             ) or 0,
         }
 
@@ -97,7 +115,8 @@ def _load_data() -> dict:
             select(Recommendation.priority, func.count(), func.sum(Recommendation.suggested_copies))
             .join(HoldingCheck, HoldingCheck.id == Recommendation.holding_id)
             .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id)
-            .where(_not_rejected())
+            .join(Citation, Citation.id == VerifiedBook.citation_id)
+            .where(purchasable(), _not_superseded())
             .group_by(Recommendation.priority)
         ).all():
             prio[priority] = cnt
@@ -107,7 +126,11 @@ def _load_data() -> dict:
 
         status = {k: 0 for k, _, _ in _STATUS_META}
         for st, cnt in s.execute(
-            select(HoldingCheck.status, func.count()).group_by(HoldingCheck.status)
+            select(HoldingCheck.status, func.count())
+            .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id)
+            .join(Citation, Citation.id == VerifiedBook.citation_id)
+            .where(_not_superseded())
+            .group_by(HoldingCheck.status)
         ).all():
             status[st] = status.get(st, 0) + cnt
 
@@ -122,7 +145,7 @@ def _load_data() -> dict:
             .join(HoldingCheck, HoldingCheck.id == Recommendation.holding_id)
             .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id)
             .join(Citation, Citation.id == VerifiedBook.citation_id)
-            .where(_not_rejected())
+            .where(purchasable(), _not_superseded())
         ).all()
         recs = sorted(recs, key=lambda r: (_PRIORITY_RANK.get(r[0], 9), r[1] or ""))
         recs = _dedup_course_book(recs)  # 同課同書只留一筆（去重後切掉末兩欄輔助鍵）
@@ -132,7 +155,7 @@ def _load_data() -> dict:
                    Citation.is_required, Citation.raw_mention)
             .join(Citation, Citation.id == VerifiedBook.citation_id)
             .join(Course, Course.course_id == Citation.course_id)
-            .where(VerifiedBook.review_status == "pending")
+            .where(VerifiedBook.review_status == "pending", _not_superseded())
             .order_by(Course.course_name)
         ).all()
 
@@ -140,6 +163,19 @@ def _load_data() -> dict:
 
 
 # ---------- 呈現 ----------
+
+def _flow_legend() -> str:
+    """流程圖下方的狀態色圖例。"""
+    return "".join(
+        f'<span><i style="background:{color}"></i>{html.escape(label)}</span>'
+        for _, label, color in _NODE_STATUS_META
+    )
+
+
+def _node_color_js() -> str:
+    """給前端 _updateFlowchart() 用的 status → 色碼對照表（JS 物件字面值）。"""
+    return json.dumps({k: c for k, _, c in _NODE_STATUS_META}, ensure_ascii=False)
+
 
 def _bars(items: list[tuple[str, int, str]]) -> str:
     maxv = max((v for _, v, _ in items), default=0) or 1
@@ -223,6 +259,9 @@ def _rec_table(recs: list, pending: list) -> str:
 
 
 def _render(data: dict) -> str:
+    # 延後 import：graph 會把所有 agent 模組拉進來，與本檔其他用到 graph 的地方一致
+    from library_agent.graph import _MAX_DISCOVERY_ITERATIONS
+
     prio_bars = _bars(
         [(_PRIORITY_LABEL[k], data["priority"].get(k, 0), _PRIORITY_COLOR[k])
          for k, _, _ in _PRIORITY_META]
@@ -252,6 +291,16 @@ h1 {{ font-size:22px; margin:0 0 4px; }}
 .sub {{ color:var(--text-secondary); font-size:13px; margin-bottom:20px; }}
 h2 {{ font-size:15px; margin:0 0 12px; color:var(--text-secondary); }}
 .card {{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 18px; margin-bottom:16px; }}
+.mermaid {{ margin:0; text-align:center; overflow-x:auto; }}
+.flowlegend {{ display:flex; gap:16px; flex-wrap:wrap; justify-content:center;
+  margin-top:10px; font-size:12px; color:var(--text-secondary); }}
+.flowlegend span {{ display:inline-flex; align-items:center; gap:5px; }}
+/* 淺色色塊（未開始）在白底卡片上要有輪廓才看得出來 */
+.flowlegend i {{ width:10px; height:10px; border-radius:3px; display:inline-block;
+  border:1px solid rgba(0,0,0,.12); }}
+.flownote {{ margin:8px 0 0; text-align:center; font-size:12px; line-height:1.6;
+  color:var(--text-secondary); }}
+.flownote b {{ color:var(--text-primary); font-weight:600; }}
 .runbar {{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; }}
 .runbtn {{ font:inherit; font-size:14px; font-weight:600; padding:8px 18px; border-radius:8px; cursor:pointer;
   border:1px solid var(--border); background:var(--text-primary); color:var(--surface); }}
@@ -276,6 +325,9 @@ h2 {{ font-size:15px; margin:0 0 12px; color:var(--text-secondary); }}
   border-bottom:1px solid var(--gridline); }}
 .filefilter .ff-actions a {{ color:var(--text-secondary); cursor:pointer; text-decoration:underline; }}
 .filefilter .ff-empty {{ color:var(--muted); }}
+.dept-college {{ margin-top:4px; padding-top:4px; border-top:1px solid var(--gridline); }}
+.dept-col-lbl {{ font-size:12.5px; }}
+.dept-item {{ padding-left:18px; color:var(--text-secondary); }}
 .kpi-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin-bottom:16px; }}
 .kpi {{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px 16px; }}
 .kpi .val {{ font-size:30px; font-weight:700; letter-spacing:-.5px; }}
@@ -337,17 +389,26 @@ th.chk, td.chk {{ width:28px; text-align:center; padding-left:6px; padding-right
   <h2>Pipeline 進度</h2>
   <pre class="mermaid" id="flowchart">
 flowchart LR
-    crawler[crawler]
-    parser[parser]
-    discoverer[discoverer]
-    validator[validator]
-    librarian[librarian]
-    human_review[human_review]
-    recommender[recommender]
+    crawler["crawler<br/>爬取課綱"]
+    parser["parser<br/>解析書目"]
+    discoverer["discoverer<br/>AI 推薦補書"]
+    validator["validator<br/>書目驗證"]
+    match_auditor["match_auditor<br/>配對稽核"]
+    librarian["librarian<br/>館藏查詢"]
+    recommender["recommender<br/>採購建議"]
+    human_review["human_review<br/>人工審核"]
     crawler --> parser --> discoverer --> validator
-    validator --> librarian --> recommender
-    validator --> human_review
+    validator -.-> discoverer
+    validator --> match_auditor
+    match_auditor --> librarian --> recommender
+    match_auditor --> human_review
   </pre>
+  <div class="flowlegend">{_flow_legend()}</div>
+  <p class="flownote">
+    <b>虛線</b>為條件邊：AI 推薦書驗證失敗時回 discoverer 重推（最多 {_MAX_DISCOVERY_ITERATIONS - 1} 輪）。
+    <b>match_auditor</b> 會把配對可疑、或抽取信心度不足的書送進 human_review 佇列，
+    並排除在採購建議之外。
+  </p>
 </div>
 
 <div class="kpi-grid">{_kpi_tiles(data["kpis"])}</div>
@@ -384,9 +445,18 @@ flowchart LR
 </div>
 </div>
 <script>
-mermaid.initialize({{ startOnLoad: true, theme: 'neutral', securityLevel: 'loose' }});
+// curve:'step' 讓連線走直角折線（預設 basis 是貝茲曲線）。
+// 實測過 basis/linear/step/stepBefore/stepAfter，只有 step 系列產生 90 度轉角，
+// 其中 step 的直角比例最高；linear 只是把曲線拉直成斜線，不是直角。
+//
+// rankSpacing 拉大（LR 佈局下就是水平間距，預設 50）：discoverer 與 validator 之間
+// 同時有去程實線和回程虛線，dagre 必定把兩條邊上下錯開，去程邊因此帶一小段 Z 字折。
+// 錯開量本身無法消除（實測 50→140 時它反而從 2.5 長到 4.8），但水平距離增加得更快，
+// 折幅占比從 5.6% 降到 4.5%，線看起來才平。
+mermaid.initialize({{ startOnLoad: true, theme: 'neutral', securityLevel: 'loose',
+                      flowchart: {{ curve: 'step', rankSpacing: 90 }} }});
 
-const _NODE_COLOR = {{ pending: '#898781', running: '#fab219', done: '#0ca30c', error: '#d03b3b' }};
+const _NODE_COLOR = {_node_color_js()};
 
 function _updateFlowchart(nodes) {{
   const svg = document.querySelector('#flowchart svg');
@@ -471,25 +541,42 @@ function _updateDeptLabel() {{
   _el('deptbtn').textContent = '學系 (' + txt + ')';
 }}
 
-// 載入 DB 裡的開課系級清單，畫成勾選框（預設全勾）
+// 載入「學院 → 系所」兩層樹，畫成可展開/勾選的清單（預設全勾）
 async function _loadDepts() {{
   try {{
     const d = await (await fetch('/departments')).json();
     const box = _el('deptfilter');
-    if (!d.departments || !d.departments.length) {{
+    if (!d.tree || !d.tree.length) {{
       box.innerHTML = '<span class="ff-empty">目前沒有系所資料</span>';
       _updateDeptLabel();
       return;
     }}
-    box.innerHTML =
-      '<div class="ff-actions"><a data-act="all">全選</a><a data-act="none">全不選</a></div>' +
-      d.departments.map(function(f){{
-        return `<label><input type="checkbox" class="deptchk" value="${{f}}" checked> ${{f}}</label>`;
+    // 每個學院一個區塊：學院列（含全選該院的框）＋ 底下系所勾選框
+    const sections = d.tree.map(function(node){{
+      const depts = node.depts.map(function(dep){{
+        return `<label class="dept-item"><input type="checkbox" class="deptchk" value="${{dep}}" checked> ${{dep}}</label>`;
       }}).join('');
+      return `<div class="dept-college"><label class="dept-col-lbl"><input type="checkbox" class="colchk" checked> <b>${{node.college}}</b></label>${{depts}}</div>`;
+    }}).join('');
+    box.innerHTML = '<div class="ff-actions"><a data-act="all">全選</a><a data-act="none">全不選</a></div>' + sections;
+    // 系所勾選 → 更新計數
     box.querySelectorAll('.deptchk').forEach(c => c.addEventListener('change', _updateDeptLabel));
+    // 學院框 → 連動該院底下所有系所
+    box.querySelectorAll('.dept-college').forEach(function(sec){{
+      const col = sec.querySelector('.colchk');
+      const items = sec.querySelectorAll('.deptchk');
+      col.addEventListener('change', function(){{
+        items.forEach(c => {{ c.checked = col.checked; }});
+        _updateDeptLabel();
+      }});
+      items.forEach(c => c.addEventListener('change', function(){{
+        col.checked = Array.from(items).every(x => x.checked);
+      }}));
+    }});
+    // 全選/全不選
     box.querySelectorAll('.ff-actions a').forEach(a => a.addEventListener('click', function(){{
       const on = a.dataset.act === 'all';
-      box.querySelectorAll('.deptchk').forEach(c => {{ c.checked = on; }});
+      box.querySelectorAll('.deptchk, .colchk').forEach(c => {{ c.checked = on; }});
       _updateDeptLabel();
     }}));
     _updateDeptLabel();
@@ -727,13 +814,27 @@ def _run_pipeline(run_id: str, source_files: list[str] | None, departments: list
         _run_state.update(status=status, finished_at=time.time(), error=error)
 
 
+# 系所名 → 對應的所有原始系級值（供 /run 把前端選的系所展開成 crawler 能比對的值）
+_DEPT_TO_RAW: dict[str, list[str]] = {}
+for _raw, (_col, _dep) in DEPARTMENT_MAP.items():
+    _DEPT_TO_RAW.setdefault(_dep, []).append(_raw)
+
+
 @app.post("/run")
 def start_run(body: dict = Body(default={})) -> dict:
-    """在背景執行緒啟動整條 pipeline。source_files/departments 為 None/空＝全部；一次只准一個。"""
+    """在背景執行緒啟動整條 pipeline。source_files/departments 為 None/空＝全部；一次只准一個。
+    departments 收到的是「系所名」，在此展開成 crawler 比對用的原始系級值。"""
     from library_agent.graph import _init_run
 
     source_files = body.get("source_files") if isinstance(body, dict) else None
-    departments = body.get("departments") if isinstance(body, dict) else None
+    dept_names = body.get("departments") if isinstance(body, dict) else None
+    # 系所名 → 原始系級值（展平）；未知系所名原樣保留（例如「其他」歸類的原始值本身）
+    departments = None
+    if dept_names:
+        expanded: list[str] = []
+        for name in dept_names:
+            expanded.extend(_DEPT_TO_RAW.get(name, [name]))
+        departments = expanded
     with _run_lock:
         if _run_state["status"] == "running":
             return {"ok": False, "message": "pipeline 已在執行中"}
@@ -755,12 +856,18 @@ def list_files() -> dict:
 
 @app.get("/departments")
 def list_departments() -> dict:
-    """列出 DB 裡現有的開課系級（去重、排序），供前端學系篩選用。"""
+    """回傳「學院 → 系所」兩層樹，只列 DB 裡實際有課的系所（依 DEPARTMENT_MAP 歸類）。
+    格式：{"tree": [{"college": 學院, "depts": [系所名, ...]}, ...]}。"""
     with SessionLocal() as s:
-        rows = s.scalars(
+        raw_depts = s.scalars(
             select(Course.department).where(Course.department.is_not(None)).distinct()
         ).all()
-    return {"departments": sorted(rows)}
+    # 原始系級值 → (學院, 系所)；未知的歸到 (其他, 原始值)
+    tree: dict[str, set[str]] = {}
+    for raw in raw_depts:
+        college, dept = DEPARTMENT_MAP.get(raw, ("其他", raw))
+        tree.setdefault(college, set()).add(dept)
+    return {"tree": [{"college": c, "depts": sorted(tree[c])} for c in sorted(tree)]}
 
 
 @app.post("/upload")

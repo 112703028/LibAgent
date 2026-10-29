@@ -1,0 +1,301 @@
+﻿citation_id,stratum,orig_title,orig_authors,matched_title,matched_authors,gold_same,rule_p,laya_p,llm_same,llm_p,llm_reason
+2567,same,Think like an Anthropologist,Matthew Engelke,How to Think Like an Anthropologist,Matthew Engelke,True,1.0,0.2201,False,0.02,兩筆書名雖相近，但一為《Think like an Anthropologist》，另一為《How to Think Like an Anthropologist》，屬不同書名的作品。
+988,same,破曉時分,朱西甯,愛在破曉時分,中間淳生 / 王小玲,False,1.0,0.6593,False,0.01,書名主體不同，配到的記錄是《愛在破曉時分》而非《破曉時分》，且作者也不同，應為不同書。
+643,same,日本語作文的方法,,表現主題別.日本語作文的方法,佐藤政光,True,1.0,0.6594,False,0.02,配到的記錄書名多了「表現主題別」作為主題/系列標示，且作者明確為佐藤政光，與原始書目僅有書名「日本語作文的方法」且作者無法對應，較像不同書或附加主題標示的另一筆記錄。
+2894,same,休閒遊憩理論與實務,歐聖榮,休閒遊憩 : 理論與實務 = Leisure and recreation : theories and practices,歐聖榮,True,1.0,0.9891,True,0.98,書名主體一致，僅有副標題與中英文對照差異，作者相同，應為同一本書。
+1593,same,家栽之人,毛利甚八,家栽之人,魚戶修 / 小熊森林,True,1.0,0.0713,False,0.02,書名相同，但作者不一致；配到的記錄作者為魚戶修／小熊森林，與原始書目毛利甚八不同，應為不同書目記錄。
+1501,same,Expressionismus. Die große Künstlerbewegung der Moderne,Magdalena M. Moeller,Expressionismus,Magdalena M. Moeller,True,1.0,0.9539,True,0.98,兩筆記錄作者相同，書名僅為副標題差異（完整書名與簡化書名），指向同一本書。
+1425,same,伊底帕斯王,索發克里斯,暨大英劇公演1999/12/1 伊底帕斯王,索發克里斯,False,1.0,0.9449,False,0.02,配到的記錄是《伊底帕斯王》的公演活動/演出記錄，而非作品本身的書目。
+1095,same,晚清小說史,阿英,阿英《晚清小說史》,阿英 / 許傑,True,1.0,0.9347,True,0.97,配到的記錄書名明確指向《晚清小說史》，只是作者欄多列了相關編者/著錄者許傑，屬同一本書的不同著錄方式。
+2882,same,Cross-Cultural Behaviour in Tourism: Concepts and Analysis,Y. Reisinger / L. Turner,Cross-cultural Behaviour in Tourism,Y. Reisinger,True,1.0,0.4875,True,0.95,兩者書名僅差副標題「Concepts and Analysis」，且作者同為 Reisinger（共同作者 Turner 可能在記錄中略去），應為同一本書。
+943,same,房思琪的初戀樂園,林奕含,房思琪的初戀樂園,林奕含,True,1.0,0.9893,True,0.99,書名與作者完全一致，明顯指向同一本書。
+2712,same,An Introduction to Political Philosophy,Jonathan Wolff,An Introduction to Political Philosophy,Jonathan Wolff,True,1.0,0.9406,True,0.99,書名與作者完全一致，明顯指向同一本書。
+2892,same,觀光與休閒遊憩資源規劃,鍾溫清 / 曾秉希,觀光與休閒遊憩資源規劃,鍾溫凊 / 曾秉希,True,1.0,0.9821,True,0.99,書名完全相同，作者僅有同音異體字差異（溫清／溫凊），可視為同一本書。
+3357,same,Zhuangzi: The Complete Writings,Brook Ziporyn,Zhuangzi : the complete writings,"Zhuangzi / Ziporyn, Brook",False,1.0,0.7115,True,0.98,兩筆書名僅有標點與大小寫差異，作者欄也對應同一人 Brook Ziporyn，明顯是同一本《Zhuangzi: The Complete Writings》。
+513,same,災害防救基本計畫,行政院,擬訂災害防救基本計畫有關各類災害防救對策之研究成果報告書,張寬勇 / 趙良林,False,1.0,0.6917,False,0.01,原始書目是行政院發布的《災害防救基本計畫》，配到的記錄則是張寬勇、趙良林撰寫的研究成果報告書，屬於研究/報告而非同一本計畫書。
+889,same,唐詩解構：洛夫的唐韻新鑄藝術,洛夫,唐詩解構 : 洛夫的唐韻新鑄藝術,洛夫,True,1.0,0.9923,True,0.99,書名僅有標點與全半形差異，作者一致，指向同一本書。
+2384,same,蘭亭序是怎麼到博物館？,陳玉金 / 馬筱鳳,蘭亭序是怎麼到博物館? : 天下第一行書,"陳, 玉金 / 馬, 筱鳳. / 黃, 麗珍.",True,1.0,0.8853,True,0.96,書名主體一致，僅有副標題與標點差異，作者也相符，配到的記錄應是同一本書的不同著錄形式。
+1996,same,"Oxford EAP: A Course in English for Academic Purposes, Intermediate/B1+",Edward de Chazal / Sam McCarter,Oxford EAP B2: Student's Book and DVD-ROM Pack,,False,1.0,0.7909,False,0.02,兩者書名與程度層級不同（Intermediate/B1+ vs B2），顯示是不同教材版本/不同書目。
+706,same,唐詩三百首詳析,喻守真,"民國時期文學研究叢書. 喻守真<<唐詩三百首詳析>>, 許舜屏<<白話注釋唐詩三百首>>",張高評,True,1.0,0.0136,False,0.02,配到的記錄是介紹/收錄《唐詩三百首詳析》的叢書條目，且作者為張高評，並非喻守真的原書本身。
+668,same,活用韓語關鍵助詞,羅際任,"活用韓語關鍵助詞 : 第一本針對國人,上課或自學均適用的助詞教材",羅際任,True,1.0,0.9828,True,0.99,書名主體完全相同，配到的記錄只是加上副標題，作者也一致，應為同一本書。
+915,same,台灣原住民族文學史綱,巴蘇亞‧博伊哲努,台灣原住民族文學史綱,巴蘇亞.博伊哲努 / 浦忠成,True,1.0,0.9841,True,0.98,書名完全相同，作者僅為同一人不同標示並多出共同作者/別名寫法，判定為同一本書。
+1407,same,派系鬥爭與權謀政治：二二八悲劇的另一面相,陳翠蓮,派系鬥爭與權謀政治 : 二二八悲劇的另一面,陳翠蓮,True,1.0,0.9932,True,0.99,書名僅有標點與末字差異（「相」應為同題異寫/截斷），作者同為陳翠蓮，判定為同一本書。
+1455,same,Arab Television Industries,Marwan M. Kraidy,Arab Television Industries,Joe F. Khalil / Marwan M. Kraidy,True,1.0,0.9746,True,0.98,書名完全相同，且配到記錄只是多列一位共同作者，符合視為同一本的情況。
+126,same,Fundamentals of Corporate Finance,"Ross, S. A. / Westerfield, R. W. / Jordan, B. D.",FUNDAMENTALS OF CORPORATE FINANCE,Richard A. Brealey / Stewart C. Myers / Alan J. Marcus,False,1.0,0.2258,False,0.01,兩筆記錄書名相同但作者不同，分別是 Ross/Westerfield/Jordan 與 Brealey/Myers/Marcus，屬於不同的公司理財教材。
+2420,same,中國文學史,臺靜農,"""文學""立科與""中國文學史"" : 由京師大學堂章程到林傳甲<<中國文學史>>",陳國球,False,1.0,0.5192,False,0.01,配到的記錄是研究〈中國文學史〉這一書名與立科歷史的論文，作者也不同，並非臺靜農的《中國文學史》原書。
+648,same,作文學日語,,大学.大学院留学生の日本語. 作文學日語,,True,1.0,0.7909,False,0.02,配到的記錄是「大学・大学院留学生の日本語」中的一部分/副題式標示，與原始書名「作文學日語」不一致，較像不同書目或包含關係而非同一本書。
+2294,same,Python入門邁向高手之路王者歸來,洪錦魁,Python入門邁向高手之路 : 王者歸來 = Marching onto the path of Python,洪錦魁,True,1.0,0.9637,True,0.99,書名主體一致，僅有副標題與中英對照差異，作者相同，判定為同一本書。
+1338,same,Sinophone Studies: A Critical Reader,Shu-mei Shih / Chien-hsin Tsai / Brian Bernards,Sinophone Studies,Shu-mei Shih / Chien-hsin Tsai / Brian Bernards,True,1.0,0.966,True,0.97,兩筆作者一致，書名僅差副標題「A Critical Reader」，屬同一本書的標題簡化差異。
+2826,same,公共衛生學,許怡欣 等41人,2006年聯合年會 : 台灣公共衛生學會、台灣流行病學學會暨台灣事故傷害預防與安全促進學會,許怡欣 等41人,False,0.0,0.9849,False,0.02,原始書目是《公共衛生學》，而配到的記錄是2006年聯合年會的會議資料，書名與性質都不同，非同一本書。
+2634,same,台灣高砂族の音樂,黑澤隆朝,黑澤隆朝「台灣高砂族の音樂」四位排灣族耆老一甲子的回顧,周明傑,True,1.0,0.1042,False,0.01,配到的記錄是以黑澤隆朝《台灣高砂族の音樂》為題的研究/回顧文章，作者為周明傑，並非原書本身。
+2779,same,"Research Design: Qualitative, Quantitative, and Mixed Methods Approaches",John W. Creswell / J. David Creswell,Research Design,John W. Creswell / J. David Creswell,True,1.0,0.9679,True,0.98,"兩者作者一致，且配到的書名只是省略副標題，應為同一本《Research Design: Qualitative, Quantitative, and Mixed Methods Approaches》。"
+1991,same,"Cambridge Academic English: An Integrated Skills Course for EAP, Intermediate Student's Book",Martin Hewings / Craig Thaine / Michael McCarthy,Cambridge Academic English C1 Advanced Teacher's Book,Matt Firth / Chris Sowton / Martin Hewings / Craig Thaine,False,1.0,0.1038,False,0.01,兩者書名與用途不同：原始書目是 Intermediate Student's Book，配到的是 C1 Advanced Teacher's Book，屬於不同級別與不同書種。
+1414,same,八田與一研究,黃昭堂,八田與一研究,黃昭堂,True,1.0,0.9871,True,0.99,書名與作者完全一致，明顯指向同一本書。
+82,same,The Beauty Myth,Naomi Wolf,The Beauty Myth,Naomi Wolf,True,1.0,0.9313,True,0.99,書名與作者完全一致，指向同一本書。
+2377,same,動畫基礎技法,Richard Williams,"動畫基礎技法 : 一本充滿方法, 原則與公式的手册",威廉斯,True,1.0,0.99,True,0.98,兩者書名主體一致，且作者「Richard Williams／威廉斯」對應同一人，後者只是副標題與譯名差異。
+1603,same,帝一之國,古屋兔丸,帝一之國,古屋兎丸 / 江昱霖,True,1.0,0.743,True,0.99,書名完全相同，作者古屋兔丸與古屋兎丸為異體字寫法，另列江昱霖應為譯者或編者，不影響同一作品判定。
+3169,same,The Icon and the Axe: An Interpretive History of Russian Culture,James H. Billington,The icon and the axe : an interpretive history of Russian culture,"Billington, James H.",True,1.0,0.9165,True,0.99,書名僅有大小寫與標點差異，作者姓名順序不同但為同一人，指向同一本書。
+3304,same,A Course in Phonetics,Peter Ladefoged / Keith Johnson,A Course in phonetics,"Ladefoged, Peter. / Johnstone, Keith.",True,1.0,0.9248,True,0.98,書名僅大小寫差異，作者姓名順序與拼寫差異可視為同一作者組合，指向同一本《A Course in Phonetics》。
+14,same,Macroeconomics,Robert Gordon,Macroeconomics,Olivier Blanchard,False,1.0,0.9205,False,0.01,兩筆書名相同但作者不同，且 Robert Gordon 與 Olivier Blanchard 是不同作者，應視為不同書。
+2949,same,大眾史學論集,,人人都是史家 : 大眾史學論集,周樑楷,False,0.0,0.16,True,0.98,兩者書名核心一致，且「人人都是史家」明顯是副標題/改題形式，皆指向同一部《大眾史學論集》。
+3162,same,A History of the Arab Peoples,Albert Hourani,A history of the Arab peoples,"Hourani, Albert",True,1.0,0.7989,True,0.99,書名僅大小寫差異，作者為同一人且僅姓名順序不同，指向同一本書。
+971,diff,臺灣新文學思潮史綱,趙遐秋 / 呂正惠,台灣新文學思潮史綱,趙遐秋 / 呂正惠,True,1.0,0.9875,True,0.99,書名僅繁簡體差異（臺灣/台灣），作者一致，指向同一本書。
+2386,diff,文化與文創,漢寶德,「點字書、數位有聲書暨閱讀推廣活動」圖書光碟.,漢寶德,False,0.0,0.9902,False,0.01,兩者書名明顯不同，配到的記錄是閱讀推廣活動圖書光碟，並非《文化與文創》這本書。
+1434,diff,哈姆雷,莎士比亞,2012關渡藝術節 Kuandu Arts Festival : Action Creation Transformation.,莎士比亞,False,0.0,0.9817,False,0.01,原始書目是《哈姆雷》；配到的記錄是《2012關渡藝術節 Kuandu Arts Festival : Action Creation Transformation.》，書名與主題明顯不同，且後者是活動記錄而非同一作品。
+1242,diff,Life 6,,Journal,Blank Unlined Blank Unlined Journals,False,0.0,0.8801,False,0.02,原始書目是《Life 6》，而配到的記錄是《Journal》，書名明顯不同，且後者看起來是空白筆記本類商品而非同一作品。
+1154,diff,中國古代文體學,褚斌杰,20世纪80年代以来的中国古代文体学研究,張慕華,False,1.0,0.6196,False,0.01,配到的記錄是關於「中國古代文體學」研究的另一部著作，書名與作者都不同，並非同一本書。
+967,diff,臺灣文學史綱,葉石濤,台灣文學史綱 : (日譯註解版),葉石濤 / 中島利郎 / 沢井律之 / 彭萱,False,1.0,0.2032,True,0.96,兩者書名核心一致，僅有繁簡與副標題差異，且作者主體同為葉石濤，屬同一本書的不同版本/譯註版。
+1058,diff,珍惜台灣南島語言,李壬癸,八十自述 : 珍惜臺灣南島語言的人,李壬癸,False,0.0,0.9245,False,0.02,配到的記錄書名是李壬癸的自述傳記《八十自述：珍惜臺灣南島語言的人》，並非原始書目《珍惜台灣南島語言》本身。
+2667,diff,書寫台灣：文學史、後殖民、後現代,周英雄 / 劉紀蕙,從口頭傳統到文字書寫 : 臺灣原住民族敘事文學的精神蛻變與返本開新,劉秀美,False,0.0909,0.0076,False,0.01,兩筆書名與作者皆不同，且主題分別是台灣文學史/後殖民與原住民族敘事文學研究，明顯不是同一本書。
+1235,diff,臺灣布袋戲表演藝術之美,吳明德,台灣布袋戲表演藝術之美,吳明德,True,1.0,0.9847,True,0.99,書名僅繁簡體差異（臺灣/台灣），作者相同，應為同一本書。
+885,diff,青少年詩話,蕭蕭,靑少年詩話,蕭蕭,True,0.6,0.9737,True,0.99,書名僅有繁簡/異體字差異（青/靑），作者相同，指向同一本書。
+852,diff,現代詩學,蕭蕭,"""九十年代詩歌""的內在分歧 : 以功能建構為視角",余暘,False,0.0833,0.0975,False,0.01,書名與作者皆不同，且配到的記錄是另一部關於詩歌研究的書，並非《現代詩學》。
+1351,diff,台灣：分裂國家與民主化,若林正丈,黃四十八砦紀事,王葆心,False,0.0,0.1104,False,0.01,兩筆書名與作者皆完全不同，指向不同書籍。
+871,diff,臺灣文學的週邊：臺灣文學與臺灣現代詩的對流,趙天儀,台灣文學的週邊 : 台灣文學與台灣現代詩的對流,趙天儀,True,1.0,0.9943,True,0.99,書名僅有繁簡與標點差異，作者相同，指向同一本書。
+1277,diff,台灣電影：政治、經濟、美學（1949～1994）,盧非易,…年臺灣電影年鑑 = ... Taiwan cinema yearbook,陳俊哲,False,1.0,0.2088,False,0.01,書名與作者皆不同，且配到的是臺灣電影年鑑而非《台灣電影：政治、經濟、美學（1949～1994）》這本專書。
+2975,diff,唐五代西北方音,羅常培,羅常培文集 = The collected linguistic works of Luo Changpei,羅常培,False,0.0,0.9961,False,0.01,配到的記錄是羅常培的文集，屬於作品合集而非《唐五代西北方音》這一本專書。
+1246,diff,Life at the International House: Season One,Dave A. Gardener,Memoirs of the Life and Writings of Benjamin Franklin ..,Benjamin Franklin,False,0.1481,0.0931,False,0.01,兩筆書名與作者皆明顯不同，前者是 Dave A. Gardener 的《Life at the International House: Season One》，後者是 Benjamin Franklin 的《Memoirs of the Life and Writings of Benjamin Franklin》，不是同一本書。
+245,diff,公司法論,柯芳枝,法律學研究.,賴源河,False,0.0,0.2141,False,0.01,書名與作者皆不同，原始書目為《公司法論》柯芳枝，配到記錄為《法律學研究》賴源河，明顯不是同一本書。
+1138,diff,新中國未來記,梁啟超,"大馬扁 六十回,又名,大馬騙",黃世仲 / 春颿 / 梁啟超 / 藤谷古香 / 吳沃堯,False,0.0,0.5173,False,0.01,兩者書名完全不同，且配到的記錄是《大馬扁》而非《新中國未來記》，雖列有梁啟超但不是同一本書。
+2891,diff,休閒設施規劃與管理,王玉馨,休閒及運動設施規劃與管理 = Recreation facility management,"貝格斯 / Beggs, Brent A / 穆爾 / Mull, Richard F / 瑞尼森 / Renneisen, Mick / 穆瓦尼 / Mulvaney, Michael A / 王玉馨",False,0.5833,0.9483,True,0.95,兩者書名主體一致，配到的記錄只是多了「運動」與英文副題，且作者含王玉馨，應為同一本書的不同書目形式。
+774,diff,驚豔唐詩,歐麗娟,驚艷唐詩 : 字行間的人生密碼,歐麗娟,True,1.0,0.7042,True,0.98,書名僅為繁簡與副標題差異，作者相同，應為同一本書。
+2492,diff,Longman Academic Writing Series 4: Essays,Alice Oshima / Ann Hogue,"Longman Academic Writing Series, Level 4",Alice Oshima / Ann Hogue / Lara Ravitch,True,0.7812,0.833,True,0.93,兩者皆為 Alice Oshima / Ann Hogue 的同一套寫作教材第4級，書名僅為系列名與副標題表述不同，新增作者 Lara Ravitch 可視為新版或增列共同作者。
+1526,diff,歐盟大麻煩(The Trouble with €urope),Roger Bootle,歐盟大麻煩 : 世界第一大經濟體分裂，全球大蕭條即將再臨？,"布特爾 / 侯英豪 / Bootle, Roger",True,1.0,0.3906,True,0.98,兩者書名主體一致，且作者皆為 Roger Bootle（中譯與英文並列），配到的記錄只是加上副標題與作者譯名。
+1836,diff,ACSM's Guidelines for Exercise Testing and Prescription,American College of Sports Medicine,Acsm Guideline Exercise Test Pres 11,American College of Sports Medicine / LIGUORI,False,0.5106,0.8121,True,0.97,兩者書名明顯對應同一部《ACSM's Guidelines for Exercise Testing and Prescription》，配到的記錄只是縮寫並標示第11版/編者資訊不同。
+924,diff,台灣文學史小事典,彭瑞金 / 藍建春 / 阮美慧,臺灣文學史小事典,彭瑞金 / 藍建春 / 阮美慧 / 王鈺婷,True,1.0,0.1521,True,0.95,書名僅繁簡體差異，作者前三位一致，僅多列一位共同作者，應為同一本書。
+1322,diff,日本經濟史,武田晴人,"""計劃化""和""民主化""",中村隆英 / 胡企林 / 胡靖 / 林華,False,0.0,0.3701,False,0.01,兩筆書名與作者皆不同，配到的記錄是另一部題名為「計劃化」和「民主化」的書，並非武田晴人的《日本經濟史》。
+827,diff,中國小說史略,魯迅,編年體魯迅著作全集 : 插圖本,周樹人 / 陳漱渝 / 蕭振鳴,False,0.0,0.4762,False,0.01,配到的記錄是《編年體魯迅著作全集：插圖本》，屬於魯迅著作全集中的編年彙編，並非單獨的《中國小說史略》一書。
+1913,diff,Study Speaking: A Course in Spoken English for Academic Purposes,Kenneth Anderson / Joan Maclean / Tony Lynch,会话,Tony Lynch,False,0.0,0.0032,False,0.02,原始書目是三位作者合著的學術英語口說教材《Study Speaking》，而配到記錄僅為 Tony Lynch 的《会话》，書名與內容主題明顯不同，應非同一本書。
+1170,diff,談美,朱光潛,「美國文化與中美關係」演講,朱光潛,False,0.0,0.9677,False,0.01,兩者書名明顯不同，配到的記錄是朱光潛的演講題目，並非《談美》這本書。
+2940,diff,歷史之源,阿諾德 (John H. Arnold),上海历史之源 : 福泉山,張明華,False,1.0,0.0996,False,0.01,兩者書名與作者皆不同，且配到的記錄是關於上海歷史之源的另一部書，不是同一本書。
+220,diff,Statistics for Business & Economics,Anderson et al.,"Statistics for Business and Economics, Metric Edition",Cengage South-Western,False,1.0,0.8187,True,0.92,書名主體一致，僅有符號與副標題/版本差異，且作者欄位可能是出版單位或編者標示，應為同一本書的不同版本記錄。
+84,diff,India’s Sacred Cow,Marvin Harris,The nexus of culture and social movements,Rennison Peter Lalgee,False,0.0698,0.1217,False,0.01,兩筆書名與作者皆不同，且內容主題明顯不相同，應非同一本書。
+3243,diff,Data Structures and Algorithm Analysis in C++,Mark Allen Weiss,Data structures and algorithm analyis in C++,"Weiss, Mark Allen.",True,0.9394,0.9128,True,0.99,書名僅有大小寫與拼寫差異，作者姓名順序不同但為同一作者，指向同一本書。
+3006,diff,田庄人的故事（一）臺灣農村社會文化調查計畫口述歷史專輯,許雪姬,田庄人的故事 : 臺灣農村社會文化調查計畫口述歷史專輯 = Farmers' stories : oral histories of rural society and culture in Taiwan,許雪姬,True,1.0,0.9919,True,0.98,兩筆記錄書名主體相同，僅有副標題與中英文題名差異，作者也一致，應為同一本書。
+1287,diff,戲戀人生——侯孝賢電影研究,林文琪 / 沈曉茵 / 李振亞,文化容顏音像紀實 第...屆國家文藝獎得獎者紀錄片,林文琪 / 沈曉茵 / 李振亞,False,0.0,0.9922,False,0.01,兩筆書名與主題明顯不同：原始書目是侯孝賢電影研究，配到的記錄是國家文藝獎得獎者紀錄片，屬不同作品。
+85,diff,社會學概論——見樹又見林的社會學思維,Frank van Tubergen / 關秉寅 / 彭思錦 / 潘宣 / 馮垂華 / 蕭維毅,當代社會學概論,彭懷恩,False,0.2667,0.0161,False,0.01,兩者書名明顯不同，且作者也不同，應為不同書。
+1020,diff,神話,喬瑟夫．坎伯,"""神话中国"" vs ""轴心时代"" : ""哲学突破""说及""科学中国""说批判",葉舒憲,False,1.0,0.1138,False,0.01,原始書目是喬瑟夫·坎伯的《神話》，而配到的記錄是葉舒憲的《“神话中国” vs “轴心时代”：“哲学突破”说及“科学中国”说批判》，書名與作者皆不同，屬不同書。
+2393,diff,Coursepack,,The New (post-communist) Europe and Its Ethnic Problems,Géza Jeszenszky,False,0.0652,0.0473,False,0.01,原始書目是課程講義/彙編名稱「Coursepack」，而配到的記錄是一本具體著作《The New (post-communist) Europe and Its Ethnic Problems》，書名與內容明顯不同。
+806,diff,漢魏樂府的音樂與詩,錢志熙,汉魏乐府的音乐与诗,錢志熙,False,1.0,0.997,True,0.99,書名僅為繁簡體差異，作者相同，指向同一本書。
+776,diff,歷代詩選注,鄭文惠 / 歐麗娟 / 陳文華 / 吳彩娥,歴代詩選注,鄭文惠,True,0.6,0.938,True,0.98,書名僅有繁簡/異體字差異，且作者為同一主編群之一，符合同一本書的配對。
+476,diff,羽球指引,樊正治,圖解游泳指引,"H, Robertson David / 謝璨玲",False,0.1429,0.0115,False,0.01,書名主題不同，原始為《羽球指引》，配到的是《圖解游泳指引》，明顯不是同一本書。
+1076,diff,賽夏族,胡家瑜,1000步的繽紛台灣.,"方, 玉晶. / 魏, 宇晨.",False,0.0,0.0895,False,0.01,原始書目是《賽夏族》，而配到的記錄是《1000步的繽紛台灣》，書名與主題明顯不同，非同一本書。
+2719,diff,漢語要素教學法：語法詞彙教學篇,楊玉玲,"汉语要素教学法,",楊玉玲,True,1.0,0.9976,True,0.98,書名僅為繁簡體與標點差異，作者相同，指向同一本書。
+1165,diff,元史,,"""邊地""的主體性與多元性",唐曉峰,False,0.0,0.1942,False,0.01,書名完全不同，且配到的記錄是另一部題名為「邊地」的研究著作，並非《元史》。
+2987,diff,王漁洋事跡徵略,蔣寅,王漁洋事跡征略,蔣寅,True,1.0,0.9931,True,0.99,書名僅為繁簡/異體字差異（徵略/征略），作者一致，應為同一本書。
+1091,diff,研究的起點：從自我出發，寫一個對你（和世界）意義重大的研究計畫,墨磊寧（Thomas S.Mullaney） / 雷勤風（Christopher Rea）,林保淳參考著作,林保淳,False,0.0,0.931,False,0.01,兩者書名與作者皆不同，配到的記錄是林保淳的參考著作，並非《研究的起點》這本書。
+3015,diff,清代滿漢關係研究,中國社會科學研究院近代史研究所政治史研究室,清代满汉关系研究 = A study on Manchu-Han relations in the Qing dynasty,中國社會科學研究院近代史研究所政治史研究室,True,1.0,0.4286,True,0.99,書名僅為繁簡體與中英文對照差異，作者一致，指向同一本書。
+883,diff,二十世紀臺灣新詩史,張雙英,二十世紀台灣新詩史,張雙英,True,1.0,0.9879,True,0.99,書名僅有繁簡體差異，作者相同，指向同一本書。
+1504,diff,台灣流行歌：日治時代誌,林良哲,詞曲之外 : 奧山貞吉與日治時期臺灣流行歌編曲,陳婉菱,False,0.0,0.0041,False,0.01,兩者書名與主題明顯不同，前者是《台灣流行歌：日治時代誌》，後者是關於奧山貞吉與臺灣流行歌編曲的研究著作，非同一本書。
+398,diff,學校體育教材教法與評量橄欖球,教育部,"學校體育敎材敎法與評量 : 橄欖球 = Teaching methods, materials, and assessment in physical education : rugby",林靜萍 / 陳良乾,True,1.0,0.9393,False,0.02,兩筆書名主體相同但作者明顯不同，原始書目為教育部，配到記錄為林靜萍／陳良乾，應非同一本書。
+2945,diff,法國史學革命：年鑑學派，1929–2014,伯克 (Peter Burke),法国史学革命 : 年鉴学派 .,"伯克 / 刘永华 / Burke, Peter",True,1.0,0.9402,True,0.99,兩筆書名主體一致，僅繁簡體與標點差異，作者也同為 Peter Burke（伯克）。
+1293,diff,電影百年發展史（上、下）,Kristin Thompson / David Bordwell,電影百年發展史 : 後半世紀,"湯普森 / Thompson, Kristin / 鮑威爾 / 廖金鳳 / Bordwell, David",True,1.0,0.1604,True,0.93,兩筆記錄作者一致（Kristin Thompson、David Bordwell），且書名同屬《電影百年發展史》系列，配到的記錄只是副標題標示後半世紀，屬同一本書的不同著錄方式。
+973,diff,中國哲學十九講,牟宗三,牟宗三先生全集,牟宗三,False,0.0,0.9916,False,0.01,《中國哲學十九講》是牟宗三的單行著作，而《牟宗三先生全集》是收錄其作品的全集，兩者不是同一本書。
+1305,diff,因明入正理論,商羯羅主,[果清法師佛法演講專輯],釋果清,False,0.0,0.8857,False,0.01,原始書目是《因明入正理論》，配到的記錄是《果清法師佛法演講專輯》，書名與內容類型完全不同，明顯不是同一本書。
+1262,diff,Life 6,,Journal,Blank Unlined Blank Unlined Journals,False,0.0,0.8801,False,0.02,原始書名是《Life 6》，配到的記錄是《Journal》，書名明顯不同，且後者看起來是空白筆記本類型而非同一作品。
+1050,diff,霧峯林家的中挫（1864-1885年）,黃富三,霧峯林家的中挫 : 一八六一 - 一八八五,黃富三,True,1.0,0.3379,True,0.98,書名主體相同，僅有標點與年代寫法差異，作者也一致，應為同一本書。
+512,diff,110年國防報告書,國防部,國防報告書(漫畫版). 守護幸福的36小時,梁紹先,False,0.2,0.6613,False,0.01,原始書目是國防部的《110年國防報告書》，配到的記錄是梁紹先的《國防報告書(漫畫版). 守護幸福的36小時》，屬於不同作者且書名與內容明顯不同的另一部作品。
+1139,diff,福爾摩斯探案集,周瘦鵑,巴斯克維爾的獵犬,柯南道爾,False,0.0,0.375,False,0.01,《福爾摩斯探案集》是周瘦鵑編譯/改寫的福爾摩斯故事集，而《巴斯克維爾的獵犬》是柯南道爾的單一原著，書名與作品範圍不同。
+2391,diff,他與她：從榮格觀點探索男性與女性的內在旅程,Robert A. Johnson,風谷裡的沙漏 複管陶笛演奏專輯 = The sandglass in the windy valley,許浩倫,False,0.0,0.0168,False,0.01,兩筆記錄的書名與作者完全不同，且一為榮格心理學著作、一為音樂演奏專輯，明顯不是同一本書。
+2340,diff,漢語語言學,李子瑄 / 曹逢甫,"""Hanyu Pinyin"" in der Didaktik der chinesischen Sprache und Zeichenschrift","Wippermann, Dorothea / Guder-Manitius, Andreas / Jin, Meiling",False,0.0,0.2059,False,0.01,兩筆書名與作者皆不同，配到的記錄是關於漢語拼音教學的另一部研究著作，並非《漢語語言學》。
+441,diff,身體美學,蔣勳,道南論衡 : 全國研究生漢學學術研討會論文集,蔣勳,False,0.0,0.9698,False,0.01,兩筆書名明顯不同，且配到的記錄是研討會論文集，並非《身體美學》這本書。
+810,diff,追憶——中國古典文學中的往事再現,宇文所安,1913 : 意猶未盡的黃金時代 : 追憶二十世紀初西方文明的盛夏,伊里斯 / 姬健梅,False,0.0,0.3547,False,0.01,兩者書名與作者皆不同，內容主題也不相同，明顯不是同一本書。
+252,diff,普通心理學,Robert J. Sternberg,科學名詞彙編,Robert J. Sternberg,False,0.0,0.9895,False,0.01,兩筆書名明顯不同；《普通心理學》與《科學名詞彙編》不是同一本書，即使作者同為 Robert J. Sternberg。
+978,diff,中國哲學文獻選編,陳榮捷,中国哲学文献选编,陳榮捷 / 楊儒賓 / 吳有能 / 朱榮貴,True,1.0,0.9714,True,0.95,書名僅為繁簡體差異，且作者以陳榮捷為主，配到記錄只是多列共同作者，應為同一本書。
+1831,diff,ACSM's Guidelines for Exercise Testing and Prescription,American College of Sports Medicine,Acsm Guideline Exercise Test Pres 11,American College of Sports Medicine,False,0.5106,0.6964,True,0.97,兩者書名核心一致，皆為 ACSM 的《Guidelines for Exercise Testing and Prescription》之不同寫法，作者也相同。
+1100,diff,七俠五義,石玉崑 / 俞樾,包青天審奇案,廉正明,False,0.0,0.0652,False,0.02,《七俠五義》與《包青天審奇案》書名不同，且作者也不同，應為不同書。
+1538,diff,歐盟大麻煩(The Trouble with €urope),羅傑.布特爾 / Roger Bootle,歐盟大麻煩 : 世界第一大經濟體分裂，全球大蕭條即將再臨？,"布特爾 / 侯英豪 / Bootle, Roger",True,1.0,0.0451,True,0.98,兩筆書名主體一致，後者只是加上副標題，作者亦同為 Roger Bootle（中譯與姓名順序不同）。
+1142,diff,斷鴻零雁記,蘇曼殊,断鴻零雁記 : 蘇曼殊.人と作品,蘇曼殊 / 飯塚朗,True,1.0,0.3686,False,0.02,配到的記錄是關於《斷鴻零雁記》與蘇曼殊的研究/介紹書（含「人と作品」），不是原書本身。
+432,diff,木球規則,,國際比賽規則,,False,0.1429,0.4851,False,0.02,兩者書名明顯不同，且「木球規則」與「國際比賽規則」主題不一致，應非同一本書。
+2360,diff,觀．台灣,,[國立臺北大學教師升等資料 : 公共事務學院.,黃朝盟,False,0.0,0.1762,False,0.01,原始書名為《觀．台灣》，而配到的記錄是《國立臺北大學教師升等資料：公共事務學院》，書名與內容主題明顯不同，非同一本書。
+1941,diff,Oxford EAP: A Course in English for Academic Purposes: Intermediate/B1+,Edward de Chazal / Julie Moore,Oxford English for Academic Purposes,Edward De Chazal / Sam McCarter,True,0.2,0.2647,False,0.03,兩筆記錄書名不同，且作者組合也不同；配到的記錄看起來是另一部同類型教材而非同一本書。
+1064,diff,語言與文化（注釋增訂本）,羅常培 / 胡雙寶,"""一带一路""中的语言与文化 : 首届""一带一路""语言与文化国际学术研讨会思想选粹",李亞林,False,0.2667,0.1124,False,0.01,兩者書名與主題明顯不同，前者是羅常培、胡雙寶的《語言與文化》注釋增訂本，後者是關於「一帶一路」語言與文化研討會的論文選粹，並非同一本書。
+2347,diff,臺灣抗日運動史研究,若林正丈,台湾抗日運動史研究,若林正丈,True,1.0,0.9876,True,0.99,書名僅繁簡體差異，作者一致，指向同一本書。
+1212,diff,中國古典散文：從中世紀到近代的散文、遊記、筆記和書信,顧彬 (Wolfgang Kubin),中国古典散文精选注译,傅璇琮 / 邓安生 / 李玉奇,False,1.0,0.6951,False,0.01,兩者書名與作者皆不同，原始書目是顧彬的研究/譯介著作《中國古典散文：從中世紀到近代的散文、遊記、筆記和書信》，配到的記錄則是傅璇琮等編注譯的《中国古典散文精选注译》，不是同一本書。
+2955,diff,中上古漢語音韻論文集,龍師宇純,龍宇純全集,龍宇純,False,0.0,0.9915,False,0.02,原始書目是《中上古漢語音韻論文集》，屬於特定論文集；配到的記錄是《龍宇純全集》，為作者全集，書名與內容範圍不同，非同一本書。
+2693,diff,王家衛的電影世界,張建德 / Stephen Teo,王家卫的电影世界,"張建德 / Teo, Stephen. / 蘇濤",True,1.0,0.0535,True,0.98,書名僅繁簡體差異，作者主體一致，配到記錄多出的蘇濤應為其他責任者或編校資訊，指向同一本書。
+2740,diff,語言學綱要,葉蜚聲 / 徐通鏘,公文语言学纲要,袁暉 / 郭其智,False,1.0,0.9055,False,0.01,書名主題明顯不同，原書為《語言學綱要》，配到的是《公文语言学纲要》，且作者也不同，應為不同書。
+790,diff,談美,朱光潛,「美國文化與中美關係」演講,朱光潛,False,0.0,0.9677,False,0.01,兩者書名明顯不同，配到的記錄是朱光潛的演講題目，並非《談美》這本書。
+1081,diff,台灣當代劇場的評論與詮釋,于善祿,臺灣當代劇場的評論與詮釋,于善祿,True,1.0,0.9941,True,0.99,書名僅有繁簡/異體字差異（台灣／臺灣），作者相同，指向同一本書。
+2929,diff,史學方法論,杜維運,東洋画の見方と技法 ; 大和絵史-絵巻物史 ; 日本中世絵師の諸問題 ; 美術史学方法論,下店静市,False,1.0,0.0267,False,0.01,配到的記錄是日文美術史相關多書名合併記錄，書名與作者皆與原始書目《史學方法論／杜維運》不同，非同一本書。
+744,diff,認知詩學的理論與實踐初探,周世箴,「修辭學之多元詮釋與教學」學術研討會論文集.,張高評,False,0.0,0.0325,False,0.01,兩筆書名與作者皆不同，且配到的記錄是研討會論文集，並非《認知詩學的理論與實踐初探》這本書。
+734,same,唐詩選注,葛兆光,唐詩選注,余冠英,False,1.0,0.5748,False,0.02,書名相同但作者不同，且兩者為不同作者的著作，應視為不同書。
+1656,same,司改十年：回顧與展望,民間司改會,司改十年 : 回顧與展望,民間司改會,True,1.0,0.9658,True,0.99,書名僅有標點差異，作者相同，指向同一本書。
+2813,same,眼球解剖與生理學,"Lens, A et al.",眼球解剖與生理學,"藍斯 / 陳牧君 / Lens, Ai.",True,1.0,0.1766,True,0.98,書名完全相同，作者欄中的 Lens 與藍斯為譯名對應，且配到記錄只是多列共同作者，應為同一本書。
+3014,same,戦争と向き合って―満洲事変～日本敗戦,趙景達 / 原田敬一 / 村田雄二郎 / 安田常雄,戦争と向き合って,趙景達 / 原田敬一 / 村田雄二郎 / 安田常雄,True,1.0,0.9645,True,0.97,兩筆作者相同，書名僅差副標題「―満洲事変～日本敗戦」，屬同一本書的標題簡寫。
+1132,same,"When the Yellow River Floods: Water, Technology, and Nation-Building in Early Twentieth-Century Chinese Literature","Hsu, Hui-Lin",When the Yellow River Floods,Hui-Lin Hsu,True,1.0,0.6944,True,0.98,書名主體一致，配到的記錄只是省略副標題，作者姓名順序不同但為同一人。
+241,same,變動中的公司法制,曾宛如,變動中的公司法制 : 17堂案例學會<<公司法>>,方嘉麟 / 黃銘傑 / 朱德芳 / 張心悌 / 洪令家 / 陳彥良 / 曾宛如 / 林國彬 / 周振鋒 / 洪秀芬 / 馬秀如 / 蘇怡慈 / 方元沂 / 杜怡靜,True,1.0,0.8518,False,0.02,配到的記錄是《變動中的公司法制 : 17堂案例學會<<公司法>>》，屬於不同書名且為多位作者合著的另一部作品，非原始書目《變動中的公司法制》。
+1893,same,Korean Grammar in Use: Intermediate,Ahn Jean-myung / Lee Kyung-ah / Han Hoo-youn,Korean Grammar in Use - Intermediate (English ver.) (영어판),"민진영, 안진명",True,1.0,0.912,True,0.96,兩筆書名核心一致，皆為《Korean Grammar in Use: Intermediate》之英文版/中級版，作者亦可對應到同一作者群的不同譯名與列法。
+2743,same,The Routledge handbook of educational linguistics,M. Bigelow / J. Ennser-Kananen,The Routledge Handbook of Educational Linguistics,Martha Bigelow / Johanna Ennser-Kananen,True,1.0,0.7179,True,0.99,書名僅有大小寫差異，作者姓名為縮寫與全名對應，指向同一本書。
+2820,same,"Romanesque: Architecture, Sculpture, Painting",R. Toman,Romanesque,Rolf Toman,True,1.0,0.9885,True,0.98,兩者作者姓名一致（R. Toman／Rolf Toman），且配到記錄只是省略副標題的同一本書名。
+3175,same,College Korean,Michael C. Rogers / Clare You / Kyungnyun K. Richards,College Korean = [Taehak Hanʼgugŏ],"Rogers, Michael C. / You, Clare. / Richards, Kyungnyun K.",True,1.0,0.8588,True,0.99,書名僅為英文與韓文對照/轉寫差異，作者姓名順序與寫法一致，指向同一本書。
+938,same,呂赫若小說全集,呂赫若,呂赫若小說全集 : 台灣第一才子,"呂, 赫若 / 林至潔",True,1.0,0.88,True,0.96,兩者主書名皆為《呂赫若小說全集》，後者僅多出副標題「台灣第一才子」及共同編者/作者資訊，屬同一本書的不同書目表述。
+178,same,統計學,林慧玲 / 陳正滄,[初級] 統計學,"陳啟崗 / 何爾 / Hoel, Paul G",False,1.0,0.3076,False,0.01,兩筆書名與作者皆不一致，配到的記錄是不同作者的《[初級] 統計學》，不是原始書目《統計學》林慧玲／陳正滄。
+2465,same,The World in the Twentieth Century: From Empires to Nations,Daniel R. Brower / Thomas Sanders,The World in the Twentieth Century,Daniel R. Brower,True,1.0,0.8731,True,0.95,兩者書名主體一致，配到的記錄只是少了副標題，作者也相符，應為同一本書。
+148,same,Investment Analysis and Portfolio Management,"Reilly, Frank K / Keith C. Brown / Sanford J. Leeds",Investment Analysis and Portfolio Management,Frank K. Reilly / Keith C. Brown,True,1.0,0.8408,True,0.98,書名完全相同，作者僅少列一位共同作者，屬同一本書的不同著錄方式。
+2504,same,How Games Move Us: Emotion by Design,Katherine Isbister,How Games Move Us,Katherine Isbister,True,1.0,0.3083,True,0.98,書名僅差副標題「Emotion by Design」，作者相同，應為同一本書。
+41,same,Principles of Economics,N. Gregory Mankiw,Principles of economics,"Mankiw, N. Gregory.",True,1.0,0.8903,True,0.99,書名僅大小寫差異，作者為同一人且姓名順序不同，指向同一本《Principles of Economics》。
+421,same,運動指導法,林正常,彈簧@@運動指導法,黃文忠,False,1.0,0.6241,False,0.02,兩筆書名核心雖同含「運動指導法」，但配到的記錄前有「彈簧@@」且作者不同，較像不同書或不同主題的資料。
+57,same,當代政治學：從政治基礎到國際關係,游清鑫 / 陳義彥,當代政治學 : 從政治基礎到國際政治,游清鑫 / 陳義彥,True,1.0,0.9834,True,0.98,書名主體與作者完全一致，僅副標題末尾用語「國際關係／國際政治」略有差異，屬同一本書的標題變體。
+2376,same,多媒體概論：數位世代的影音、動畫、架站與新媒體,鄭苑鳳 / 吳燦銘,多媒體概論 : 多媒體光碟節目企劃與製作,華之鳳,False,1.0,0.0348,False,0.02,兩筆書名主題雖同為多媒體概論，但副題內容明顯不同，且作者也不同，判斷為不同書。
+1900,same,A Reference Grammar of Korean: A Complete Guide to the Grammar and History of the Korean Language,Samuel E. Martin,A Reference Grammar of Korean,Samuel E. Martin,True,1.0,0.9963,True,0.99,兩筆記錄作者相同，且書名僅差副標題「A Complete Guide to the Grammar and History of the Korean Language」，屬同一本書。
+2555,same,ぶぬん蕃語集,二宮力,ぶぬん蕃語集,二宮力,True,1.0,0.9428,True,0.99,書名與作者完全一致，明顯指向同一本書。
+3309,same,Arabic Grammar in Context,Mohammad T. Alhawary,Arabic grammar in context,"Alhawary, Mohammad T.",True,1.0,0.9326,True,0.99,書名僅大小寫差異，作者姓名順序不同但為同一人，指向同一本書。
+2285,same,圖書資訊學導論,王梅玲 / 謝寶煖,圖書資訊學導論,胡述兆 / 王梅玲,True,1.0,0.334,False,0.02,書名相同，但作者組合不同，配到的記錄為胡述兆／王梅玲，與原始書目王梅玲／謝寶煖不一致，應為不同書目記錄。
+3387,same,行政救濟法新論,蔡志方,行政救濟法新論,蔡志方,True,1.0,0.9841,True,0.99,書名與作者完全一致，明顯指向同一本書。
+2991,same,晚明風雅,大木康,晚明風雅,大木康,True,1.0,0.9711,True,0.99,書名與作者完全一致，指向同一本書。
+58,same,Politics,Andrew Heywood,Politics,Andrew Heywood,True,1.0,0.9699,True,0.99,書名與作者完全一致，指向同一本書。
+1952,same,Academic Writing: A Handbook for International Students,Stephen Bailey,Academic Writing,Stephen Bailey,True,1.0,0.9587,True,0.96,兩者作者相同，且配到的記錄只是省略副標題的同一書名變體，符合視為同一本的情況。
+1272,same,Perspectives 4,Amanda Jeffries / Lewis Landsford / Daniel Barber,Perspectives 4,National Geographic Learning,True,1.0,0.7758,False,0.07,原始書目列出三位作者，配到的記錄作者為 National Geographic Learning，較像教材系列或出版單位記錄，作者資訊不一致，無法確認為同一本書。
+801,same,唐詩三百首詳析,喻守真,"民國時期文學研究叢書. 喻守真<<唐詩三百首詳析>>, 許舜屏<<白話注釋唐詩三百首>>",張高評,False,1.0,0.0136,False,0.02,配到的記錄是研究叢書中的書目項目，且題名同時包含另一部《白話注釋唐詩三百首》，不是單獨的《唐詩三百首詳析》原書。
+3305,same,English Phonetics and Phonology: A Practical Course,Peter Roach,English phonetics and phonology : a practical course,"Roach, Peter",True,1.0,0.8327,True,0.99,書名僅有大小寫與標點差異，作者姓名順序不同但同為 Peter Roach，指向同一本書。
+984,same,中國哲學史,勞思光,"""金岳霖問題""與中國哲學史學科獨立性的探求",陳衛平,False,1.0,0.2629,False,0.01,配到的記錄是關於《中國哲學史》學科問題的研究文章，作者也不同，並非同一本書。
+3234,same,Manual de escritura académica y profesional: Estrategias gramaticales y discursivas,Estrella Montolío,Manual de escritura académica y profesional (Vol. I),Estrella Montolío,True,1.0,0.9584,True,0.96,兩筆記錄作者相同，書名主體一致，僅差副標題與卷次標示，屬同一作品的不同編目形式。
+1060,same,臺灣語言的分類與分區：理論與方法,洪惟仁,(修訂)臺灣語言的分類與分區 : 理論與方法 = Classification and regionalization of languages in Taiwan : theories and methodologies,洪惟仁,True,1.0,0.9877,True,0.99,書名主體一致，僅有修訂版與中英對照副標題差異，作者相同，判定為同一本書。
+1912,same,Writing Academic English,Alice Oshima / Ann Hogue,Writing Academic English,Alice Oshima / Ann Hogue,True,1.0,0.9688,True,0.99,書名與作者完全一致，明顯指向同一本書。
+1181,same,中國雜文史,吳興人,20世紀中國雜文史,姚春樹 / 袁勇麟,False,1.0,0.1157,False,0.01,兩者書名不同，原始書目是《中國雜文史》，配到的是《20世紀中國雜文史》，屬於不同書名的另一部著作。
+930,same,戴墨鏡的飛鼠,瓦歷斯．諾幹,戴墨鏡的飛鼠 : 林管處的巡山員發給每隻可愛的飛鼠一隻墨鏡...,瓦歷斯諾幹,True,1.0,0.6871,True,0.98,書名主體完全一致，僅是副標題補充與作者姓名標點差異，應為同一本書。
+1202,same,前朝夢憶：張岱的浮華與蒼涼,史景遷 (Jonathan D. Spence),還歸龍山 : 張岱的前朝夢憶,"史景遷 / 溫洽溢 / Spence, Jonathan D",True,0.0,0.0055,True,0.96,兩筆皆為史景遷（Jonathan D. Spence）撰寫的張岱研究/傳記性作品，書名雖不同但主題與作者對應一致，應為同一本書的不同題名或版本記錄。
+418,same,羽球教練理論與實際,程嘉彥,羽球教練理論與實際,程嘉彥,True,1.0,0.9792,True,0.99,書名與作者完全一致，指向同一本書。
+3271,same,The Wu Liang Shrine: The Ideology of Early Chinese Pictorial Art,Wu Hung,The Wu Liang Shrine : the ideology of early Chinese pictorial art,Wu Hung,True,1.0,0.967,True,0.99,書名僅有標點與大小寫差異，作者一致，指向同一本書。
+141,same,Marketing: An Introduction,Gary Armstrong / Philip Kotler / Marc Oliver Opresnik,Marketing,Gary M. Armstrong / Philip Kotler,True,1.0,0.581,True,0.95,兩筆皆為同一核心教材《Marketing》，作者主體一致，配到記錄只是少列共同作者且書名省略副標題，屬同一本書。
+1077,same,成為原住民：文學、知識與世界想像,陳芷凡,"成為原住民 : 文學、知識與世界想像 = Being and becoming indigenous people : literature, indigenous knowledge, and imagination of the world",陳芷凡,True,1.0,0.996,True,0.99,書名主體與作者完全一致，配到記錄只是增加英文副題與標點差異，屬同一本書。
+3043,same,The Poetics of Space,Gaston Bachelard,The Poetics of Space,Gaston Bachelard,True,1.0,0.9448,True,0.99,書名與作者完全一致，指向同一本書。
+1936,same,Study Writing: A Course in Writing Skills for Academic Purposes,Liz Hamp-Lyons / Ben Heasley,Study Writing,Liz Hamp-Lyons / Ben Heasley,True,1.0,0.9674,True,0.99,書名僅為主標題與含副標題版本差異，作者一致，應為同一本書。
+2457,same,地緣政治入門：從50個關鍵議題了解國際局勢,Pascal Boniface,地緣政治入門 : 從50個關鍵議題了解國際局勢 = La géopolitique : 50 fiches pour comprendre l'actualité,"博尼法斯 / 粘耿嘉 / Boniface, Pascal",True,1.0,0.6042,True,0.99,書名主體與副標題一致，且作者 Pascal Boniface 對應同一人，僅為中法對照與譯名差異。
+388,same,運動訓練法,林正常,國際撞球運動訓練法研討會. ISBT會議手冊暨論文集,劉姿怡,False,1.0,0.3683,False,0.01,配到的記錄是國際撞球運動訓練法研討會的會議手冊暨論文集，屬於活動/論文集而非《運動訓練法》這本書。
+1608,same,歐盟台灣中國三邊關係剖析,王萬里,歐盟、台灣、中國三邊關係剖析,王萬里,True,1.0,0.9916,True,0.99,書名僅有標點差異，作者相同，指向同一本書。
+2369,same,木柵人：閱讀1950年代木柵人的生活影像,郎豪華 / Howard Rusk Long / 陳慧靜,木柵人 : 閱讀1950年代木柵人的生活影像,郎豪華 / 陳慧靜,True,1.0,0.8954,True,0.98,書名完全一致，僅標點與作者列法不同，配到的記錄應為同一本書。
+1294,same,好萊塢類型電影,Thomas Schatz,好萊塢類型電影 : 公式、電影製作與片廠制度,"雪茲 / Schatz, Thomas / 李亞梅",True,1.0,0.7839,True,0.98,兩者作者皆為 Thomas Schatz，配到記錄只是加入副標題與譯者，屬同一本書的不同書目呈現。
+1914,same,Academic Vocabulary in Use,Michael McCarthy / Felicity O'Dell,Academic Vocabulary in Use,Michael McCarthy / Felicity O'Dell,True,1.0,0.9284,True,0.99,書名與作者完全一致，指向同一本書。
+821,same,唐代小說承衍的敘事研究,康韻梅,唐代小說承衍的敘事研究,康韻梅,True,1.0,0.9908,True,0.99,書名與作者完全一致，明顯指向同一本書。
+769,same,葉嘉瑩說陶淵明飲酒及擬古詩,葉嘉瑩,葉嘉瑩說陶淵明飲酒及擬古詩,葉嘉瑩,True,1.0,0.987,True,0.99,書名與作者完全一致，指向同一本書。
+2389,same,"榮格取向藝術治療：夢、意象和分析心理學指南（Jungian Art Therapy: Dreams, Images, and Analytical Psychology）",Nora Swan-Foster,"榮格取向藝術治療 : 夢、意象和分析心理學指南 = Jungian art therapy : dreams, images, and analytical psychology","史旺福斯特 / 丁凡 / Swan-Foster, Nora",True,1.0,0.987,True,0.99,書名中英文對應且內容完全一致，作者 Nora Swan-Foster 與史旺福斯特為同一人之不同譯名。
+815,same,唐五代志怪傳奇敘錄,李劍國,唐五代志怪傳奇敘錄 : 增訂本,李劍國,True,1.0,0.8971,True,0.99,書名僅差增訂本標示，作者相同，屬同一本書的不同版本。
+1310,same,"An Introduction to Buddhist Ethics: Foundations, Values, and Issues",Peter Harvey,An Introduction to Buddhist Ethics,,True,1.0,0.3332,True,0.97,兩者書名核心一致，配到的記錄只是少了副標題，且作者資訊缺失但不影響判定為同一本書。
+3280,same,Auditing & Assurance Services,Timothy J. Louwers / Robert J. Ramsay / David H. Sinason / Jerry R. Strawser / Jay C. Thibodeau,Auditing & assurance services,"Louwers, Timothy J.",True,1.0,0.3256,True,0.99,書名完全一致，作者名也對應到同一主編/作者群中的 Timothy J. Louwers，屬同一本書的不同著錄方式。
+1219,same,國民散文讀本,楊佳嫻等,國民散文讀本 : 靈魂的領地,凌性傑 / 楊佳嫻,True,1.0,0.0321,True,0.96,兩者書名主體完全一致，僅配到記錄多了副標題，且作者包含楊佳嫻，應為同一本書。
+1689,same,解讀中國經濟,林義夫,撥開中國經濟迷霧 : 與大師對談 : 諾貝爾經濟學獎獲得者約瑟夫.史迪格里茲與中國專家為您解讀中國經濟的未來!,朱敏,False,0.3333,0.1734,False,0.01,兩筆書名與作者皆不同，且配到的記錄是關於中國經濟的對談書，並非《解讀中國經濟》這本書。
+1625,same,經濟學概要,朱敬一等七人,房屋工程 : 經濟學概要 = Revision notes on building economics,桑德 / 林由智 / 盧堅,False,0.0,0.2405,False,0.01,配到的記錄書名主體是「房屋工程」，屬於不同主題的另一部書，並非同一本《經濟學概要》。
+3395,same,GENKI II: An Integrated Course in Elementary Japanese,Eri Banno / Yoko Ikeda / Yutaka Ohno / Chikako Shinagawa / Kyoko Tokashiki,Genki,Eri Banno / Yutaka Ōno,True,1.0,0.7187,True,0.95,兩者皆為《GENKI》日語教材系列，配到的記錄是同書第二冊《GENKI II》的簡化書名，作者也對應同一作者群中的部分列名。
+859,same,當代台灣新詩理論,孟樊,當代台灣新詩理論,陳俊榮,True,1.0,0.4445,False,0.02,書名相同但作者不同，且未見為同一作品的其他作者寫法或共同作者資訊，判定為不同書。
+176,diff,Statistics for Business and Economics,Andersin / Sweeney / Williams / Camm / Cochran,商务与经济统计,D.R.·安德森,True,0.0,0.2725,True,0.97,《Statistics for Business and Economics》與《商务与经济统计》為同一書的英文原名與中文譯名，且作者安德森對應一致，其他作者為共同作者省略。
+2649,diff,原住民族語文教材,,北排灣語 : 教師手冊 = Pinayuanan a tjinuvirian,,False,0.0,0.9605,False,0.01,原始書目是泛稱的「原住民族語文教材」，而配到的記錄是特定語言的「北排灣語」教師手冊，書名與內容主題明顯不同。
+932,diff,神祕列車,甘耀明,科學偵探謎野洛實,佐東綠 / 木木 / 黃薇嬪,False,0.0,0.3742,False,0.01,兩者書名與作者皆不同，指向不同書籍。
+2411,diff,中國文學通史系列,中國社科院文學研究所,南北朝文學史,曹道衡 / 沈玉成,False,0.0909,0.9482,False,0.01,原始書目是叢書名「中國文學通史系列」，而配到的記錄是具體單本著作「南北朝文學史」，書名與內容主題不同。
+2789,diff,Invitation to sociology,Berger,Comprendre la sociologie,Peter L. Berger,False,0.2188,0.7487,False,0.02,兩者書名不同，且法文題名「Comprendre la sociologie」對應的是《Invitation to Sociology》的譯名/改題版本可能性低，但依題名差異與編目規則判定為不同書目記錄。
+2757,diff,Écologie et politique - Écologie et liberté,Michel Bosquet,Ecologie et politique suivi de Ecologie et liberté,Michel Bosquet,True,0.6875,0.9827,True,0.98,兩筆書名僅為標點與法文表述差異，且作者相同，明顯指向同一本書。
+2917,diff,如何培養美感,漢寶德,點字數位圖書館.,漢寶德,False,0.0,0.9814,False,0.01,兩者書名明顯不同，前者是《如何培養美感》，後者是《點字數位圖書館》，即使作者同為漢寶德也不是同一本書。
+816,diff,仙境與遊歷：神仙世界的想象,李豐楙,仙境与游历 : 神仙世界的想象,李豐楙,True,1.0,0.9951,True,0.99,書名僅有繁簡體與標點差異，作者一致，指向同一本書。
+914,diff,文學理論導讀,Terry Eagleton,當代文學理論,"伊格頓 / Eagleton, Terry / 鍾嘉文",False,0.4286,0.4193,False,0.02,兩者書名不同，且配到的記錄顯示為《當代文學理論》，屬於不同書名的作品，不能視為同一本書。
+2636,diff,泰雅語語法概論,黃美金 / 吳新生,臺灣南島語言叢書,吳靜蘭 / 黃美金,False,0.0,0.9757,False,0.01,配到的記錄是《臺灣南島語言叢書》，屬於叢書名稱而非《泰雅語語法概論》這本書本身。
+1907,diff,詩詞格律,王力,词律综述,林克勝,False,0.0,0.2581,False,0.01,兩者書名與作者皆不同，且主題明顯不同，非同一本書。
+2750,diff,全民參與社區設計的時代,山崎亮 Yamazaki Ryo,全民参与社区设计的时代,山崎亮 / 林明月 / 付奇鑫 / 黃澤民,True,1.0,0.1969,True,0.98,書名僅為繁簡體差異，作者主體同為山崎亮，後列姓名應為譯者或編者，指向同一本書。
+3212,diff,Geographic Information Science and Systems,Paul A. Longley / Michael F. Goodchild / David J. Maguire / David W. Rhind,Geographic information science & systems,"Longley, Paul.",True,1.0,0.7819,True,0.98,書名僅為大小寫與符號差異，且作者為同一主編/作者群中的 Paul Longley，指向同一本《Geographic Information Science and Systems》。
+1409,diff,臺灣現代化的推手：蔣經國傳,"陶涵 / Taylor, Jay",東、西洋人眼中的劉銘傳,尹章義,False,0.0,0.8881,False,0.01,兩筆書目的書名與主題完全不同，作者也不同，明顯不是同一本書。
+3263,diff,散曲概論,任中敏,散曲叢刊十五種,任中敏,False,0.125,0.9957,False,0.02,《散曲概論》是單獨的概論著作；《散曲叢刊十五種》是叢刊/合集名稱，書名不同，非同一本書。
+380,diff,慢速壘球規則,,國際比賽規則,,False,0.1111,0.7862,False,0.02,兩者書名明顯不同，前者是慢速壘球規則，後者是國際比賽規則，主題與指涉作品不一致。
+2856,diff,漢字文化學,何九盈,汉字文化学,何九盈,True,1.0,0.9949,True,0.99,書名僅為繁簡體差異，作者一致，指向同一本書。
+2976,diff,中國聲韻學,姜亮夫,集韻,丁度籌 / 吳予天 / 張世祿 / 方成珪,False,0.0,0.6586,False,0.01,原始書目是姜亮夫著《中國聲韻學》，配到的記錄是丁度等編的《集韻》，書名與作者皆不同，屬不同書。
+1789,diff,社會救助,曾薔霓,「二十一世紀台灣社會福利願景」學術研討會 : 會議論文,曾薔霓,False,0.0526,0.9743,False,0.02,原始書目是《社會救助》，而配到的記錄是關於「二十一世紀台灣社會福利願景」學術研討會的會議論文，屬於不同類型且書名不同的作品。
+1038,diff,漢語動詞和動詞性結構,馬慶株,漢語動詞和動詞性結构 = The Chinese Verb and Verbal Constructions,馬慶株,True,1.0,0.982,True,0.99,書名僅有繁簡體與英文對照差異，作者一致，指向同一本書。
+955,diff,日據時期臺灣小說選讀,許俊雅,日據時期台灣小說選讀,許俊雅,True,1.0,0.9883,True,0.99,書名僅有繁簡體差異（臺灣/台灣），作者相同，指向同一本書。
+878,diff,台灣新詩十家論,陶保璽,臺灣新詩十家論,陶保璽,True,1.0,0.9898,True,0.99,書名僅為繁簡/異體字差異（台灣/臺灣），作者相同，指向同一本書。
+1386,diff,亞細亞的孤兒,吳濁流,出發.終點站,縱貫線 / 李宗盛 / 羅大佑 / 周華健 / 張震嶽,False,0.0,0.1556,False,0.01,兩筆書名與作者完全不同，配到的記錄是縱貫線等人的《出發.終點站》，不是吳濁流的《亞細亞的孤兒》。
+791,diff,中國音樂文學史,朱謙之,詩經音樂文學之研究,白惇仁,False,0.2727,0.4511,False,0.01,兩者書名與作者皆不同，且主題分別為中國音樂文學史與詩經音樂文學研究，明顯不是同一本書。
+2417,diff,劍橋中國文學史,宇文所安,"“文学文化史""观念下的中国文学史写作 : 以《剑桥中国文学史》为例",李俏梅,False,0.25,0.3759,False,0.01,配到的記錄是以《劍橋中國文學史》為例的研究論文/評論著作，並非同一本書。
+1225,diff,語法講義,朱德熙,对外汉语教学语法讲义,呂文華,False,1.0,0.5279,False,0.01,書名與作者都不同，且配到的記錄是另一部《对外汉语教学语法讲义》，不是朱德熙的《语法讲义》。
+1482,diff,哀豔是童年,胡淑雯,哀艷是童年,胡淑雯,True,1.0,0.9638,True,0.99,書名僅為異體字「豔／艷」差異，作者相同，指向同一本書。
+1074,diff,台湾原住民研究：日本と台湾における回顧と展望,台湾原住民研究シンポジウム実行委員会,都市邊緣化下原住民族部落認同與重建 : 以新北市新三鶯部落為例,"江, 雯 / 紀, 舜傑",False,0.1,0.0875,False,0.01,兩筆書名與主題明顯不同，前者是台灣原住民研究回顧與展望的論文/會議資料，後者是都市邊緣化下部落認同重建的個案研究。
+2903,diff,詩學 (Poetics),亞里斯多德 (Aristotle),道家詩學.,鄭振偉.,False,0.1,0.0476,False,0.01,原始書目是亞里斯多德的《詩學》，配到的記錄是鄭振偉的《道家詩學》，書名與作者皆不同，屬於不同書。
+2517,diff,GIMP 2.10 for Photographers: Image Editing with Open Source Software,Klaus Goelker,The Natural Light Portrait Book,Scott Kelby,False,0.0698,0.0046,False,0.01,兩筆書名與作者皆不同，內容主題也不相同，明顯不是同一本書。
+833,diff,小說面面觀,"佛斯特（Forster, E. M）",明代小说面面观 : 明代小说囯际学术硏讨会论文集,辜美高 / 黄霖,False,1.0,0.1317,False,0.01,原始書目是佛斯特的《小說面面觀》，配到的記錄是關於「明代小說面面觀」的論文集，書名與主題都不同，並非同一本書。
+508,diff,游泳,周靜玉,(增訂)小學生文庫,王雲五 / 鍾小祥 / 王東平 / 邵祚禮 / 劉一之 / 朱垂鍸 / 俞崇岳 / 王壽松 / 胡慤風 / 應觀興 / 胡蘇民 / 王大文 / 徐庸 / 趙景源 / 趙景源 / 杜周 / 魏志澄 / 杜周 / 張宗麟 / 王惠 / 王孟元 / 劉光華 / 朱智賢 / 孫寒冰 / 蔣學楷 / 張契渠 / 林式 / 樓桐孫 / 孫寒冰 / 胡懷琛 / 魏智澄 / 吳道存 / 劉南陔 / 胡去非 / 徐百齊 / 鄭昊樟 / 徐子成 / 徐子成 / 徐應昶 / 蔣千 / 徐子成 / 吳銘之 / 趙竹光 / 王庚 / 王庚 / 趙竹光 / 趙竹光 / 趙竹光 / 阮良 / 柯文 / 林履彬 / 陳嶽生 / 陳濟芸 / 方賓觀 / 胡懷琛 / 齊鐵恨 / 胡懷琛 / 徐則敏 / 徐則敏 / 沈亦芳 / 胡懷琛 / 杜周 / 俞煥斗 / 胡懷琛 / 胡懷琛 / 吳增芥 / 吳增芥 / 吳增芥 / 吳增芥 / 吳增芥 / 胡懷琛 / 吳增芥 / 殷珮斯 / 陳芳 / 姜元琴 / 嚴大椿 / 俞煥斗 / 劉百川 / 劉百川 / 陸仁壽 / 陳嶽生 / 胡達聰 / 譚斐然 / 胡顏立 / 徐應昶 / 陸仁壽 / 陸仁壽 / 李宗法 / 李宗法 / 石仲衍 / 徐應昶 / 徐應昶 / 徐應昶 / 徐應昶 / 徐應昶 / 陸維承 / 陳忠杰 / 林富田 / 陳富美 / 吳道良 / 殷倚德 / 吳真惠 / 徐應昶 / 徐應昶 / 鄭子政 / 趙景源 / 呂一舟 / 凌鴻瑤 / 凌鴻瑤 / 凌鴻瑤 / 孫伯才 / 束雲逵 / 徐應昶 / 徐亞生 / 胡鍾瑞 / 李宗法 / 李宗法 / 李宗法 / 束雲逵 / 徐應昶 / 凌鴻瑤 / 凌鴻瑤 / 李宗法 / 李宗法 / 嚴大椿 / 李宗法 / 胡鍾瑞 / 韋息予 / 束雲逵 / 韋息予 / 孫伯才 / 徐應昶 / 徐亞生 / 韋息予 / 林履彬 / 陳嶽生 / 林履彬 / 林履彬 / 林履彬 / 潘錫純 / 張達善 / 楊彬如 / 楊彬如 / 陳嶽生 / 宗亮寰 / 林履彬 / 陳嶽生 / 林履彬 / 陳澤鳳 / 林履彬,False,0.0,0.9973,False,0.01,原始書目是《游泳》單一主題著作，配到的記錄是《(增訂)小學生文庫》叢書/合集性質，書名與內容類型都不相同。
+2825,diff,健康與生活：開創樂活幸福人生,張李淑女 等13人,<完全圖解>身體的疾病,張李淑女 等13人,False,0.0,0.886,False,0.01,兩筆記錄書名明顯不同，前者是健康生活主題，後者是身體疾病圖解，應為不同書。
+944,diff,山豬飛鼠撒可努,亞榮隆．撒可努,山猪.飛鼠.撒可努,亞榮隆撒可努,True,1.0,0.943,True,0.99,書名僅有繁簡與標點差異，作者姓名寫法也只是分隔符不同，指向同一本書。
+1340,diff,蔣經國傳,江南,蒋经国传,嚴如平,False,1.0,0.2875,False,0.02,兩者書名雖相同，但作者不同；配到的記錄應是另一位作者所著的同名書，不可視為同一本。
+173,diff,Statistics for Business and Economics,D. R. Anderson / D. J. Sweeney / T. A. Williams / J. D. Camm / J. J. Cochran,商务与经济统计,D.R.·安德森,True,0.0,0.3449,True,0.98,《Statistics for Business and Economics》與《商务与经济统计》為同一英文書的中譯本，作者安德森也對應原書作者之一。
+1467,diff,臥遊：中國山水畫的世界,小川裕充,葆光祿,龍明子 / 張耒 / 吳枋 / 洪皓 / 梅堯臣 / 方嶽 / 李方叔 / 俞成 / 吳淑 / 李洛非 / 蕭洵 / 王瑩 / 吳祖謙 / 林洪,False,0.0,0.3771,False,0.01,原始書目是《臥遊：中國山水畫的世界》，而配到的記錄《葆光祿》是完全不同書名且作者群也不同，明顯不是同一本書。
+1752,diff,哲學的慰藉,"Alain de Botton, A.",哲学的慰藉,狄波頓 / 資中筠,True,1.0,0.2184,True,0.98,書名僅繁簡體差異，作者「Alain de Botton」與「狄波頓」為同一人，屬同一本書。
+782,diff,毛詩鄭箋,鄭玄,叢書集成續編,鄭玄,False,0.0,0.9855,False,0.01,《毛詩鄭箋》是鄭玄對《詩經》的注疏著作，而《叢書集成續編》是收錄多種古籍的叢書名稱，兩者不是同一本書。
+2031,diff,勞動法新論,黃越欽,劳动法新论,強磊 :著.,False,1.0,0.4986,False,0.02,兩者書名雖相同，但作者不同；原始書目為黃越欽，配到記錄為強磊著，應為不同書。
+1672,diff,Negotiation（談判學）,R.J. Lewicki / D.M. Saunders / B. Barry,1 1/2 : 性別協商的理論遊戲和運動實踐 = Between one and two : outline of the match theory for gender negotiation,吳鄭重,False,0.0,0.2069,False,0.01,兩者書名與作者完全不同，配到的記錄是關於性別協商理論的另一部書，並非《Negotiation（談判學）》同一本書。
+2496,diff,The Physics of Everyday Phenomena: A Conceptual Introduction to Physics,W. Thomas Griffith / Juliet W. Brosing,Physics of Everyday Phenomena 9e,GRIFFITH / Juliet Brosing,True,0.8519,0.837,True,0.98,書名主體一致，作者也對應同一組作者，僅是版次與作者姓名寫法略有差異。
+886,diff,青春構詩：七〇年代新興詩社與一九五〇年世代詩人的詩學建構策略,解昆樺,靑春構詩 : 七0年代新興詩社與1950年世代詩人的詩學建構策略,解昆樺,True,0.5,0.9534,True,0.99,書名僅有繁簡、數字與標點差異，作者相同，指向同一本書。
+1456,diff,Culinary Cultures of the Middle East,Sami Zubaida / Richard Tapper,A Taste of Thyme,Sami Zubaida / Richard Tapper,False,0.1429,0.7812,False,0.01,兩者書名不同，且《A Taste of Thyme》是另一部作品，雖作者相同但不是同一本書。
+962,diff,轉山,謝旺霖,愛悅讀,謝旺霖,False,0.0,0.9391,False,0.01,兩筆書名不同，且《愛悅讀》與《轉山》不是同一書名，應為謝旺霖的不同作品。
+2747,diff,社區設計的時代：用「不造物的設計」概念打造二十一世紀理想社會，全面探究社區設計的工作奧義、設計總體方針，以及如何與社群團體培養合作默契,山崎亮 Yamazaki Ryo,全民参与社区设计的时代,山崎亮 / 林明月 / 付奇鑫 / 黃澤民,False,1.0,0.4879,True,0.95,兩筆記錄的核心書名皆對應山崎亮《社區設計的時代》之不同譯名，作者也一致，配到記錄只是多列譯者/編者資訊。
+896,diff,機械複製時代的藝術作品,班雅明 / Walter Benjamin,机械复制时代的艺术作品,本雅明 / 王才勇,True,1.0,0.6186,True,0.99,兩筆書名僅繁簡體差異，且作者皆指向 Walter Benjamin（班雅明／本雅明），屬同一本書的不同譯名與著錄方式。
+3236,diff,Diccionario combinatorio práctico del español contemporáneo: Las palabras en su contexto,Ignacio Bosque,Redes. Diccionario combinatorio del español contemporáneo,Ignacio Bosque,False,0.8261,0.8751,True,0.95,兩筆記錄皆為 Ignacio Bosque 的西班牙語搭配詞典，後者是同一作品的另一書名/版本名稱，主題與作者一致。
+998,diff,臺灣宗教文選,康來新 / 林淑媛,台灣宗教文選,康來新 / 林淑媛,True,1.0,0.9854,True,0.99,書名僅繁簡體差異（臺灣/台灣），作者一致，應為同一本書。
+2373,diff,詩學 (Poetics),亞里斯多德 (Aristotle),道家詩學.,鄭振偉.,False,0.1,0.0476,False,0.01,原始書目是亞里斯多德的《詩學》，配到的記錄是鄭振偉的《道家詩學》，書名與作者皆不同，屬於不同書。
+1362,diff,謝雪紅評傳,陳芳明,謝雪紅.野の花は枯れず : ある台湾人女性革命家の生涯,陳芳明 / 森幹夫,True,0.1818,0.1381,True,0.95,兩筆皆為陳芳明著作，且配到的日文書名是《謝雪紅評傳》的譯名／不同語言版本，指向同一本書。
+935,diff,想我眷村的兄弟們,朱天心,文學過家說演劇場.,朱天心,False,0.0,0.9219,False,0.01,兩筆書名明顯不同，雖同作者朱天心，但指向不同作品。
+440,diff,學校體育教材教法與評量橄欖球,教育部,"學校體育敎材敎法與評量 : 橄欖球 = Teaching methods, materials, and assessment in physical education : rugby",林靜萍 / 陳良乾,True,1.0,0.9393,False,0.02,兩筆書名主體相同但作者明顯不同，原始書目為教育部，配到記錄為林靜萍／陳良乾，應為不同書目記錄。
+1697,diff,尋求安全感的中國：從中國人的角度看中國的對外關係,黎安友 / 施道安,"沒有安全感的強國 : 從鎖國、開放到崛起,中國對外關係70年","黎安友 / 何大明 / Nathan, Andrew J. / 施道安 / Scobell, Andrew",False,0.2727,0.6493,False,0.01,兩筆書名明顯不同，且配到的記錄是另一部關於中國對外關係70年的書，非同一本書。
+1818,diff,民法物權論,謝在全,民法精義,蔡肇璜 / 蔡肇璜 / 李謨 / 韋維清 / 張企泰 / 羅鼎 / 羅鼎 / 陶百川,False,0.1667,0.3393,False,0.01,書名不同，且配到的記錄是《民法精義》並列多位作者，與原始書目《民法物權論》謝在全不是同一本書。
+2413,diff,先秦文學史參考資料,北京大學,先秦文學史参考資料,北京大學,True,1.0,0.9823,True,0.99,書名僅繁簡體差異，作者一致，指向同一本書。
+762,diff,詩言志辨,朱自清,民国诗歌史着集成,陳引馳 / 周興陸,False,0.0,0.3287,False,0.01,原始書目是朱自清的《詩言志辨》，而配到的記錄是陳引馳、周興陸編的《民国诗歌史着集成》，書名與作者皆不同，且屬不同作品。
+990,diff,中國近世宗教倫理與商人精神,余英時,中國近世宗敎倫理與商人精神,"余, 英時",True,1.0,0.9942,True,0.99,書名僅有繁簡/異體字差異，作者姓名寫法也只是順序與標點不同，指向同一本書。
+660,diff,審計準則公報,中華民國會計研究發展基金會,比較財務報表之查核報告,中華民國會計研究發展基金會,False,0.0,0.9951,False,0.01,兩者書名明顯不同，雖作者相同，但指向不同的審計主題與書目記錄。
+934,diff,手卷,西西,百花圖,惲格,False,0.0,0.1527,False,0.01,書名與作者皆不同，明顯是不同作品。
+954,diff,準台北人,陳又津,青春愛讀書.,謝哲青,False,0.0,0.0136,False,0.01,書名與作者皆不同，原始書目是《準台北人》陳又津，配到的記錄是《青春愛讀書》謝哲青，明顯不是同一本書。
+3186,diff,The Nyāya-Mañjarī of Jayanta Bhaṭṭa,Jayanta Bhaṭṭa / Ganganatha Jha,The Nyayamanjari of Jayanta Bhatta,Gautama (Authority on Nyāyaśāstra),True,0.5625,0.0886,False,0.07,兩者書名雖同指《Nyāya-Mañjarī》，但配到的記錄作者是 Gautama（Nyāyaśāstra 權威）而非 Jayanta Bhaṭṭa／Ganganatha Jha，顯示是不同作品或誤配。
+692,diff,日本語会話,北嶋千鶴子,(實用)日本語會話,星野和義 / 小栗山雪枝,False,1.0,0.2092,False,0.01,書名雖相近但作者不同，且配到的記錄為另一部《(實用)日本語会話》，不是同一本書。
+1420,diff,台灣國際政治史,戴天昭,台湾国際政治史研究,戴天昭,True,1.0,0.9962,False,0.03,兩者書名不同，後者為「研究」性著作而非同名作品，雖作者相同但應視為不同書。
+949,diff,華麗緣：散文集一,張愛玲,陳姑自盡,張愛玲,False,0.0,0.9885,False,0.01,兩者書名不同，且「陳姑自盡」是張愛玲的另一篇作品，非《華麗緣：散文集一》同一書目。
+431,diff,輕鬆學木球,李俊秀,輕松學木球,李俊秀,True,1.0,0.9856,True,0.99,書名僅繁簡體差異（輕鬆/輕松），作者相同，應為同一本書。
+180,diff,Statistics for Business and Economics,D. R. Anderson / D. J. Sweeney / T. A. Williams / J. D. Camm / J. J. Cochran,商务与经济统计,D.R.·安德森,True,0.0,0.3449,True,0.98,《Statistics for Business and Economics》與《商务与经济统计》是同一英文書的中譯書名，作者安德森也相符，屬同一本書。
+1205,diff,散文課,周芬伶,散文课 = Creative prose,張怡微,False,1.0,0.0193,False,0.01,書名雖相近但作者不同，且配到的記錄是《散文课 = Creative prose》由張怡微著，並非周芬伶的《散文課》。
+1906,diff,中國詩歌藝術研究,袁行霈,中囯诗歌艺朮硏究,袁行霈,True,0.2727,0.9806,True,0.99,書名僅為繁簡體與異體字差異，作者一致，指向同一本書。
+1433,diff,烏托邦,湯馬斯·摩爾,2011 KYU Architecture & Interior design : a good place that dose not exist,湯馬斯·摩爾,False,0.0,0.9741,False,0.01,原始書目是《烏托邦》，而配到的記錄是《2011 KYU Architecture & Interior design : a good place that dose not exist》，書名與內容主題明顯不同，雖同作者名但不是同一本書。
+1580,diff,美味關係,槙村怜,茀羅拉的愛之特選食譜,茀羅拉淑芬),False,0.0,0.9428,False,0.01,兩者書名明顯不同，作者也不同，指向不同書籍。
+2860,diff,說文解字通論,黃天樹,说文解字通论,陸宗達,False,1.0,0.6052,False,0.01,書名雖相同（繁簡體差異），但作者不同，判定為不同書。
+747,diff,唐詩選（上）（中）（下）,前野直彬,"""唐诗选学""论纲",李定廣,False,0.25,0.0136,False,0.01,"原始書目是前野直彬的《唐詩選》，而配到的記錄是李定廣的《""唐诗选学""论纲》，屬於不同書名且明顯是研究論著，非同一本書。"
+911,diff,台灣新文學史,陳芳明,闡釋臺灣的焦慮,劉小新,False,0.1,0.7976,False,0.01,兩者書名與作者皆不同，且內容主題明顯不是同一本書。
+1107,diff,海上花落,張愛玲,國語海上花列傳,張愛玲 / 張愛玲 / 韓子雲 / 張愛玲 / 張愛玲 / 韓子雲,True,0.2857,0.9459,False,0.02,《海上花落》與《國語海上花列傳》書名不同，後者是另一部作品或相關改寫/版本，不可視為同一本。
+1643,diff,崩世代：財團化、貧窮化與少子女化的危機,林宗弘等,"20幾歲,就定位.",袁岳,False,0.0,0.0063,False,0.01,兩筆書名與作者皆明顯不同，指向不同書籍。
+1096,diff,中國近代小說大系,上海復旦大學中文系,痴人說夢記,旅生 / 荒江釣叟 / 碧荷館主人,False,0.0,0.8621,False,0.01,原始書目是叢書/合集名稱《中國近代小說大系》，而配到的記錄是單行本小說《痴人說夢記》，書名與作品性質都不同。
+2381,diff,遇見新故宮,林正儀,新故宮との出會い = Meet the new National Palace Museum,張欽祥,False,0.2222,0.5698,False,0.02,兩筆書名與作者皆不同，配到的記錄是《新故宮との出會い = Meet the new National Palace Museum》、作者為張欽祥，非《遇見新故宮》、林正儀。
+1637,diff,基礎社會學,片桐新自等人,基礎社会学講義 : 社会学的分析の基本枠組 = Fundamental framework of sociological analysis,小林久高,False,1.0,0.9544,False,0.02,兩者書名明顯不同，配到的記錄是《基礎社会学講義》而非《基礎社會學》，且作者也不同，應為不同書。
+1208,diff,中國散文小說史,陳平原,中国散文小说史,陳平原,True,1.0,0.9865,True,0.99,書名僅為繁簡體差異，作者一致，指向同一本書。
+2437,diff,南島語言,BLUST,阿美語參考語法,吳靜蘭,False,0.0,0.8372,False,0.01,原始書目是 Blust 的《南島語言》，配到的記錄是吳靜蘭的《阿美語參考語法》，書名與作者皆不同，且主題也不同。
+3374,diff,"Inclusion: Diversity, The New Workplace & The Will To Change",Jennifer Brown,How to be an inclusive leader : your role in creating cultures of belonging where everyone can thrive,"Brown, Jennifer",False,0.25,0.6634,False,0.01,兩者書名明顯不同，雖同作者 Jennifer Brown，但指向不同作品。
+1658,diff,AI時代的數位傳播素養教育,王維菁 / 林玉鵬 / 王俐容,AI時代的數位傳播素養敎育,"王, 維菁 / 林, 玉鵬 / 王, 俐容",True,1.0,0.9814,True,0.99,書名僅有繁簡/異體字差異（教育/敎育），作者姓名亦為同一組人名的不同標示方式，判定為同一本書。
+1401,diff,台灣第一,莊永明,"<<流 : 移動的生命力, 浪潮中的臺灣>> : 第一、二屆移民工文學獎 得獎作品集",莊永明,False,0.0,0.9473,False,0.01,兩者書名明顯不同，配到的記錄是《流：移動的生命力，浪潮中的臺灣》之得獎作品集，並非《台灣第一》同一本書。
+1619,diff,政治學與台灣政治,王業立,政治學與臺灣政治 (三版),王業立,True,1.0,0.9893,True,0.99,書名僅有繁簡與版次差異，作者相同，屬同一本書的不同版本。
+1439,diff,格理弗遊記,綏夫特,大人國遊記 = A voyage to Brobdingnag,"施惠夫脫 / Swift, Jonathan / 摩頓 / Morten, Thomas / 史,偉志",False,0.1429,0.0509,True,0.98,《格理弗遊記》即《格列佛遊記》，而《大人國遊記 = A voyage to Brobdingnag》是其中一卷/篇章的常見譯名，作者 Swift（綏夫特）相符。
+797,diff,唐詩選,馬茂元,"""唐诗选学""论纲",李定廣,False,1.0,0.0415,False,0.01,兩者書名與作者皆不同，且配到的記錄是關於《唐诗选学》的論綱，屬於研究評論性著作，不是《唐詩選》本身。
+2988,diff,王漁洋與康熙詩壇,蔣寅,王漁洋与康熙詩壇,蔣寅,True,1.0,0.9904,True,0.99,書名僅繁簡字形差異（與/与），作者一致，指向同一本書。
+446,diff,武術匯宗,萬籟聲,世界體育史綱要,程登科 / 民國叢書編輯委員會編,False,0.0,0.1354,False,0.01,兩者書名明顯不同，且作者也不同，指向不同書籍。
+1055,diff,南島語言,Robert Blust,阿美語參考語法,吳靜蘭,False,0.0,0.905,False,0.01,兩者書名與作者皆不同，且主題分別為南島語言概論與阿美語語法，明顯不是同一本書。
+1087,diff,寫作課：一隻鳥接著一隻鳥寫就對了！,"拉莫特（Lamott, Anne）",[國立臺北大學教師升等資料 : 人文學院.,張中倩,False,0.0,0.0276,False,0.01,原始書目是安妮·拉莫特的《寫作課：一隻鳥接著一隻鳥寫就對了！》，而配到的記錄是《國立臺北大學教師升等資料：人文學院》，書名與主題完全不同，明顯不是同一本書。
+2414,diff,兩漢文學史參考資料,北京大學,兩漢文學史参考資料,北京大學,True,1.0,0.9846,True,0.99,書名僅有繁簡字差異（參考/参考），作者相同，應為同一本書。
+1163,diff,新唐書,,<<新唐书.艺文志>>“著录”探源,武秀成,True,1.0,0.2972,False,0.01,配到的記錄是研究《新唐书·艺文志》“著录”問題的論文/著作，並非《新唐書》原書本身。
+1320,diff,日本經濟史,石井寬治,"""計劃化""和""民主化""",中村隆英 / 胡企林 / 胡靖 / 林華,False,0.0,0.4797,False,0.01,書名與作者皆不相符，配到的記錄是另一部不同主題的書。
+1145,diff,歐陽修全集,歐陽修,"歐陽文忠公全集 二十種,目錄一卷,附錄五卷,跋一卷",歐陽修. / 周必大.,False,0.0952,0.8388,True,0.93,兩者皆指歐陽修文集全集，配到的記錄只是更完整的卷數與附錄資訊，屬同一部作品的不同書目著錄。
+1437,diff,失樂園,密爾頓,『人文、社會、跨世紀』學術研討會論文集 艾良德﹝Mircea Eliade﹞「中心」象徵系統的揭示,密爾頓,False,0.0,0.9197,False,0.01,原始書目是密爾頓的《失樂園》，而配到的記錄是研討會論文集中的一篇論文，書名與作品類型都不同，並非同一本書。
+2405,diff,Communication Strategies 4,J. Liu / K. Harper,Chapter 4,Johnson,False,0.0357,0.1103,False,0.01,原始書目是《Communication Strategies 4》，而配到的記錄是《Chapter 4》，書名明顯不同，且作者也不一致，應為不同書。
+1137,diff,巴黎茶花女遺事,林紓,林纾译著经典,林紓,False,0.0,0.9722,False,0.02,原始書目是《巴黎茶花女遺事》，而配到的記錄是《林纾译著经典》，後者看起來是收錄林紓譯著的叢書或合集名稱，並非同一本書。
+1568,diff,醫界風雲,佐藤秀峰,帥哥醫生 Say hello to black Jack,佐藤秀峰 / 妻夫木聰 / 鈴木京香 / 加藤浩次 / 國仲涼子,True,0.0,0.0386,False,0.02,兩者書名明顯不同，配到的記錄是《帥哥醫生 Say hello to black Jack》，屬於佐藤秀峰的另一部作品，並非《醫界風雲》。
+1591,diff,藏人,尾瀨朗,"2隻魚, 游啊游上岸",王啓在 / 葦苓 / 林囿成 / 邱秀敏,False,0.0,0.0276,False,0.01,兩筆記錄的書名與作者完全不同，指向不同作品。
+1155,diff,中國古典散文：從中世紀到近代的散文、遊記、筆記和書信,顧彬（Wolfgang Kubin）,中国古典散文精选注译,傅璇琮 / 邓安生 / 李玉奇,False,1.0,0.6905,False,0.01,兩者書名與作者皆不同，且一為顧彬著作的中國古典散文研究/選題書，一為傅璇琮等編注譯的古典散文選本，指向不同書。
+3336,diff,清代臺灣移民社會研究,陳孔立,清代台湾移民社会研究,陳孔立,True,1.0,0.9872,True,0.99,書名僅為繁簡體差異，作者一致，指向同一本書。
+3332,diff,清代臺灣之鄉治,戴炎輝,清代台灣之鄉治,戴炎輝,True,1.0,0.9853,True,0.99,書名僅繁簡體差異（臺灣/台灣），作者相同，指向同一本書。
+289,diff,羽球指引,樊正治,圖解游泳指引,"H, Robertson David / 謝璨玲",False,0.1429,0.0115,False,0.01,書名主題明顯不同，原始為《羽球指引》，配到的是《圖解游泳指引》，不是同一本書。
+2262,diff,漢字文化學,何九盈,汉字文化学,何九盈,True,1.0,0.9949,True,0.99,書名僅為繁簡體差異，作者一致，指向同一本書。
+917,diff,中心到邊陲的重軌與分軌：日本帝國與台灣文學‧文化研究,吳佩珍,鏡像⋅臺灣 : 臺灣文史研究譯叢,薛化元 / 吳佩珍 / 李奭學 / 邱子修,False,0.0,0.951,False,0.01,配到的記錄是譯叢/叢書名稱《鏡像⋅臺灣》，與原始書目《中心到邊陲的重軌與分軌：日本帝國與台灣文學‧文化研究》書名明顯不同，且屬不同作品。
+721,diff,古詩今唱,,愛恨生死 : 衣帶漸寬終不悔,蔡英俊,False,0.0,0.0178,False,0.01,兩者書名明顯不同，且配到的記錄有具體作者蔡英俊，應為另一部書而非同一本。
+720,diff,歷代詩選注,陳文華,歴代詩選注,鄭文惠,True,0.6,0.8381,False,0.02,書名僅有異體字差異，但作者不同（陳文華 vs 鄭文惠），判定不是同一本書。
+455,diff,瑜珈慢慢來,諾亞貝琳,瑜伽手冊,"貝琳 / 索娃 / Belling, Noa.",True,0.0,0.9825,False,0.02,兩者書名明顯不同，且配到的記錄作者雖含諾亞貝琳但書名為《瑜伽手冊》，不像是同一本書的不同版本。
+279,diff,羽球指引,樊正治,圖解游泳指引,"H, Robertson David / 謝璨玲",False,0.1429,0.0115,False,0.01,書名主題明顯不同，原始為《羽球指引》，配到的是《圖解游泳指引》，不是同一本書。
+235,diff,公司法論,王文宇,法律學研究.,賴源河,False,0.0,0.2202,False,0.01,兩筆記錄書名與作者皆不同，分別是《公司法論》王文宇與《法律學研究》賴源河，明顯不是同一本書。
+242,diff,公司法論,王文宇,法律學研究.,賴源河,False,0.0,0.2202,False,0.01,書名與作者皆不同，且配到的記錄是另一部《法律學研究》，不是《公司法論》。
+937,diff,天橋上的魔術師,吳明益,「點字書、數位有聲書製作暨閱讀推廣活動」圖書光碟.,吳明益,False,0.0,0.9348,False,0.01,配到的記錄是關於閱讀推廣活動的圖書光碟，書名與原作《天橋上的魔術師》不同，並非同一本書。
+2372,diff,臺灣抗日運動史研究,若林正丈,台湾抗日運動史研究,若林正丈,True,1.0,0.9876,True,0.99,書名僅繁簡體差異，作者一致，指向同一本書。
+1210,diff,中國文學批評史,郭紹虞,"""这是多大的使命呀"" : 试论郭绍虞《中国文学批评史》的贡献",戴燕,False,0.0,0.0037,False,0.01,配到的記錄是研究郭紹虞《中国文学批评史》貢獻的論文，屬於評論研究而非同一本書。
+1143,diff,海上繁華夢,孫家振,海上繁华梦,王安憶,False,1.0,0.2262,False,0.01,書名雖僅繁簡差異，但作者不同：原始為孫家振，配到記錄為王安憶，應為不同書。
+964,diff,台灣新文學史,陳芳明,闡釋臺灣的焦慮,劉小新,False,0.1,0.7976,False,0.01,兩者書名與作者皆不同，且內容主題明顯不是同一本書。
+1870,diff,Coaching Youth Track & Field,American Sport Education Program / USA Track & Field,Coaching Youth Track and Field,American Sport Education Program,True,1.0,0.8478,True,0.98,書名僅為 and/& 的差異，作者主體一致，屬同一本書的不同書目寫法。
+1606,diff,家,尾瀨朗,#NAME?,陸大榮,False,0.0,0.0895,False,0.01,兩筆記錄的書名與作者皆不相符，無法判定為同一本書。
+1001,diff,死亡的尊嚴與生命的尊嚴,傅偉勳,死亡的尊嚴与生命的尊嚴 : 從臨終精神醫學到現代生死學,傅偉勳,True,1.0,0.9912,True,0.98,書名主體完全一致，僅是標點與繁簡差異並多出副標題，作者相同，應為同一本書。

@@ -1,0 +1,782 @@
+% ============================================================
+% IMCOM 2027 — main file (IEEE proceedings format)
+% 編譯：pdflatex paper_main.tex（跑兩次讓交叉引用/參考文獻正確）
+% 需 IEEEtran.cls（TeX Live/MiKTeX 內建）。全英文，pdflatex 可直接編譯。
+% IMCOM regular paper: 5–8 頁。
+% ============================================================
+\documentclass[conference]{IEEEtran}
+
+\usepackage{graphicx}
+\usepackage{amsmath, amssymb}
+\usepackage{booktabs}
+\usepackage{url}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning, shapes.geometric, fit, backgrounds}
+\usepackage[T1]{fontenc}
+\usepackage{microtype}
+\usepackage{seqsplit}    % 讓 \texttt 長 identifier（如 superseded_by_iteration）可在窄欄斷行
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+
+\begin{document}
+
+\title{An Evaluation of Multi-Agent LLM Systems with\\
+Verification-Driven Self-Correction:\\
+A Case Study in Academic Library Acquisition}
+
+\author{
+\IEEEauthorblockN{Ting-Han Wu}
+\IEEEauthorblockA{\textit{Dept. of Computer Science}\\
+\textit{National Chengchi University}\\
+Taipei, Taiwan}
+\and
+\IEEEauthorblockN{Wen-Hung Liao}
+\IEEEauthorblockA{\textit{Dept. of Computer Science}\\
+\textit{National Chengchi University}\\
+Taipei, Taiwan \\
+whliao@nccu.edu.tw}
+}
+
+\maketitle
+
+\begin{abstract}
+Academic library acquisition has long relied on librarians manually
+cross-referencing syllabus bibliographies against holdings. This process is hard
+to scale, and because it allocates public funds, its outputs face a strong
+accountability requirement. A common assumption is that LLMs hallucinate bibliographic
+information and thus need external verification. We implement a six-agent LLM
+system (with a human-review node) automating the full syllabus-to-acquisition
+pipeline, augmented with a Validator$\rightarrow$Discoverer feedback loop for
+self-correction. Through four experiments we reach a counterintuitive finding:
+in our constrained bibliographic task and evaluated sample, observed LLM
+hallucination is very low (0--1.4\%), and the primary bottleneck is verification,
+not generation: the verifier mis-pairs records and the queried sources
+under-cover certain books, neither stemming from books being nonexistent. In this
+setting, a multi-agent architecture adds value not by preventing hallucination
+but by making every recommendation auditable and catching detail-level errors.
+\end{abstract}
+
+\begin{IEEEkeywords}
+AI Agents, Multi-Agent Systems, LLM Evaluation, Bibliographic Verification,
+Educational Technology, Accountability
+\end{IEEEkeywords}
+
+% ============================================================
+\section{Introduction}
+
+Acquisition decisions in academic libraries have long depended on librarians
+cross-referencing syllabus readings against current holdings to prioritize
+purchases. At our study site, National Chengchi University, over seven thousand
+courses are offered in a single semester, their bibliographies scattered across
+unstructured text and attachments, inconsistently formatted, titles often
+abbreviated or aliased. At this scale, manual cross-referencing is
+time-consuming and hard to keep consistent. Automating this process carries
+clear educational value, yet it also imposes a requirement distinct from a
+general information-extraction task: because acquisition decisions allocate
+public
+funds, their outputs must be \textit{auditable and traceable}: every purchase
+recommendation should be traceable to a verifiable authoritative bibliographic
+record, not merely a plausible-looking output. This accountability requirement
+is precisely what distinguishes our study, in both design and evaluation, from
+work that pursues accuracy alone, placing it at the intersection of agentic AI,
+educational technology, and accountability. We scope the system to
+textbook-level readings tied to teaching (required and recommended course
+texts), not the full breadth of library acquisition such as research monographs,
+journals, or special collections.
+
+Facing this task, an intuitive assumption, consistent with the prevailing
+consensus in retrieval-augmented generation (RAG) and agentic systems, is that
+LLMs are prone to hallucinating bibliographic information, and that the key to
+the system therefore lies in introducing an external knowledge base for
+verification to prevent errors. On this basis, we design and implement an LLM
+pipeline composed of six specialized agents: Crawler, Parser, Discoverer,
+Validator, Librarian, and Recommender, plus a human-review node, automating
+the entire syllabus-to-acquisition workflow. The system's core
+anti-hallucination principle is that all
+ISBNs are determined by external authoritative APIs (the National Central
+Library NCL/NBINet, the Library of Congress LOC, Google Books, and the Alma
+holdings system); the LLM never generates them.
+
+On evaluation, however, this assumption was overturned: in our sample,
+hallucination proved very low (0--1.4\%) while the true bottleneck was the
+verification stage (Section IV), over half of the Chinese failures being
+correctable query defects rather than nonexistent books. This reframes the architecture's value from
+``preventing hallucination'' to ``providing auditability and catching
+detail-level errors.''
+
+The contributions of this paper are as follows:
+
+\begin{itemize}
+\item \textbf{An evaluation method for a modular agentic pipeline.}
+Using generation-side baselines, namely pure LLM (A) and a single LLM with a
+self-invoked tool (B), we quantitatively evaluate correctness and
+hallucination, and, via verifier-reliability and failure-cause analyses,
+localize our system's bottleneck to verification rather than generation. Our
+evidence concerns the value of modular, enforced verification and provenance;
+we do not claim a controlled comparison of multi-agent versus single-agent
+decomposition, which we leave to future work.
+
+\item \textbf{A verification-driven self-correction mechanism, and an honest
+account of its limits.} We implement a Validator$\rightarrow$Discoverer
+feedback loop that turns the linear pipeline into a self-correcting
+collaboration; but we also show that, since generation-side failures are
+already rare, its benefit is small and bounded by the structure of failure
+causes, itself consistent with our counterintuitive thesis.
+
+\item \textbf{A diagnosis of the verification bottleneck into correctable
+defects.} We decompose failure causes into correctable query defects and
+coverage gaps requiring source expansion; for the former, our proposed
+title-normalization fix recovers 33.0\% of failed Chinese entries directly.
+\end{itemize}
+
+The rest of this paper is organized as follows. Section II reviews related work;
+Section III describes the data source, system architecture, and evaluation
+design; Section IV reports and discusses the results; and Section V concludes.
+
+% ============================================================
+\section{Related Work}
+
+\textit{1) Tool-augmented autonomous agents and multi-agent collaboration:}
+Recent advances in LLMs have enabled tool-augmented knowledge-discovery
+paradigms. The ReAct paradigm lets an LLM interleave reasoning and acting,
+decompose complex problems, invoke external tools, and revise intermediate
+reasoning based on retrieved evidence~\cite{ReAct}, providing a natural
+foundation for multi-step structured tasks. Our Parser, Discoverer, and
+Validator agents build on tool-augmented reasoning, with external
+bibliographic APIs as their action interface. Standard RAG systems~\cite{RAG}
+are designed for semantic-similarity retrieval over unstructured corpora and do
+not address the enforced verification of authoritative bibliographies, the
+external determination of unique keys such as ISBNs, or the separation of
+generation from fact. We adopt a structured multi-agent architecture that
+isolates verification as an enforced, dedicated stage. Regarding multi-agent
+collaboration, prior work has largely focused on debate- or negotiation-style
+reasoning among agents; our collaboration mechanism is instead a
+\textit{verification-driven feedback loop}, in which one agent's (the
+Validator's) failure signal changes another agent's (the Discoverer's)
+behavior, forming a self-correcting closed loop rather than a one-way data
+hand-off or a parallel aggregation of opinions.
+
+\textit{2) LLM-based bibliographic extraction and normalization:}
+Recent work shows that LLMs can extract structured records from unstructured
+scientific text into user-defined schemas~\cite{SIE}, a capability our Parser
+builds on for course-syllabus bibliographies. Bibliographic normalization,
+however, faces a particular challenge: titles frequently appear as abbreviations,
+aliases, traditional--simplified variants, or with volume/subtitle suffixes, so
+that exact matching easily fails while loose matching easily mis-pairs to
+irrelevant records, especially for short titles. This is, at its core, a
+classical entity-resolution / record-linkage problem: deciding whether two
+records denote the same work under noisy, incomplete fields is exactly what
+probabilistic record linkage~\cite{FellegiSunter} and the entity-resolution and
+duplicate-detection literature~\cite{Elmagarmid,Christen} formalize. Our verifier
+is a lightweight instance (title query plus author-overlap match); its 29.9\%
+error and the ablation above indicate that adopting stronger linkage techniques
+(learned similarity, rejection thresholds) is a promising direction. We address
+the immediate variants through title normalization combined with author matching
+to avoid mis-pairing. A non-LLM baseline is instructive here: rule-based extraction is
+impractical because syllabus bibliographies are free text with no fixed
+schema (Chinese, English, Japanese, and Russian entries in heterogeneous
+formats that no finite pattern set captures), and recommendation is generative
+by nature, beyond a rule-based method's reach.
+
+\textit{3) Library acquisition and collection decision support:}
+Academic library acquisition has traditionally relied on librarians manually
+cross-referencing syllabus bibliographies against holdings; prior
+decision-support systems have addressed demand-driven collection development in
+university digital libraries~\cite{DSS}, but not LLM-based bibliographic
+extraction with enforced verification. Our system takes \textit{auditability} as
+its design core, anchoring every actionable fact to external authoritative
+bibliographic and holdings APIs.
+
+\textit{4) Evaluation methods for LLM systems:}
+Evaluating LLMs on factual tasks has motivated metrics beyond exact-match
+accuracy: FactScore decomposes long text into atomic facts to measure factual
+precision~\cite{FactScore}, RAGAS uses an LLM to verify grounding against
+retrieved context~\cite{RAGAS}, and LLM-as-Judge employs a model as an evaluator
+of other models' outputs~\cite{LLMJudge}. In contrast, our judgments are grounded
+directly against external authoritative records (via API lookup) and validated by
+a second human annotator, rather than relying on an LLM judge, which avoids the
+same-model self-preference risk in evaluating LLM-generated bibliographies.
+
+% ============================================================
+\section{Research Framework}
+
+\subsection{Data Source}
+The experiments use the course syllabi of a single semester at National
+Chengchi University, comprising 7{,}354 courses. The bibliographic text
+(required and recommended readings) of each course is obtained by the Crawler
+agent; for courses whose syllabi list no bibliography, the Discoverer agent
+recommends references based on the course description. Books extracted by the
+Parser and verified by the Validator constitute the population for the
+subsequent experiments. The bibliographic text is unstructured, mixes Chinese
+and English, and often presents titles as abbreviations, aliases, or with
+volume/subtitle variants.
+
+\subsection{System Architecture}
+
+% Fig. 2 —— 系統架構圖（跨欄 figure*，置於 System Architecture 起始）
+\begin{figure*}[t]
+\centering
+\begin{tikzpicture}[
+    font=\footnotesize,
+    node distance=4mm and 6mm,
+    agent/.style={draw, rounded corners=2pt, minimum height=6mm,
+                  minimum width=16mm, align=center, fill=blue!8, font=\scriptsize},
+    arr/.style={-{Latex[length=1.4mm]}, semithick},
+    loop/.style={-{Latex[length=1.4mm]}, semithick, red, dashed},
+]
+\node[agent] (crawler) {Crawler};
+\node[agent, right=of crawler] (parser) {Parser};
+\node[agent, right=of parser] (disc) {Discoverer};
+\node[agent, right=of disc] (val) {Validator};
+\node[agent, right=8mm of val] (lib) {Librarian};
+\node[agent, right=of lib] (rec) {Recommender};
+\node[agent, below=6mm of lib] (hr) {Human Review};
+\draw[arr] (crawler) -- (parser);
+\draw[arr] (parser) -- (disc);
+\draw[arr] (disc) -- (val);
+\draw[arr] (val) -- node[above, font=\tiny]{ok} (lib);
+\draw[arr] (val) -- (hr);
+\draw[arr] (lib) -- (rec);
+\draw[loop] (val.north) to[out=110, in=70, looseness=1.2]
+    node[above, font=\tiny, text=red]{AI-rec.\ not\_found} (disc.north);
+\begin{scope}[on background layer]
+\node[draw=gray!40, dashed, rounded corners, fit=(crawler)(rec)(hr),
+      inner sep=6pt, label={[font=\tiny]below:%
+      PostgreSQL as single source of truth
+      (course $\to$ citation $\to$ verified\_book $\to$ holding\_check $\to$ recommendation)}]{};
+\end{scope}
+\end{tikzpicture}
+\caption{System architecture. Six specialized agents (plus a human-review node)
+form a linear pipeline; a conditional edge (dashed) routes control flow from the
+Validator back to the Discoverer when an AI-recommended book fails verification,
+forming a verification-driven self-correcting loop.}
+\label{fig:arch}
+\end{figure*}
+
+The system is built as a directed graph in LangGraph, composed of six
+specialized agent nodes, decomposing the ``syllabus $\to$ bibliography $\to$
+acquisition recommendation'' flow into stages with single responsibilities and
+well-defined interfaces (Fig.~\ref{fig:arch}). Domain data is persisted in a
+relational database (PostgreSQL) as the single source of truth across agents;
+agents pass only control-flow state, not domain data, so that any stage can be
+re-run or resumed independently. The data flow across agents is: course $\to$
+citation $\to$ verified\_book $\to$ holding\_check $\to$ recommendation.
+
+\textit{The six agents.} \textit{Crawler} obtains the bibliographic text,
+offering department/level, and enrollment count. \textit{Parser} extracts
+structured bibliographies via an LLM; its prompt requires that ISBNs contain
+only digits appearing in the source and that uncertain fields be left blank.
+\textit{Discoverer} recommends 3--5 references from the course description, only
+for courses the Parser found no bibliography for, marking them
+\texttt{[AI-recommended]} with a confidence cap of 0.75. \textit{Validator}
+performs external existence verification on every book (NCL/NBINet SRU for
+Chinese, LOC and Google Books for English), under the core principle that the
+canonical title, authors, and ISBN are all determined by the external API.
+\textit{Librarian} queries the university's holdings system (Alma SRU); and
+\textit{Recommender} combines holdings and enrollment to compute copy counts via
+deterministic rules. A Human Review node lists books flagged for manual review.
+
+\textit{Anti-hallucination design.} The system separates ``generation'' from
+``fact'': the LLM extracts and recommends, but every actionable fact
+(especially the ISBN, a record's unique key) is determined externally. Even if
+the LLM errs, the error is intercepted at verification, because it cannot be
+mapped to an authoritative record, rather than flowing into acquisition
+recommendations.
+
+\textit{Record pairing.} Algorithm~\ref{alg:pair} gives the Chinese pairing
+procedure (NCL, which returns multiple candidates). ISBN, if present, is a
+unique key. Otherwise a title query returns candidates, and \textsc{PickBest}
+selects one whose author overlaps the query authors (normalized substring
+match); crucially, \emph{when no author overlaps, or none is given, it falls
+back to the first candidate}: there is no rejection threshold. This maximizes
+recall but, for short or ambiguous titles that retrieve many unrelated
+candidates, forces a mis-pairing rather than an honest ``not found.'' English
+pairing (LOC/Google) differs: the query binds the author (\texttt{title AND
+creator}) and returns a single record, so it has no multi-candidate selection.
+
+\begin{algorithm}[t]
+\caption{Verifier record pairing (Chinese/NCL)}
+\label{alg:pair}
+\small
+\begin{algorithmic}[1]
+\Function{Lookup}{title $t$, authors $A$, ISBN $b$}
+  \If{$b \neq \varnothing$ \textbf{and} ISBNQuery($b$) $\neq \varnothing$}
+     \State \Return first ISBN result \Comment{unique key}
+  \EndIf
+  \State $R \gets$ TitleQuery($t$)
+  \If{$R = \varnothing$} $R \gets$ TitleQuery(\textsc{Clean}($t$)) \EndIf
+  \If{$R = \varnothing$} \Return \textsc{NotFound} \EndIf
+  \State \Return \Call{PickBest}{$R$, $A$}
+\EndFunction
+\Function{PickBest}{candidates $R$, authors $A$}
+  \If{$A = \varnothing$} \Return $R_1$ \EndIf
+  \For{$r \in R$}
+     \If{AuthorOverlap($r$, $A$)} \Return $r$ \EndIf
+  \EndFor
+  \State \Return $R_1$ \Comment{no rejection: fall back to first}
+\EndFunction
+\end{algorithmic}
+\end{algorithm}
+
+% Fig. 1 —— 執行流程示意（execution trace），置於回饋迴路段落前
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[
+    font=\scriptsize,
+    box/.style={draw, rounded corners=2pt, align=left, inner sep=2.5pt,
+                text width=0.74\columnwidth, fill=gray!5, font=\scriptsize},
+    lbl/.style={font=\scriptsize\bfseries, inner sep=1pt},
+    arr/.style={-{Latex[length=1.4mm]}, thick},
+]
+\node[box] (input) {\textbf{Input (no reading list):} ``Media \& Cultural Techniques''};
+\node[box, below=2mm of input] (rec1) {\textbf{Discoverer} $\rightarrow$
+    \textit{Technics and Time, 1: The Fault of Epimetheus}};
+\node[box, below=2mm of rec1, fill=red!5] (val1) {\textbf{Validator} $\rightarrow$
+    \textcolor{red}{\textbf{not\_found}} (volume suffix breaks match)};
+\node[box, below=2mm of val1, fill=blue!5] (rec2) {\textbf{Discoverer} (re-recommend):
+    \textit{Cultural Techniques}; \textit{Understanding Media}; \dots};
+\node[box, below=2mm of rec2, fill=green!8] (val2) {\textbf{Validator} $\rightarrow$
+    \textcolor{green!50!black}{\textbf{verified}}; ISBN from API};
+\draw[arr] (input) -- (rec1);
+\draw[arr] (rec1) -- (val1);
+\draw[arr] (val1) -- (rec2);
+\draw[arr] (rec2) -- (val2);
+\draw[arr, red, dashed] (val1.west) to[out=180, in=180, looseness=1.6]
+    node[left, lbl, text=red]{feedback} (rec2.west);
+\end{tikzpicture}
+\caption{An example execution trace of the feedback loop. For a course with no
+reading list, the Discoverer recommends a reference that fails verification (its
+volume suffix breaks exact matching); the failure signal is routed back, and the
+re-recommended alternatives are verified successfully.}
+\label{fig:trace}
+\end{figure}
+
+\textit{Verification-driven feedback loop.} On top of this linear pipeline, we
+add a conditional edge from the Validator to the Discoverer, forming a
+self-correcting closed loop (Fig.~\ref{fig:trace}). When a book recommended by
+the Discoverer (\texttt{[AI-recommended]} and verified as
+\texttt{\seqsplit{not\_found}}/\texttt{\seqsplit{ncl\_not\_found}}, excluding
+transient failures due to quota exhaustion) fails
+verification, a routing function redirects control flow back to the Discoverer,
+which re-recommends an alternative given the knowledge that the previous
+recommendation was verified as nonexistent; the alternative is re-verified
+until success or an iteration cap (set to 2). The loop acts only on
+AI-recommended books, not on those extracted by the Parser from the
+syllabus; for the latter, a verification failure may simply mean the syllabus
+did list the book but the source has not cataloged it, so replacement is
+unwarranted. Failed old records are not deleted but marked with a
+\texttt{\seqsplit{superseded\_by\_iteration}} field for traceability; downstream queries
+exclude superseded records. The iteration counter is incremented by the
+Validator and only read by the routing function, ensuring the loop terminates.
+
+\subsection{Evaluation Design}
+\textbf{Metric definitions.} Our two core metrics are defined as follows.
+\textit{Generation correctness} measures whether a generated bibliographic
+entry should appear in the given course: for books listed in the syllabus,
+whether it correctly corresponds to a book actually present in the syllabus
+text; for AI-recommended books, whether it is a reasonable reference that is
+both topically relevant and real. \textit{Hallucination rate} measures whether
+a generated entry (title/ISBN) points to a real book: an entry that cannot be
+mapped to any real authoritative record (including a fabricated title, or a
+real author paired with a nonexistent title) is counted as a hallucination.
+Both metrics are judged manually as binary yes/no; annotation uses stratified
+sampling (prioritizing cases where the conditions disagree or the pre-screen
+flags a suspected issue), supported by external bibliographic API lookups.
+Correctness and hallucination are independent dimensions: an entry may be real
+yet not belong to the course, and vice versa. These two metrics
+evaluate the generation side (Section IV.A); the verifier's pairing quality is
+measured separately by the mis-pairing rate (Experiment 2).
+
+\textbf{Experiment 1 (architecture comparison).} To assess the effect of
+``granting a verification tool'' on generation-side reliability, we design two
+generation-side baselines that receive the same input and use the same base
+prompt, differing only in whether they can verify. All conditions use the same underlying model (GPT-5.5 via an OpenAI-compatible
+API, a reasoning model run at its required temperature of 1). The base prompt
+asks the model to extract listed books and (when the syllabus lists none)
+recommend 3--5 references in a single pass, producing structured JSON.
+\textit{Both baselines retain the system's original anti-hallucination
+constraints} (ISBN only from
+the source text, uncertain fields left blank), ensuring each baseline performs
+at its best and avoiding a deliberately weakened (straw-man) control that would
+exaggerate the system's advantage. Condition A (pure LLM) provides no tools,
+measuring the upper bound of pure generation-side reliability; Condition B
+provides a single \texttt{search\_book(title, authors)} tool (backed by the
+same bibliographic sources the Validator uses), with the model deciding
+autonomously in a multi-round loop whether to call it and whether to trust the
+results, measuring the effect of granting a tool used at the model's
+discretion. Their difference reflects the value of granting a verification
+tool. In addition, our system (denoted C) enforces external verification on
+every book, with the ISBN determined by the API. Because C's output object
+(a paired authoritative record) differs from the generated titles of A/B, we do
+not place it in the same correctness comparison; instead we evaluate the
+verification stage directly via the paired analysis (Table~\ref{tab:paired}) and
+the mis-pairing analysis of Experiment 2.
+
+\textbf{Experiment 2 (verifier reliability).} Complementing the paired analysis,
+we localize \emph{where} mis-pairing concentrates by title length among Chinese
+books the Validator reported as \emph{successfully} verified (conditional on
+verification success, a different population from the failure-cause diagnosis of
+Experiment 4). We stratify into short titles ($\leq 4$ characters) and general
+titles, sampling 60 of each, and report the two stratum rates separately. We also
+ablate the SRU candidate-window size (maximumRecords) between 5 and 20.
+
+\textbf{Experiment 3 (feedback loop).} We evaluate the loop's benefit on the
+verification success rate of AI-recommended books. To isolate the randomness of
+LLM generation, the ``no-loop'' and ``with-loop'' arms share the same initial
+recommendation: a single recommendation and verification pass serves as the
+common starting point, the no-loop arm takes this first-pass result, and the
+with-loop arm continues from the same state to trigger re-recommendation. It
+covers 50 courses requiring AI recommendation.
+
+\textbf{Experiment 4 (failure-cause diagnosis).} We classify
+verification-failed (not\_found / ncl\_not\_found) books by cause into three
+types: \textbf{(T1) recovered-after-fix}, retrieved after title normalization
+(stripping volume suffixes, subtitles, traditional--simplified differences)
+with author-matched queries; \textbf{(T2) unresolved query defect}, still
+missed after the fix, but a loose query finds a highly similar title (i.e., the
+book exists but exact matching still fails); and \textbf{(T3) unresolved
+retrieval (probable coverage gap)}, where even a loose query finds no similar
+result: the record is not retrievable from the queried source, which we read as
+a likely coverage gap without independently confirming absence elsewhere. T1
+and T2 together are termed ``query-related'' failures (resolvable by improving
+query logic), while T3 points to source expansion. English books use the full
+set (49), and Chinese books a random sample ($n=100$, population 481, fixed
+random seed). Book existence is probed with loose queries against the National
+Central Library (NCL) for Chinese and Google Books/LOC for English; because
+coverage of any single source is imperfect, the reported coverage gap is an
+upper-bound estimate.
+
+\textbf{Annotation and statistics.} Manual annotation uses binary yes/no
+judgments. To assess reliability, a second annotator independently labeled all
+70 architecture-comparison rows against the same rubric (judging correctness by
+consulting the original syllabus text rather than title--topic similarity).
+Inter-annotator agreement is 98.5\% overall (98.6\% for correctness, 98.5\% for
+hallucination); because the labels are highly imbalanced (the positive class
+dominates), which renders Cohen's $\kappa$ uninformative, we report Gwet's
+AC1${}=0.985$ (almost-perfect agreement). Split by provenance, agreement is
+comparable for extraction (96.7\%) and recommendation (97.4\%), with 100\%
+agreement on hallucination in both, so the more subjective recommendation
+judgments are not less reliable than the extraction ones. Because of stratified
+sampling and limited sample size, the reported proportions are observational;
+95\% confidence
+intervals are computed with the Wilson interval. All experiments count by
+citation, including cross-course repeated citations.
+
+% ============================================================
+\section{Results and Discussion}
+
+\subsection{Architecture Comparison: Hallucination Is Not the Bottleneck}
+We first assess generation-side reliability with the two baselines (A, B), which
+output titles. We then isolate the verification stage with a \emph{paired}
+evaluation (Table~\ref{tab:paired}) that tracks the same citations through both
+generation and verifier pairing, avoiding a comparison across different output
+objects or sample sizes.
+
+% 表 1：生成端 baseline + 系統，置於 IV.A
+\begin{table}[t]
+\caption{Correctness and Hallucination Rate of Generation-Side Baselines
+($n=70$; 95\% CI by Wilson Interval)}
+\label{tab:baseline}
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lcc}
+\toprule
+Metric & A (pure LLM) & B (LLM+tool) \\
+\midrule
+Correctness & 98.6\% (69/70) & 100\% (70/70) \\
+\quad 95\% CI & 92.3--99.7\% & 94.8--100\% \\
+Hallucination & 0\% & 1.4\% \\
+\quad 95\% CI & 0--5.2\% & 0.3--7.7\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:baseline} reports the results. The generation side (A, B) shows
+uniformly high correctness (98.6--100\%) and uniformly low hallucination rates
+(0--1.4\%). The A/B difference is a single discordant entry in each metric
+(69/70 vs.\ 70/70 correctness; 0/70 vs.\ 1/70 hallucination), which McNemar's
+exact test finds non-significant; we therefore do not claim that the tool
+improves generation. Even in Condition A, with no external tools, the
+hallucination rate
+is 0\%, indicating that, under anti-hallucination prompt constraints, LLMs are
+already quite reliable at generating real bibliographies. Condition B's sole
+hallucination case is not ``fabrication from nothing'' but ``mislabeling'': the
+model paired a real author with an incorrectly remembered title. Held with high
+confidence and internally plausible, such errors evade prompt constraints and
+existence checks alike, and can be caught only through external
+title--author cross-checking.
+
+The A/B rate above pools extracted and recommended entries; extraction is easy
+(the book is in the source text), so one might object that the low rate merely
+reflects that. We therefore isolate the harder \emph{AI-recommended} case
+(courses with no readings, so the model generates from the description alone). On an expanded sample of 58
+AI-recommended entries, the hallucination rate is 5.2\% (3/58; Wilson 95\% CI
+1.8--14.1\%). Crucially, all three cases are \emph{mislabeling} (a real book
+paired with a wrong author or an incorrect title variant), not a fabricated,
+nonexistent book: fabrication of nonexistent books is 0/58 (95\% CI 0--6.2\%).
+The failure mode of AI recommendation is therefore not inventing books that do
+not exist, but detail-level errors on real books, exactly what external
+title--author verification is positioned to catch.
+
+To evaluate generation and verification on identical inputs, we track the same
+300 verified citations through both stages (Table~\ref{tab:paired}). Generation
+correctness is 99.7\% (299/300): these are books actually listed in syllabi, so
+the LLM reproduces them reliably. Yet among these correctly generated citations,
+the verifier pairs a substantial fraction to an irrelevant authoritative record
+(e.g., a scripture title paired to a stage-drama performance record). Because the
+sample is stratified by title similarity (oversampling divergent-title cases
+where mis-pairing concentrates), we report per-stratum rates and a corpus-weighted
+estimate rather than a pooled rate that the design would bias: similar-title
+records mis-pair at 21.0\%, divergent-title at 66.0\%, for a corpus-weighted
+pairing error rate of 29.9\%. This paired design localizes the bottleneck to the
+verification stage: generation is essentially error-free on real syllabus books,
+while roughly a third of the paired records are incorrect. We analyze this
+failure next.
+
+\begin{table}[t]
+\caption{Paired Evaluation of the Same Citations Through Generation and Verifier
+Pairing ($n=300$; stratified, corpus-weighted)}
+\label{tab:paired}
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lcc}
+\toprule
+Transition & Pair correct & Pair wrong \\
+\midrule
+Generation correct & 147 & 152 \\
+Generation wrong    & 0   & 1   \\
+\midrule
+\multicolumn{3}{l}{\textit{Pairing error rate by stratum:}} \\
+\quad Similar-title (80.3\% of corpus)   & \multicolumn{2}{c}{21.0\% (21/100)} \\
+\quad Divergent-title (19.7\% of corpus) & \multicolumn{2}{c}{66.0\% (132/200)} \\
+\quad \textbf{Corpus-weighted}           & \multicolumn{2}{c}{\textbf{29.9\%}} \\
+\bottomrule
+\end{tabular}
+
+\vspace{2pt}
+{\scriptsize The same 300 verified citations are tracked through both stages.
+Strata (similar-/divergent-title) are sampled 100/200 but weighted by their true
+corpus proportions (80.3\%/19.7\%); we report the weighted rate, not the raw
+pooled rate, which the stratified design would bias.}
+\end{table}
+
+\subsection{Verification Is Needed, but the Verification Stage Is the
+Bottleneck: A Three-Layer Failure Structure}
+Given the reliable generation side, where do errors come from? The verification
+stage remains \textit{necessary}: the titles A/B produce lack ISBNs and cannot
+be traced, and only after external verification yields a traceable authoritative
+record does the output become actionable. The question is not ``whether to
+verify'' but its reliability. Combining the four experiments, verification
+failures resolve into a three-layer structure:
+
+\begin{enumerate}
+\item \textbf{LLM hallucination (rare).} A/B hallucination rate 0--1.4\%; not
+the primary problem.
+\item \textbf{Verifier mis-pairing (a correctable pairing defect).} The paired
+evaluation (Table~\ref{tab:paired}) already establishes the corpus-weighted
+pairing error rate at 29.9\%. Experiment 2 further localizes \emph{where} this
+concentrates: among verified Chinese books, short titles ($\leq 4$ characters)
+mis-pair at 66.7\% ($n=60$), far exceeding general titles at 25.0\% ($n=60$),
+confirming that short titles easily mis-pair to irrelevant records in
+bibliographic databases (e.g., a scripture title paired to a stage-drama
+performance record). Such failures are improvable through query normalization:
+Experiment 4 shows that, in an offline replay of the failed Chinese entries,
+33.0\% are directly recovered after our title normalization (stripping volume
+suffixes, subtitles, traditional--simplified differences). A representative case
+is \textit{Technics and Time, 1}: its trailing volume suffix (``, 1'') causes
+exact phrase matching to fail, and after the fix its authoritative record is
+retrieved (ISBN 9780804730419).
+\item \textbf{Unresolved retrieval, i.e., probable coverage gap (requiring
+source expansion).} Many records are simply not retrievable from the queried
+library-cataloging sources, most acutely English academic works and specific
+editions. Experiment 4 shows this accounts for 61.2\% of English failures and
+50.0\% of Chinese (upper-bound estimate, since we do not independently confirm
+the book is absent everywhere). Such failures cannot be solved by the pairing algorithm
+and require integrating more sources; the system correctly keeps such books as
+``not found'' rather than mis-pairing them to raise the hit rate.
+\end{enumerate}
+
+The genuine bottleneck is thus pairing quality (fixable by engineering) and
+source coverage (requiring more resources), not generation-side hallucination.
+Widening the candidate window from 5 to 20 improves resolvable cases by only 11.8
+percentage points (64.7\% still unresolved), confirming the problem is not
+candidate selection but these two deeper layers.
+
+That pairing quality is fixable is shown directly by an ablation of the pairing
+function (Algorithm~\ref{alg:pair}) over the 92 Chinese entries of the paired
+sample, re-annotated on the re-queried candidates (Table~\ref{tab:ablation}).
+Removing author matching raises the pairing error rate from 42.4\% to 50.0\%, so
+author overlap helps. More strikingly, adding a rejection threshold (returning
+\textsc{NotFound} when no candidate's author overlaps, instead of the first
+candidate) cuts the error rate among returned pairings from 42.4\% to 16.0\%, at
+the cost of a 46\% not-found rate. The mis-pairing is therefore not intrinsic:
+the absence of a rejection threshold, not candidate ranking, is the correctable
+defect. (Rates here are on the NCL sub-sample and are relative, not the
+corpus-weighted rate of Table~\ref{tab:paired}.)
+
+\begin{table}[t]
+\caption{Pairing-Function Ablation (Chinese/NCL, $n=92$; relative rates)}
+\label{tab:ablation}
+\centering
+\small
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{lcc}
+\toprule
+Variant & Pairing error & Not-found \\
+\midrule
+Current (author match) & 42.4\% & 0\%  \\
+No author match        & 50.0\% & 0\%  \\
+Current + reject       & 16.0\% & 46\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Failure-Cause Diagnosis}
+% 表 2：失敗成因診斷，置於 IV.C
+\begin{table}[t]
+\caption{Cause Classification of First-Pass Verification Failures}
+\label{tab:cause}
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lcc}
+\toprule
+Failure cause & English (49) & Chinese (100) \\
+\midrule
+T1 recovered-after-fix     & 12.2\% (6)  & 33.0\% (33) \\
+T2 unresolved query defect & 26.5\% (13) & 17.0\% (17) \\
+T3 unresolved retrieval    & 61.2\% (30) & 50.0\% (50) \\
+\textbf{Query-related (T1+T2)} & \textbf{38.8\% (19)} & \textbf{50.0\% (50)} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:cause} reports the cause classification. The structures differ
+markedly: English failures are dominated by coverage gaps (61.2\%), whereas half
+of Chinese failures (50.0\%) are query-related. The design implication is that
+query normalization has the highest marginal benefit for Chinese, while English
+requires expanding source coverage. The Chinese coverage gap (50.0\%) is an
+upper-bound estimate, counted by citation (including cross-course repeats).
+
+\subsection{Feedback Loop: The Benefit Ceiling Depends on Failure Cause}
+The loop acts only on books recommended by the Discoverer. Across 50 courses
+and 249 AI-recommended books, the first-pass verification success rate already
+reaches 99.2\% (only 2 failures); the loop handles both, but because the room
+for improvement is small, the absolute gain is only 0.8 percentage points.
+
+We also examine whether replacement preserves recommendation quality, as the loop
+could, in principle, discard a valid book merely because the source cannot find
+it. Human comparison of the two triggering cases is instructive. For an
+Indonesian-conversation course, the original recommendation was a real title with
+a misattributed author (a mislabeling), so replacing it with comprehensive
+Indonesian grammars was an improvement. But for a media-theory course, the
+original recommendation, \textit{Technics and Time, 1}, a canonical text in the
+field, failed only because its volume suffix (``, 1'') broke exact matching; the
+replacements are of comparable relevance, but a well-suited book was discarded for
+a formatting reason. This confirms a risk in the loop: it can optimize for
+retrievability at the expense of preserving a good recommendation. The proper fix
+is at the verifier (e.g., stripping volume suffixes), not re-recommendation: the
+loop circumvents the verifier's blind spot rather than curing it. Its benefit
+ceiling is thus bounded by the structure of failure causes, and its quality by the
+verifier's own defects.
+
+\subsection{Implications for Multi-Agent System Design}
+Since the LLM generation side is already highly accurate, a multi-agent
+architecture's value lies not in raising accuracy but in
+\textit{auditability}, meaning every item is traceable to an external
+authoritative record (ISBN API-determined, not model-generated), and
+\textit{error-catching}: a dedicated, enforced verification agent catches
+detail-level ``mislabeling'' that prompt constraints cannot prevent.
+
+A concrete case makes the auditability payoff tangible. For the short title
+\textit{Yuball zhinan} (Badminton Guide), the verifier returned an authoritative
+record for \textit{Illustrated Swimming Guide}, a different sport, mis-paired on
+a shared trailing word. Because the pipeline persists the original citation
+alongside the paired record, the human-review node surfaces this title--author
+mismatch and flags it for correction; in a generate-only system with no retained
+provenance, the wrong record would flow silently into the purchase list.
+Auditability here is not an abstract virtue but the mechanism that makes such an
+error \emph{catchable at all}.
+
+On Condition B (model-autonomous tool use) versus C (enforced verification): in
+terms of \emph{error prevention} the two are comparable here, as B invokes the
+tool at a high rate and we observed no error from autonomous non-verification
+(this concerns whether verification happens, not the verifier's pairing quality,
+which Table~\ref{tab:paired} addresses). So ``enforced verification is superior''
+is an \textit{architecture-level argument, not an experimentally confirmed
+conclusion}: B offers no procedural guarantee, whereas C ensures 100\% coverage
+and auditability; its advantage under adversarial or large-scale conditions
+awaits future work.
+
+\subsection{Implications for Educational Technology}
+This is also a rare \emph{deployed} educational-technology case, exercised over
+an institution's full semester (7{,}354 courses) rather than a curated benchmark,
+and portable: the agents rely only on standard protocols (SRU) and public
+catalog APIs, so adapting to another university requires little beyond swapping
+the holdings endpoint, positioning LLM multi-agent verification as reusable
+educational infrastructure, not a one-off script.
+
+\subsection{Limitations}
+The data is one institution's single semester, limiting external validity. The
+annotation samples are modest (70 for the baselines, 300 for the paired
+evaluation, 92 for the pairing ablation, 58 for the recommendation-hallucination
+check, 149 for the diagnosis); despite almost-perfect inter-annotator agreement
+(AC1${}=0.985$ on the baseline set), proportions remain observational rather than
+significant (95\% CIs tabulated). In particular, the recommendation-hallucination
+rate (5.2\%, CI 1.8--14.1\%) has a wide interval, though qualitatively all three
+cases are mislabeling rather than fabrication. Chinese existence probing queries
+the NCL union catalog, falling back to Google Books (which under-covers
+traditional-Chinese books), so the Chinese coverage-gap figure (50.0\%) is an
+upper bound; moreover, because the T2/T3 boundary is decided by a loose external
+lookup, the exact split may shift by a few entries as source indices change (our
+reported figures are reproducible from the released classification log). Finally,
+the feedback-loop evaluation rests on only two triggering failures, so its
+estimates are illustrative rather than conclusive.
+
+\subsection{Ethical Considerations}
+Because acquisition decisions allocate public funds, deployment carries
+accountability obligations. First, all AI-generated recommendations serve only
+as candidates; every acquisition decision retains human review (the Human Review
+node), and the AI cannot bypass human approval. Second, uneven coverage of the
+verification sources may introduce a language bias: traditional-Chinese and
+English entries differ in verifiability, which could systematically affect
+acquisition opportunities across languages; deployments should monitor this
+imbalance so that automation does not amplify existing collection gaps. Third,
+anchoring facts such as ISBNs to external authoritative sources rather than model
+output keeps every recommendation traceable and auditable, which we regard as a
+precondition for responsible LLM use in public-resource decisions.
+
+% ============================================================
+\section{Conclusion and Future Work}
+
+We presented a six-agent LLM system (plus a human-review node) for
+course-syllabus analysis and library acquisition, augmented with a
+Validator$\rightarrow$Discoverer feedback loop. Across four experiments, the
+bottleneck proved to be verification, namely record mis-pairing and source
+coverage gaps, rather than generation-side hallucination (0--1.4\%); a
+multi-agent
+architecture's value here thus lies not in preventing hallucination but in
+auditability and detail-level error-catching. Three directions follow: expanding
+source coverage (most failed books appear in commercial trade-bibliography
+sources); replacing the lightweight pairing with stronger record-linkage
+techniques (learned similarity, rejection thresholds, or structured decision
+models) to reduce mis-pairing; and cross-institutional, larger datasets to test
+enforced versus model-autonomous verification.
+
+% ============================================================
+\begin{thebibliography}{00}
+\bibitem{ReAct} S. Yao et al., ``ReAct: Synergizing reasoning and acting in language models,'' arXiv:2210.03629, 2023.
+\bibitem{RAG} P. Lewis et al., ``Retrieval-augmented generation for knowledge-intensive NLP tasks,'' in \textit{NeurIPS}, vol.\ 33, pp.\ 9459--9474, 2020.
+\bibitem{FactScore} S. Min et al., ``FActScore: Fine-grained atomic evaluation of factual precision in long form text generation,'' in \textit{Proc.\ EMNLP}, Dec.\ 2023, pp.\ 12076--12100.
+\bibitem{RAGAS} S. Es, J. James, L. Espinosa-Anke, and S. Schockaert, ``RAGAS: Automated evaluation of retrieval augmented generation,'' in \textit{Proc.\ EACL: System Demonstrations}, Mar.\ 2024, pp.\ 150--158.
+\bibitem{LLMJudge} L. Zheng et al., ``Judging LLM-as-a-judge with MT-Bench and Chatbot Arena,'' in \textit{NeurIPS}, vol.\ 36, 2023.
+\bibitem{SIE} J. Dagdelen, A. Dunn, et al., ``Structured information extraction from scientific text with large language models,'' \textit{Nature Communications}, vol.\ 15, art.\ 1418, 2024, doi: 10.1038/s41467-024-45563-x.
+\bibitem{DSS} M. Hemili, A. Laouar, and S. B. Eom, ``A decision support system for managing demand-driven collection development in university digital libraries,'' \textit{Int. J. of Information Systems and Social Change}, vol.\ 10, no.\ 4, pp.\ 57--74, 2019.
+\bibitem{FellegiSunter} I. P. Fellegi and A. B. Sunter, ``A theory for record linkage,'' \textit{J. Amer. Statist. Assoc.}, vol.\ 64, no.\ 328, pp.\ 1183--1210, 1969.
+\bibitem{Elmagarmid} A. K. Elmagarmid, P. G. Ipeirotis, and V. S. Verykios, ``Duplicate record detection: A survey,'' \textit{IEEE Trans. Knowl. Data Eng.}, vol.\ 19, no.\ 1, pp.\ 1--16, 2007.
+\bibitem{Christen} P. Christen, \textit{Data Matching: Concepts and Techniques for Record Linkage, Entity Resolution, and Duplicate Detection}. Springer, 2012.
+\end{thebibliography}
+
+\end{document}
