@@ -15,7 +15,7 @@ import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import Body, FastAPI, File, UploadFile
+from fastapi import Body, FastAPI, File, Query, UploadFile
 from fastapi.responses import HTMLResponse, StreamingResponse
 from sqlalchemy import func, select
 
@@ -80,32 +80,51 @@ def _dedup_course_book(rows: list) -> list:
     return out
 
 
-def _load_data() -> dict:
+def _load_data(departments: list[str] | None = None) -> dict:
+    """departments：系所名清單（UI 上的名稱）。None/空＝不篩，與原本行為完全相同。
+    有值時，KPI、兩張圖、採購建議、待審核明細全部只算這些學系的課；
+    Course.department 為 NULL 的課只在不篩時出現。"""
+    raw = _expand_departments(departments)
+
+    def scoped(q, *, join_course: bool = True):
+        """把查詢限縮到所選學系。q 已經 join 過 Course 的（明細表、待審核）傳 join_course=False，
+        其餘的要補一次 join；統一用這個函式，才不會漏掉某一個計數。"""
+        if raw is None:
+            return q
+        if join_course:
+            q = q.join(Course, Course.course_id == Citation.course_id)
+        return q.where(Course.department.in_(raw))
+
     with SessionLocal() as s:
         kpis = {
-            "courses": s.scalar(select(func.count()).select_from(Course)) or 0,
-            "citations": s.scalar(select(func.count()).select_from(Citation)) or 0,
+            "courses": s.scalar(scoped(select(func.count()).select_from(Course), join_course=False)) or 0,
+            "citations": s.scalar(scoped(select(func.count()).select_from(Citation))) or 0,
             "verified": s.scalar(
-                select(func.count()).select_from(VerifiedBook)
-                .join(Citation, Citation.id == VerifiedBook.citation_id)
-                .where(VerifiedBook.verified.is_(True), _not_superseded())
+                scoped(
+                    select(func.count()).select_from(VerifiedBook)
+                    .join(Citation, Citation.id == VerifiedBook.citation_id)
+                    .where(VerifiedBook.verified.is_(True), _not_superseded())
+                )
             ) or 0,
             "pending": s.scalar(
-                select(func.count()).select_from(VerifiedBook)
-                .join(Citation, Citation.id == VerifiedBook.citation_id)
-                .where(VerifiedBook.review_status == "pending", _not_superseded())
+                scoped(
+                    select(func.count()).select_from(VerifiedBook)
+                    .join(Citation, Citation.id == VerifiedBook.citation_id)
+                    .where(VerifiedBook.review_status == "pending", _not_superseded())
+                )
             ) or 0,
         }
 
         prio = {k: 0 for k, _, _ in _PRIORITY_META}
         copies = 0
         for priority, cnt, csum in s.execute(
-            select(Recommendation.priority, func.count(), func.sum(Recommendation.suggested_copies))
-            .join(HoldingCheck, HoldingCheck.id == Recommendation.holding_id)
-            .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id)
-            .join(Citation, Citation.id == VerifiedBook.citation_id)
-            .where(purchasable(), _not_superseded())
-            .group_by(Recommendation.priority)
+            scoped(
+                select(Recommendation.priority, func.count(), func.sum(Recommendation.suggested_copies))
+                .join(HoldingCheck, HoldingCheck.id == Recommendation.holding_id)
+                .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id)
+                .join(Citation, Citation.id == VerifiedBook.citation_id)
+                .where(purchasable(), _not_superseded())
+            ).group_by(Recommendation.priority)
         ).all():
             prio[priority] = cnt
             if priority != "skip":
@@ -114,37 +133,44 @@ def _load_data() -> dict:
 
         status = {k: 0 for k, _, _ in _STATUS_META}
         for st, cnt in s.execute(
-            select(HoldingCheck.status, func.count())
-            .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id)
-            .join(Citation, Citation.id == VerifiedBook.citation_id)
-            .where(_not_superseded())
-            .group_by(HoldingCheck.status)
+            scoped(
+                select(HoldingCheck.status, func.count())
+                .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id)
+                .join(Citation, Citation.id == VerifiedBook.citation_id)
+                .where(_not_superseded())
+            ).group_by(HoldingCheck.status)
         ).all():
             status[st] = status.get(st, 0) + cnt
 
         recs = s.execute(
-            select(
-                Recommendation.priority, Course.course_name, VerifiedBook.canonical_title,
-                Citation.is_required, HoldingCheck.status, Recommendation.suggested_copies,
-                Recommendation.rationale, Citation.raw_mention,
-                Citation.course_id, VerifiedBook.isbn_13,  # 末兩欄：去重輔助鍵
+            scoped(
+                select(
+                    Recommendation.priority, Course.course_name, VerifiedBook.canonical_title,
+                    Citation.is_required, HoldingCheck.status, Recommendation.suggested_copies,
+                    Recommendation.rationale, Citation.raw_mention,
+                    Citation.course_id, VerifiedBook.isbn_13,  # 末兩欄：去重輔助鍵
+                )
+                .join(Course, Course.course_id == Recommendation.course_id)
+                .join(HoldingCheck, HoldingCheck.id == Recommendation.holding_id)
+                .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id)
+                .join(Citation, Citation.id == VerifiedBook.citation_id)
+                .where(purchasable(), _not_superseded()),
+                join_course=False,
             )
-            .join(Course, Course.course_id == Recommendation.course_id)
-            .join(HoldingCheck, HoldingCheck.id == Recommendation.holding_id)
-            .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id)
-            .join(Citation, Citation.id == VerifiedBook.citation_id)
-            .where(purchasable(), _not_superseded())
         ).all()
         recs = sorted(recs, key=lambda r: (_PRIORITY_RANK.get(r[0], 9), r[1] or ""))
         recs = _dedup_course_book(recs)  # 同課同書只留一筆（去重後切掉末兩欄輔助鍵）
 
         pending = s.execute(
-            select(Course.course_name, Citation.title, Citation.confidence, VerifiedBook.source,
-                   Citation.is_required, Citation.raw_mention)
-            .join(Citation, Citation.id == VerifiedBook.citation_id)
-            .join(Course, Course.course_id == Citation.course_id)
-            .where(VerifiedBook.review_status == "pending", _not_superseded())
-            .order_by(Course.course_name)
+            scoped(
+                select(Course.course_name, Citation.title, Citation.confidence, VerifiedBook.source,
+                       Citation.is_required, Citation.raw_mention)
+                .join(Citation, Citation.id == VerifiedBook.citation_id)
+                .join(Course, Course.course_id == Citation.course_id)
+                .where(VerifiedBook.review_status == "pending", _not_superseded())
+                .order_by(Course.course_name),
+                join_course=False,
+            )
         ).all()
 
     return {"kpis": kpis, "priority": prio, "status": status, "recs": recs, "pending": pending}
@@ -729,8 +755,8 @@ _pollLog();
 
 
 @app.get("/", response_class=HTMLResponse)
-def index() -> str:
-    return _render(_load_data())
+def index(departments: list[str] | None = Query(None)) -> str:
+    return _render(_load_data(departments))
 
 
 # ---------- CSV 匯出 ----------
@@ -820,6 +846,18 @@ for _raw, (_col, _dep) in DEPARTMENT_MAP.items():
     _DEPT_TO_RAW.setdefault(_dep, []).append(_raw)
 
 
+def _expand_departments(names: list[str] | None) -> list[str] | None:
+    """系所名（UI 上看到、/departments 回傳的名稱）→ 展平成原始系級值，供 SQL 比對 Course.department。
+    None 或空清單＝不篩（回 None）。未知的系所名原樣保留，例如「其他」歸類的原始值本身。
+    /run（決定分析哪些課）與首頁（決定顯示哪些資料）共用，兩邊的「學系」才會是同一個意思。"""
+    if not names:
+        return None
+    expanded: list[str] = []
+    for name in names:
+        expanded.extend(_DEPT_TO_RAW.get(name, [name]))
+    return expanded
+
+
 @app.post("/run")
 def start_run(body: dict = Body(default={})) -> dict:
     """在背景執行緒啟動整條 pipeline。source_files/departments 為 None/空＝全部；一次只准一個。
@@ -828,13 +866,7 @@ def start_run(body: dict = Body(default={})) -> dict:
 
     source_files = body.get("source_files") if isinstance(body, dict) else None
     dept_names = body.get("departments") if isinstance(body, dict) else None
-    # 系所名 → 原始系級值（展平）；未知系所名原樣保留（例如「其他」歸類的原始值本身）
-    departments = None
-    if dept_names:
-        expanded: list[str] = []
-        for name in dept_names:
-            expanded.extend(_DEPT_TO_RAW.get(name, [name]))
-        departments = expanded
+    departments = _expand_departments(dept_names)
     with _run_lock:
         if _run_state["status"] == "running":
             return {"ok": False, "message": "pipeline 已在執行中"}
