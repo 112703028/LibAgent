@@ -181,11 +181,13 @@ def _kpi_tiles(k: dict) -> str:
 
 
 def _rec_row(priority: str, course: str, title: str, btype: str, status_html: str,
-             copies_html: str, rationale: str) -> str:
+             copies_html: str, rationale: str, btypes: str) -> str:
+    """btypes：類別 token（required / optional / ai），以空白分隔的清單。現在一列只有一個；
+    第 4 點把同一本書的多門課合併成一列後會有多個，前端用「包含」比對，屆時不必再改。"""
     pcolor = _PRIORITY_COLOR.get(priority, _PENDING_COLOR)
     plabel = _PRIORITY_LABEL.get(priority, _PENDING_LABEL)
     return (
-        f'<tr data-priority="{html.escape(priority)}">'
+        f'<tr data-priority="{html.escape(priority)}" data-btypes="{html.escape(btypes)}">'
         f'<td class="chk"><input type="checkbox" class="rowchk"></td>'
         f'<td><span class="pill" style="background:{pcolor}">{html.escape(plabel)}</span></td>'
         f'<td>{html.escape(course or "")}</td>'
@@ -202,11 +204,29 @@ def _is_ai_recommended(raw_mention: str | None) -> bool:
     return bool(raw_mention) and "AI推薦" in raw_mention
 
 
-def _book_type_label(is_required: bool, raw_mention: str | None) -> str:
-    """類別標籤：AI 推薦 > 指定 > 參考。AI 推薦以橘色標籤與教師指定/參考區隔。"""
+def _book_type_key(is_required: bool, raw_mention: str | None) -> str:
+    """類別判定：AI 推薦 > 指定 > 參考。回傳 "ai" / "required" / "optional"。"""
     if _is_ai_recommended(raw_mention):
-        return f'<span class="tag tag-ai">AI推薦</span>'
-    return f'<span class="tag">{"指定" if is_required else "參考"}</span>'
+        return "ai"
+    return "required" if is_required else "optional"
+
+
+def _book_type_label(is_required: bool, raw_mention: str | None) -> str:
+    """類別標籤。AI 推薦以橘色標籤與教師指定/參考區隔。"""
+    key = _book_type_key(is_required, raw_mention)
+    if key == "ai":
+        return '<span class="tag tag-ai">AI推薦</span>'
+    return f'<span class="tag">{"指定" if key == "required" else "參考"}</span>'
+
+
+# 類別篩選按鈕：(token, 顯示文字)。token 與 _book_type_key 的回傳值、列上的 data-btypes 一致。
+_CATEGORY_META = [("required", "指定"), ("optional", "參考"), ("ai", "AI 推薦")]
+
+
+def _category_btns() -> str:
+    return '<button class="cbtn active" data-c="all">全部</button>' + "".join(
+        f'<button class="cbtn" data-c="{k}">{html.escape(n)}</button>' for k, n in _CATEGORY_META
+    )
 
 
 def _rec_table(recs: list, pending: list) -> str:
@@ -218,12 +238,14 @@ def _rec_table(recs: list, pending: list) -> str:
         slabel = _STATUS_LABEL.get(status, status)
         btype = _book_type_label(is_required, raw_mention)
         status_html = f'<span class="pill" style="background:{scolor}">{html.escape(slabel)}</span>'
-        body.append(_rec_row(priority, course, title, btype, status_html, str(copies), rationale))
+        body.append(_rec_row(priority, course, title, btype, status_html, str(copies), rationale,
+                             _book_type_key(is_required, raw_mention)))
     # 待審核的書還沒進 librarian/recommender，沒有館藏狀態/冊數，理由欄改顯示驗證信心分數與來源
     for course, title, confidence, source, is_required, raw_mention in pending:
         rationale = f"confidence {confidence:.2f} · {source or ''}"
         btype = _book_type_label(is_required, raw_mention)
-        body.append(_rec_row("pending", course, title, btype, "—", "—", rationale))
+        body.append(_rec_row("pending", course, title, btype, "—", "—", rationale,
+                             _book_type_key(is_required, raw_mention)))
     return (
         '<table id="rectable"><thead><tr>'
         '<th class="chk"><input type="checkbox" id="rowchkall" title="全選/全不選"></th>'
@@ -315,10 +337,11 @@ h2 {{ font-size:15px; margin:0 0 12px; color:var(--text-secondary); }}
 .bar-fill {{ height:100%; border-radius:0 4px 4px 0; min-width:2px; display:block; }}
 .bar-value {{ width:44px; flex:none; font-weight:600; font-variant-numeric:tabular-nums; }}
 .bar-row:hover .bar-fill {{ filter:brightness(1.08); }}
-.filters {{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }}
-.fbtn, .sfbtn {{ font:inherit; font-size:12.5px; padding:4px 12px; border-radius:99px; cursor:pointer;
+.filters {{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }}
+.fsep {{ width:1px; height:18px; background:var(--border); margin:0 6px; }}
+.fbtn, .cbtn {{ font:inherit; font-size:12.5px; padding:4px 12px; border-radius:99px; cursor:pointer;
   border:1px solid var(--border); background:transparent; color:var(--text-secondary); }}
-.fbtn.active, .sfbtn.active {{ background:var(--text-primary); color:var(--surface); border-color:var(--text-primary); }}
+.fbtn.active, .cbtn.active {{ background:var(--text-primary); color:var(--surface); border-color:var(--text-primary); }}
 table {{ border-collapse:collapse; width:100%; font-size:13px; }}
 th,td {{ border-bottom:1px solid var(--gridline); padding:8px 10px; text-align:left; vertical-align:top; }}
 th {{ color:var(--text-secondary); font-weight:600; white-space:nowrap; }}
@@ -395,7 +418,7 @@ th.chk, td.chk {{ width:28px; text-align:center; padding-left:6px; padding-right
         </div>
       </div>
     </div>
-    <div class="filters">{filter_btns}</div>
+    <div class="filters">{filter_btns}<span class="fsep"></span>{_category_btns()}</div>
     {_rec_table(data["recs"], data["pending"])}
   </div>
 </div>
@@ -435,14 +458,17 @@ async function _pollLog() {{
   }}
 }}
 
-// 套用表格顯示：有搜尋字時只看搜尋（無視篩選按鈕）；否則看選中的篩選按鈕。
-// tableId=表格 id；dataKey=data-priority / data-status；btnSel=篩選按鈕 class；searchId=搜尋框 id
-function _applyTableView(tableId, dataKey, btnSel, searchId) {{
-  const table = document.getElementById(tableId);
+// 套用明細表的篩選：優先級按鈕與類別按鈕取交集；搜尋框有字時只看搜尋（無視兩組按鈕，維持原行為）。
+// 類別比對用 data-btypes 的 token 清單做「包含」：現在一列只有一個 token，
+// 第 4 點把同一本書的多門課合併成一列後會有多個，這裡不必再改。
+function _applyRecFilters() {{
+  const table = document.getElementById('rectable');
   if (!table) return;
-  const kw = (document.getElementById(searchId).value || '').trim().toLowerCase();
-  const active = document.querySelector(btnSel + '.active');
-  const f = active ? active.dataset[dataKey === 'priority' ? 'f' : 'sf'] : 'all';
+  const kw = (document.getElementById('recsearch').value || '').trim().toLowerCase();
+  const pa = document.querySelector('.fbtn.active');
+  const ca = document.querySelector('.cbtn.active');
+  const f = pa ? pa.dataset.f : 'all';
+  const c = ca ? ca.dataset.c : 'all';
   table.querySelectorAll('tbody tr').forEach(function(tr){{
     let show;
     if (kw) {{
@@ -452,22 +478,23 @@ function _applyTableView(tableId, dataKey, btnSel, searchId) {{
       const title = (tds[3] ? tds[3].textContent : '').toLowerCase();
       show = course.includes(kw) || title.includes(kw);
     }} else {{
-      show = (f === 'all' || tr.dataset[dataKey] === f);
+      const types = (tr.dataset.btypes || '').split(' ');
+      show = (f === 'all' || tr.dataset.priority === f) && (c === 'all' || types.includes(c));
     }}
     tr.style.display = show ? '' : 'none';
   }});
 }}
 
-document.querySelectorAll('.fbtn').forEach(function(b){{
-  b.addEventListener('click', function(){{
-    document.querySelectorAll('.fbtn').forEach(x=>x.classList.remove('active'));
-    b.classList.add('active');
-    _applyTableView('rectable', 'priority', '.fbtn', 'recsearch');
+['.fbtn', '.cbtn'].forEach(function(sel){{
+  document.querySelectorAll(sel).forEach(function(b){{
+    b.addEventListener('click', function(){{
+      document.querySelectorAll(sel).forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      _applyRecFilters();
+    }});
   }});
 }});
-document.getElementById('recsearch').addEventListener('input', function(){{
-  _applyTableView('rectable', 'priority', '.fbtn', 'recsearch');
-}});
+document.getElementById('recsearch').addEventListener('input', _applyRecFilters);
 
 const _el = id => document.getElementById(id);
 let _sawRunning = false;  // 這個分頁是否親眼看過 running；只有這樣才代表「這次是我觸發的」
