@@ -64,6 +64,23 @@ validator 只要查得到記錄就算 `verified=True`，實測有相當比例配
 判為 `mismatch` 的書會進人工審核佇列，並被 `db/filters.py` 的 `purchasable()`
 擋在採購建議/報表/dashboard 之外，直到人工改成 `approved`。
 
+### 採購建議：一本書一筆（recommender）
+
+同一本書被好幾門課用到時，只產生**一筆**建議：人數是各課加總（同一門課重複列只算一次）、現有館藏**只扣一次**、
+任一課指定就按指定算。`_decide` 的規則完全沒變，只是輸入從「單一課」變成「合計」。
+
+- **怎麼認定同一本書**（`book_identity.py`）：過檢查碼的 ISBN（ISBN-10 轉 13 碼）→ `isbn:<13碼>`；
+  沒有有效 ISBN → 依正規化書名分桶，桶內記錄不完全相同時用 match_auditor 的判斷（失敗時**不合併**）。
+  不同的有效 ISBN 不合併（版次分開）。`isbn_13` 欄位不一定是 ISBN（有 Alma 記錄編號），所以一定要先過檢查碼。
+- **資料表**：`recommendations` 一列 = 一本書（`book_key` 唯一；`course_id` / `holding_id` 是代表課程 / 代表館藏）；
+  `recommendation_courses` 記錄這本書被哪些課用到。外鍵 `ON DELETE CASCADE`：validator / librarian 會直接
+  `DELETE recommendations`，parser 會先刪舊 citations，沒有 cascade 這些節點會被外鍵擋住。
+- **recommender 永遠算全校**，不看 `course_ids`（只算選中的課，合計會失真）。冪等簽章沒變就不重打 LLM。
+- **重建**：`python src/library_agent/agents/recommender.py`。`recommendations` 完全是推導資料，隨時可重建；
+  首次（或換識別規則後）要重寫每本書的理由，約 1500 次 LLM。
+- **測試**：recommender 會清掉不再存在的建議，所以它的測試用獨立的測試資料庫（`conftest.py` 的 `isolated_db`，
+  `<開發庫>_test`），**不要**在開發庫上跑會呼叫 `recommender_node` 的測試。
+
 ## 資料庫
 
 ```bash
