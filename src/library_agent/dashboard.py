@@ -12,12 +12,15 @@ import io
 import threading
 import time
 import traceback
+from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import NamedTuple
 
 from fastapi import Body, FastAPI, File, Query, UploadFile
 from fastapi.responses import HTMLResponse, StreamingResponse
 from sqlalchemy import func, select
+from sqlalchemy.orm import aliased
 
 from library_agent import runlog
 from library_agent.agents.crawler import DATA_DIR
@@ -28,6 +31,7 @@ from library_agent.db.models import (
     Course,
     HoldingCheck,
     Recommendation,
+    RecommendationCourse,
     VerifiedBook,
 )
 from library_agent.db.session import SessionLocal
@@ -63,37 +67,59 @@ def _not_superseded():
     return not_superseded()
 
 
-def _dedup_course_book(rows: list) -> list:
-    """去重：同一門課的同一本書只留一筆。tuple 最後兩欄約定為 (course_id, isbn_13)。
-    驗證階段偶有誤匹配（不同書名被正規化成同一本、拿到同 ISBN），導致同課同書
-    重複出現。去重鍵 = (course_id, isbn_13 或 canonical_title)；canonical_title 是
-    每列的第 3 欄（index 2）。去重後切掉最後兩欄輔助鍵，回傳原本欄位形狀。"""
-    seen = set()
-    out = []
-    for r in rows:
-        course_id, isbn = r[-2], r[-1]
-        key = (course_id, isbn or r[2])  # 無 ISBN 時退回用 canonical_title 去重
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(r[:-2])
-    return out
+class CourseRef(NamedTuple):
+    """一本書被某門課用到。key = required / optional / ai（該課自己的類別）；
+    in_scope = 這門課屬於目前選的學系（沒有篩選時一律 False）。"""
+    name: str
+    key: str
+    in_scope: bool
+
+
+class RecRow(NamedTuple):
+    """採購建議明細的一列 = 一本書（可能被多門課用到）。冊數是全校合計。"""
+    priority: str
+    courses: list
+    title: str
+    status: str
+    copies: int
+    rationale: str
+
+
+# 同一門課有兩個書目時（實測 8 組），取較「重」的類別
+_KEY_RANK = {"required": 0, "ai": 1, "optional": 2}
 
 
 def _load_data(departments: list[str] | None = None) -> dict:
     """departments：系所名清單（UI 上的名稱）。None/空＝不篩，與原本行為完全相同。
     有值時，KPI、兩張圖、採購建議、待審核明細全部只算這些學系的課；
-    Course.department 為 NULL 的課只在不篩時出現。"""
+    Course.department 為 NULL 的課只在不篩時出現。
+    採購建議是「一本書一筆」：只要這本書有任一門課屬於所選學系就會顯示，冊數是全校合計。"""
     raw = _expand_departments(departments)
 
     def scoped(q, *, join_course: bool = True):
-        """把查詢限縮到所選學系。q 已經 join 過 Course 的（明細表、待審核）傳 join_course=False，
+        """把查詢限縮到所選學系。q 已經 join 過 Course 的（待審核）傳 join_course=False，
         其餘的要補一次 join；統一用這個函式，才不會漏掉某一個計數。"""
         if raw is None:
             return q
         if join_course:
             q = q.join(Course, Course.course_id == Citation.course_id)
         return q.where(Course.department.in_(raw))
+
+    def rec_scoped(q):
+        """限縮到「至少有一門課屬於所選學系」的建議。子查詢的 courses 必須用別名：
+        外層查詢已經 join 了「代表課程」的 courses，不用別名的話 SQLAlchemy 會把兩者自動關聯成
+        同一張表，變成只檢查代表課程的學系。"""
+        if raw is None:
+            return q
+        dept_course = aliased(Course)
+        in_dept = (
+            select(RecommendationCourse.id)
+            .join(dept_course, dept_course.course_id == RecommendationCourse.course_id)
+            .where(RecommendationCourse.recommendation_id == Recommendation.id,
+                   dept_course.department.in_(raw))
+            .exists()
+        )
+        return q.where(in_dept)
 
     with SessionLocal() as s:
         kpis = {
@@ -115,10 +141,11 @@ def _load_data(departments: list[str] | None = None) -> dict:
             ) or 0,
         }
 
+        # 優先級圖、館藏狀態圖、明細都從 recommendations 出發、數「書」，所以三者的底一致
         prio = {k: 0 for k, _, _ in _PRIORITY_META}
         copies = 0
         for priority, cnt, csum in s.execute(
-            scoped(
+            rec_scoped(
                 select(Recommendation.priority, func.count(), func.sum(Recommendation.suggested_copies))
                 .join(HoldingCheck, HoldingCheck.id == Recommendation.holding_id)
                 .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id)
@@ -133,33 +160,55 @@ def _load_data(departments: list[str] | None = None) -> dict:
 
         status = {k: 0 for k, _, _ in _STATUS_META}
         for st, cnt in s.execute(
-            scoped(
+            rec_scoped(
                 select(HoldingCheck.status, func.count())
+                .join(Recommendation, Recommendation.holding_id == HoldingCheck.id)
                 .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id)
                 .join(Citation, Citation.id == VerifiedBook.citation_id)
-                .where(purchasable(), _not_superseded())  # 與優先級圖同一個「可採購」條件，兩張圖的底才一致
+                .where(purchasable(), _not_superseded())  # 與優先級圖同一個「可採購」條件
             ).group_by(HoldingCheck.status)
         ).all():
             status[st] = status.get(st, 0) + cnt
 
-        recs = s.execute(
-            scoped(
+        rec_rows = s.execute(
+            rec_scoped(
                 select(
-                    Recommendation.priority, Course.course_name, VerifiedBook.canonical_title,
-                    Citation.is_required, HoldingCheck.status, Recommendation.suggested_copies,
-                    Recommendation.rationale, Citation.raw_mention,
-                    Citation.course_id, VerifiedBook.isbn_13,  # 末兩欄：去重輔助鍵
+                    Recommendation.id, Recommendation.priority, VerifiedBook.canonical_title,
+                    HoldingCheck.status, Recommendation.suggested_copies, Recommendation.rationale,
+                    Course.course_name, Course.department, Citation.is_required, Citation.raw_mention,
                 )
-                .join(Course, Course.course_id == Recommendation.course_id)
                 .join(HoldingCheck, HoldingCheck.id == Recommendation.holding_id)
                 .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id)
                 .join(Citation, Citation.id == VerifiedBook.citation_id)
-                .where(purchasable(), _not_superseded()),
-                join_course=False,
+                .join(Course, Course.course_id == Recommendation.course_id)   # 代表課程：沒有關聯列時的備援
+                .where(purchasable(), _not_superseded())
             )
         ).all()
-        recs = sorted(recs, key=lambda r: (_PRIORITY_RANK.get(r[0], 9), r[1] or ""))
-        recs = _dedup_course_book(recs)  # 同課同書只留一筆（去重後切掉末兩欄輔助鍵）
+
+        # 這本書被哪些課用到（關聯表）。沒有關聯列的建議（recommender 重建前的舊格式列）退回用代表課程。
+        used_by: dict[int, list[tuple]] = defaultdict(list)
+        if rec_rows:
+            for rec_id, name, dept, is_required, raw_mention in s.execute(
+                select(RecommendationCourse.recommendation_id, Course.course_name, Course.department,
+                       RecommendationCourse.is_required, Citation.raw_mention)
+                .join(Course, Course.course_id == RecommendationCourse.course_id)
+                .join(Citation, Citation.id == RecommendationCourse.citation_id)
+                .where(RecommendationCourse.recommendation_id.in_([r[0] for r in rec_rows]))
+            ).all():
+                used_by[rec_id].append((name, dept, is_required, raw_mention))
+
+        recs: list[RecRow] = []
+        for rec_id, priority, title, st, rec_copies, rationale, rep_name, rep_dept, rep_req, rep_mention in rec_rows:
+            refs: dict[str, CourseRef] = {}
+            for name, dept, is_required, raw_mention in used_by.get(rec_id) or [(rep_name, rep_dept, rep_req, rep_mention)]:
+                key = _book_type_key(is_required, raw_mention)
+                prev = refs.get(name)
+                if prev is None or _KEY_RANK[key] < _KEY_RANK[prev.key]:
+                    refs[name] = CourseRef(name, key, raw is not None and dept in raw)
+            recs.append(RecRow(priority, sorted(refs.values(), key=lambda c: c.name), title, st,
+                               rec_copies, rationale or ""))
+        recs.sort(key=lambda r: (_PRIORITY_RANK.get(r.priority, 9),
+                                 r.courses[0].name if r.courses else "", r.title))
 
         pending = s.execute(
             scoped(
@@ -207,7 +256,7 @@ def _kpi_tiles(k: dict) -> str:
 
 
 def _rec_row(priority: str, course: str, title: str, btype: str, status_html: str,
-             copies_html: str, rationale: str, btypes: str) -> str:
+             copies_html: str, rationale: str, btypes: str, course_html: str | None = None) -> str:
     """btypes：類別 token（required / optional / ai），以空白分隔的清單。現在一列只有一個；
     第 4 點把同一本書的多門課合併成一列後會有多個，前端用「包含」比對，屆時不必再改。"""
     pcolor = _PRIORITY_COLOR.get(priority, _PENDING_COLOR)
@@ -216,7 +265,7 @@ def _rec_row(priority: str, course: str, title: str, btype: str, status_html: st
         f'<tr data-priority="{html.escape(priority)}" data-btypes="{html.escape(btypes)}">'
         f'<td class="chk"><input type="checkbox" class="rowchk"></td>'
         f'<td><span class="pill" style="background:{pcolor}">{html.escape(plabel)}</span></td>'
-        f'<td>{html.escape(course or "")}</td>'
+        f'<td>{course_html if course_html is not None else html.escape(course or "")}</td>'
         f'<td>{html.escape(title or "")}</td>'
         f'<td>{btype}</td>'
         f'<td>{status_html}</td>'
@@ -237,12 +286,27 @@ def _book_type_key(is_required: bool, raw_mention: str | None) -> str:
     return "required" if is_required else "optional"
 
 
-def _book_type_label(is_required: bool, raw_mention: str | None) -> str:
+_KEY_LABEL = {"required": "指定", "optional": "參考", "ai": "AI推薦"}
+
+
+def _tag_for_key(key: str) -> str:
     """類別標籤。AI 推薦以橘色標籤與教師指定/參考區隔。"""
-    key = _book_type_key(is_required, raw_mention)
     if key == "ai":
         return '<span class="tag tag-ai">AI推薦</span>'
-    return f'<span class="tag">{"指定" if key == "required" else "參考"}</span>'
+    return f'<span class="tag">{_KEY_LABEL[key]}</span>'
+
+
+def _book_type_label(is_required: bool, raw_mention: str | None) -> str:
+    return _tag_for_key(_book_type_key(is_required, raw_mention))
+
+
+def _course_cell(courses: list) -> str:
+    """「課程」欄：列出這本書用到的所有課，每門課旁標明它自己的類別；屬於所選學系的課加粗。"""
+    parts = []
+    for c in courses:
+        text = f"{html.escape(c.name)}（{_KEY_LABEL[c.key]}）"
+        parts.append(f'<span class="c-in">{text}</span>' if c.in_scope else text)
+    return "、".join(parts)
 
 
 # 類別篩選按鈕：(token, 顯示文字)。token 與 _book_type_key 的回傳值、列上的 data-btypes 一致。
@@ -259,14 +323,16 @@ def _rec_table(recs: list, pending: list) -> str:
     if not recs and not pending:
         return '<p class="empty">尚無採購建議，請先執行 pipeline。</p>'
     body = []
-    for priority, course, title, is_required, status, copies, rationale, raw_mention in recs:
-        scolor = _STATUS_COLOR.get(status, "#898781")
-        slabel = _STATUS_LABEL.get(status, status)
-        btype = _book_type_label(is_required, raw_mention)
+    for r in recs:
+        scolor = _STATUS_COLOR.get(r.status, "#898781")
+        slabel = _STATUS_LABEL.get(r.status, r.status)
+        keys = sorted({c.key for c in r.courses}, key=_KEY_RANK.get)   # 這本書涵蓋的所有類別
         status_html = f'<span class="pill" style="background:{scolor}">{html.escape(slabel)}</span>'
-        body.append(_rec_row(priority, course, title, btype, status_html, str(copies), rationale,
-                             _book_type_key(is_required, raw_mention)))
-    # 待審核的書還沒進 librarian/recommender，沒有館藏狀態/冊數，理由欄改顯示驗證信心分數與來源
+        body.append(_rec_row(
+            r.priority, "", r.title, "".join(_tag_for_key(k) for k in keys), status_html,
+            str(r.copies), r.rationale, " ".join(keys), course_html=_course_cell(r.courses),
+        ))
+    # 待審核的書沒有採購建議列（它是書目層級的），理由欄改顯示驗證信心分數與來源
     for course, title, confidence, source, is_required, raw_mention in pending:
         rationale = f"confidence {confidence:.2f} · {source or ''}"
         btype = _book_type_label(is_required, raw_mention)
@@ -376,6 +442,7 @@ td.rationale {{ color:var(--text-secondary); font-size:12px; max-width:340px; }}
 .pill {{ display:inline-block; padding:1px 9px; border-radius:99px; font-size:11.5px; font-weight:600; color:#fff; white-space:nowrap; }}
 .tag {{ display:inline-block; padding:1px 7px; border-radius:5px; font-size:11.5px; border:1px solid var(--border); color:var(--text-secondary); white-space:nowrap; }}
 .tag-ai {{ border-color:#e0900a; color:#fff; background:#e0900a; }}
+.c-in {{ font-weight:700; color:var(--text-primary); }}
 .empty {{ color:var(--muted); font-size:13px; }}
 .cardhead {{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; }}
 .cardhead h2 {{ margin:0; }}
@@ -818,15 +885,15 @@ def export_recommendations() -> StreamingResponse:
     header = ["優先級", "課程", "書名", "類別", "館藏狀態", "冊數", "理由"]
     rows = [
         (
-            _PRIORITY_LABEL.get(priority, priority),
-            course,
-            title,
-            "AI推薦" if _is_ai_recommended(raw_mention) else ("指定" if is_required else "參考"),
-            _STATUS_LABEL.get(status, status),
-            copies,
-            rationale,
+            _PRIORITY_LABEL.get(r.priority, r.priority),
+            "、".join(c.name for c in r.courses),
+            r.title,
+            "、".join(_KEY_LABEL[k] for k in sorted({c.key for c in r.courses}, key=_KEY_RANK.get)),
+            _STATUS_LABEL.get(r.status, r.status),
+            r.copies,
+            r.rationale,
         )
-        for priority, course, title, is_required, status, copies, rationale, raw_mention in data["recs"]
+        for r in data["recs"]
     ]
     return _csv_response(header, rows, "recommendations")
 

@@ -1,6 +1,7 @@
 import argparse
 import csv
 import sys
+from collections import defaultdict
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -11,6 +12,7 @@ from library_agent.db.models import (
     Course,
     HoldingCheck,
     Recommendation,
+    RecommendationCourse,
     VerifiedBook,
 )
 from library_agent.db.session import SessionLocal
@@ -25,29 +27,39 @@ _PRIORITY_ORDER = [
 
 
 def _fetch_report_rows() -> list[dict]:
+    """採購建議是「一本書一筆」（見 recommender）。course_name 是用到這本書的所有課、以「、」串接；
+    is_required 為任一課指定；course_id 是代表課程。回傳的 7 個鍵不能增減：_write_csv 的 DictWriter 依賴它們。"""
     with SessionLocal() as session:
-        rows = session.execute(
-            select(Recommendation, Course, VerifiedBook, Citation)
-            .join(Course, Course.course_id == Recommendation.course_id)
+        recs = session.execute(
+            select(Recommendation, VerifiedBook, Course.course_name, Citation.is_required)
             .join(HoldingCheck, HoldingCheck.id == Recommendation.holding_id)
             .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id)
             .join(Citation, Citation.id == VerifiedBook.citation_id)
+            .join(Course, Course.course_id == Recommendation.course_id)   # 代表課程：沒有關聯列時的備援
             .where(purchasable())
-            .order_by(Recommendation.priority, Course.course_name)
+            .order_by(Recommendation.priority, Course.course_name, Recommendation.id)
         ).all()
+        used_by: dict[int, list[tuple[str, bool]]] = defaultdict(list)
+        for rec_id, name, is_required in session.execute(
+            select(RecommendationCourse.recommendation_id, Course.course_name, RecommendationCourse.is_required)
+            .join(Course, Course.course_id == RecommendationCourse.course_id)
+            .order_by(Course.course_name)
+        ).all():
+            used_by[rec_id].append((name, is_required))
 
-    return [
-        {
+    rows = []
+    for rec, vb, rep_name, rep_required in recs:
+        courses = used_by.get(rec.id) or [(rep_name, rep_required)]
+        rows.append({
             "priority": rec.priority,
-            "course_id": course.course_id,
-            "course_name": course.course_name,
+            "course_id": rec.course_id,
+            "course_name": "、".join(dict.fromkeys(name for name, _ in courses)),
             "title": vb.canonical_title,
-            "is_required": citation.is_required,
+            "is_required": any(required for _, required in courses),
             "suggested_copies": rec.suggested_copies,
             "rationale": rec.rationale or "",
-        }
-        for rec, course, vb, citation in rows
-    ]
+        })
+    return rows
 
 
 def _print_report(rows: list[dict]) -> None:

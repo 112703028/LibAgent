@@ -19,7 +19,7 @@ def test_rec_row_carries_category_token():
 
 
 def test_rec_table_rows_have_category_tokens():
-    recs = [("high", "課", "書A", True, "missing", 1, "理由", "指定")]
+    recs = [dashboard.RecRow("high", [dashboard.CourseRef("課", "required", False)], "書A", "missing", 1, "理由")]
     pending = [("課", "書B", 0.5, "nla", False, "[AI推薦] x")]
 
     html = dashboard._rec_table(recs, pending)
@@ -45,7 +45,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from library_agent.db.models import (
-    Citation, Course, HoldingCheck, Recommendation, VerifiedBook,
+    Citation, Course, HoldingCheck, Recommendation, RecommendationCourse, VerifiedBook,
 )
 from library_agent.db.session import SessionLocal
 
@@ -95,15 +95,19 @@ def seeded():
             hc = HoldingCheck(verified_book_id=vb.id, status="missing", holdings_count=0)
             s.add(hc)
             s.flush()
-            s.add(Recommendation(course_id=course_id, holding_id=hc.id, priority="high",
-                                 suggested_copies=1, rationale="r"))
+            rec = Recommendation(course_id=course_id, holding_id=hc.id, priority="high",
+                                 suggested_copies=1, rationale="r", book_key=f"test:{course_id}")
+            s.add(rec)
+            s.flush()
+            s.add(RecommendationCourse(recommendation_id=rec.id, course_id=course_id, citation_id=c.id,
+                                       is_required=True, enrolled=30))
         s.commit()
     yield
     _cleanup()
 
 
 def _titles(data):
-    return {r[2] for r in data["recs"]}
+    return {r.title for r in data["recs"]}
 
 
 def test_expand_departments():
@@ -196,8 +200,12 @@ def seeded_with_blocked_book():
             hc = HoldingCheck(verified_book_id=vb.id, status="missing", holdings_count=0)
             s.add(hc)
             s.flush()
-            s.add(Recommendation(course_id=_BLK_COURSE, holding_id=hc.id, priority="high",
-                                 suggested_copies=1, rationale="r"))
+            rec = Recommendation(course_id=_BLK_COURSE, holding_id=hc.id, priority="high",
+                                 suggested_copies=1, rationale="r", book_key=f"test:{_BLK_COURSE}:{title}")
+            s.add(rec)
+            s.flush()
+            s.add(RecommendationCourse(recommendation_id=rec.id, course_id=_BLK_COURSE, citation_id=c.id,
+                                       is_required=True, enrolled=30))
         s.commit()
     yield
     _cleanup()
@@ -208,4 +216,4 @@ def test_status_chart_excludes_books_the_purchase_gate_blocks(seeded_with_blocke
 
     assert sum(d["priority"].values()) == 1           # 優先級圖本來就套用採購條件
     assert sum(d["status"].values()) == 1             # 館藏狀態圖也要：配錯未放行的那本不能被算進去
-    assert {r[2] for r in d["recs"]} == {"TESTBOOK-OK"}
+    assert {r.title for r in d["recs"]} == {"TESTBOOK-OK"}
