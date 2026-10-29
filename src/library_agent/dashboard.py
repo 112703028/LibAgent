@@ -57,30 +57,6 @@ _PRIORITY_RANK = {k: i for i, (k, _, _) in enumerate(_PRIORITY_META)}
 _STATUS_COLOR = {k: c for k, _, c in _STATUS_META}
 _STATUS_LABEL = {k: n for k, n, _ in _STATUS_META}
 
-# Pipeline 流程圖的節點狀態色（對應 PipelineNodeRun.status）。
-# 圖例與前端上色用的 JS 物件都從這裡產生，避免兩邊各寫一份 hex 改色時脫鉤。
-# pending 用淺灰：節點標籤是深色字，底色太深會讀不到，而且「未開始」本來就該看起來是惰性的。
-_NODE_STATUS_META = [
-    ("pending", "未開始", "#d8dce1"),
-    ("running", "執行中", "#fab219"),
-    ("done", "完成", "#0ca30c"),
-    ("error", "錯誤", "#d03b3b"),
-]
-_NODE_STATUS_COLOR = {k: c for k, _, c in _NODE_STATUS_META}
-
-# 進度區每個節點旁的中文說明（順序不在這裡決定，由 graph.NODE_NAMES 決定）
-_NODE_LABELS = {
-    "crawler": "爬取課綱",
-    "parser": "解析書目",
-    "discoverer": "AI 推薦補書",
-    "validator": "書目驗證",
-    "match_auditor": "配對稽核",
-    "librarian": "館藏查詢",
-    "recommender": "採購建議",
-    "human_review": "人工審核",
-}
-
-
 def _not_superseded():
     """排除被回饋迴路換掉的舊 citation（superseded_by_iteration 非空）。"""
     return not_superseded()
@@ -175,43 +151,6 @@ def _load_data() -> dict:
 
 # ---------- 呈現 ----------
 
-def _flow_legend() -> str:
-    """流程圖下方的狀態色圖例。"""
-    return "".join(
-        f'<span><i style="background:{color}"></i>{html.escape(label)}</span>'
-        for _, label, color in _NODE_STATUS_META
-    )
-
-
-def _node_color_js() -> str:
-    """給前端 _updateFlowchart() 用的 status → 色碼對照表（JS 物件字面值）。"""
-    return json.dumps({k: c for k, _, c in _NODE_STATUS_META}, ensure_ascii=False)
-
-
-def _pct(processed: int | None, total: int | None) -> int:
-    """進度條百分比。total 為 None/0（沒有迴圈的節點、沒有待辦）回 0，不得除以零；上限 100。"""
-    if not total:
-        return 0
-    return min(100, round((processed or 0) / total * 100))
-
-
-def _progress_card(node_names: list[str]) -> str:
-    """處理進度區：每個節點一列。這裡只產生「未開始、無進度」的初始畫面，
-    之後由前端輪詢 /status 後依 data-node 更新各欄（見 _updateProgress）。"""
-    rows = []
-    for name in node_names:
-        rows.append(
-            f'<div class="prow" data-node="{html.escape(name)}">'
-            f'<span class="pstatus" style="background:{_NODE_STATUS_COLOR["pending"]}"></span>'
-            f'<span class="pname">{html.escape(name)}'
-            f'<small>{html.escape(_NODE_LABELS.get(name, ""))}</small></span>'
-            f'<span class="pbar"><span style="width:{_pct(None, None)}%"></span></span>'
-            f'<span class="pcount">—</span>'
-            f'<span class="pmsg"></span></div>'
-        )
-    return '<div class="progress">' + "".join(rows) + "</div>"
-
-
 def _bars(items: list[tuple[str, int, str]]) -> str:
     maxv = max((v for _, v, _ in items), default=0) or 1
     rows = []
@@ -295,7 +234,7 @@ def _rec_table(recs: list, pending: list) -> str:
 
 def _render(data: dict) -> str:
     # 延後 import：graph 會把所有 agent 模組拉進來，與本檔其他用到 graph 的地方一致
-    from library_agent.graph import _MAX_DISCOVERY_ITERATIONS, NODE_NAMES
+    from library_agent.graph import _MAX_DISCOVERY_ITERATIONS
 
     prio_bars = _bars(
         [(_PRIORITY_LABEL[k], data["priority"].get(k, 0), _PRIORITY_COLOR[k])
@@ -325,29 +264,6 @@ h1 {{ font-size:22px; margin:0 0 4px; }}
 .sub {{ color:var(--text-secondary); font-size:13px; margin-bottom:20px; }}
 h2 {{ font-size:15px; margin:0 0 12px; color:var(--text-secondary); }}
 .card {{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 18px; margin-bottom:16px; }}
-/* 處理進度區：每個節點一列，用 grid 讓各列的欄位上下對齊 */
-.progress {{ display:flex; flex-direction:column; gap:2px; }}
-.prow {{ display:grid; grid-template-columns:14px 190px 160px 110px 1fr; align-items:center;
-  gap:12px; padding:7px 4px; border-bottom:1px solid var(--gridline); font-size:13px; }}
-.prow:last-child {{ border-bottom:0; }}
-.pstatus {{ width:10px; height:10px; border-radius:50%; border:1px solid rgba(0,0,0,.12); }}
-.pname {{ font-weight:600; }}
-.pname small {{ margin-left:8px; font-weight:400; color:var(--text-secondary); }}
-.pbar {{ height:6px; background:var(--track); border-radius:3px; overflow:hidden; }}
-.pbar > span {{ display:block; height:100%; width:0; background:#0ca30c;
-  transition:width .3s ease; }}
-.pcount {{ color:var(--text-secondary); font-variant-numeric:tabular-nums; }}
-.pmsg {{ color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
-@media (max-width:760px) {{
-  .prow {{ grid-template-columns:14px 1fr 110px; }}
-  .pbar, .pmsg {{ display:none; }}
-}}
-.flowlegend {{ display:flex; gap:16px; flex-wrap:wrap; justify-content:center;
-  margin-top:10px; font-size:12px; color:var(--text-secondary); }}
-.flowlegend span {{ display:inline-flex; align-items:center; gap:5px; }}
-/* 淺色色塊（未開始）在白底卡片上要有輪廓才看得出來 */
-.flowlegend i {{ width:10px; height:10px; border-radius:3px; display:inline-block;
-  border:1px solid rgba(0,0,0,.12); }}
 .flownote {{ margin:8px 0 0; text-align:center; font-size:12px; line-height:1.6;
   color:var(--text-secondary); }}
 .flownote b {{ color:var(--text-primary); font-weight:600; }}
@@ -437,8 +353,6 @@ th.chk, td.chk {{ width:28px; text-align:center; padding-left:6px; padding-right
 
 <div class="card">
   <h2>Pipeline 進度</h2>
-  {_progress_card(NODE_NAMES)}
-  <div class="flowlegend">{_flow_legend()}</div>
   <p class="flownote">
     <b>validator</b> 之後若有 AI 推薦書驗證失敗，會回到 discoverer 重推（最多 {_MAX_DISCOVERY_ITERATIONS - 1} 輪）；
     <b>match_auditor</b> 會把配對可疑、或抽取信心度不足的書送進 human_review 佇列，
@@ -480,24 +394,6 @@ th.chk, td.chk {{ width:28px; text-align:center; padding-left:6px; padding-right
 </div>
 </div>
 <script>
-const _NODE_COLOR = {_node_color_js()};
-
-// 依 /status 回傳的 nodes 更新進度區。total 為 null/0（crawler、human_review、沒有待辦的節點）
-// 時顯示「—」、進度條寬度 0，不得除以零。
-function _updateProgress(nodes) {{
-  nodes.forEach(function(n) {{
-    const row = document.querySelector('.prow[data-node="' + n.name + '"]');
-    if (!row) return;
-    row.querySelector('.pstatus').style.background = _NODE_COLOR[n.status] || _NODE_COLOR.pending;
-    const hasTotal = n.total !== null && n.total !== undefined && n.total > 0;
-    const pct = hasTotal ? Math.min(100, Math.round((n.processed || 0) / n.total * 100)) : 0;
-    row.querySelector('.pbar > span').style.width = pct + '%';
-    row.querySelector('.pcount').textContent =
-      hasTotal ? (n.processed || 0) + ' / ' + n.total + ' ' + (n.unit || '') : '—';
-    row.querySelector('.pmsg').textContent = n.message || '';
-  }});
-}}
-
 // 套用表格顯示：有搜尋字時只看搜尋（無視篩選按鈕）；否則看選中的篩選按鈕。
 // tableId=表格 id；dataKey=data-priority / data-status；btnSel=篩選按鈕 class；searchId=搜尋框 id
 function _applyTableView(tableId, dataKey, btnSel, searchId) {{
@@ -544,7 +440,6 @@ async function _poll() {{
     _el('runstatus').textContent = label[d.status] || d.status;
     _el('runstatus').className = 'runstatus ' + d.status;
     _el('runbtn').disabled = (d.status === 'running');
-    if (d.nodes) _updateProgress(d.nodes);
     if (d.status === 'running') {{
       _sawRunning = true;
       setTimeout(_poll, 3000);
@@ -930,32 +825,21 @@ def status() -> dict:
             "holdings": s.scalar(select(func.count()).select_from(HoldingCheck)) or 0,
             "recommendations": s.scalar(select(func.count()).select_from(Recommendation)) or 0,
         }
-        node_rows = {}      # 節點 → 最新一列的狀態
-        node_progress = {}  # 節點 → 最新一列「有進度」的 (processed, total, unit, message)
+        node_rows = {}
         if st["run_id"]:
             rows = s.execute(
-                select(PipelineNodeRun.node_name, PipelineNodeRun.status,
-                       PipelineNodeRun.processed, PipelineNodeRun.total,
-                       PipelineNodeRun.unit, PipelineNodeRun.message)
+                select(PipelineNodeRun.node_name, PipelineNodeRun.status)
                 .where(PipelineNodeRun.run_id == st["run_id"])
                 .order_by(PipelineNodeRun.id.desc())
             ).all()
-            for node_name, node_status, processed, total, unit, message in rows:
+            for node_name, node_status in rows:
                 if node_name not in node_rows:  # 每個節點只取最新一筆（id desc 已排序）
                     node_rows[node_name] = node_status
-                # 進度不能只看最新一列：_with_tracking 結束時是「新增」一列 done / error，
-                # 那列沒有進度，只看它會讓節點一跑完「120 / 120 本」就變回「—」。
-                if total is not None and node_name not in node_progress:
-                    node_progress[node_name] = (processed, total, unit, message)
 
     nodes = []
     for name in NODE_NAMES:
-        processed, total, unit, message = node_progress.get(name, (None, None, None, None))
-        nodes.append({
-            "name": name,
-            "status": node_rows.get(name, "pending"),
-            "processed": processed, "total": total, "unit": unit, "message": message,
-        })
+        node_status = node_rows.get(name, "pending")
+        nodes.append({"name": name, "status": node_status})
 
     elapsed = None
     if st["started_at"]:

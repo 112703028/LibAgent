@@ -15,7 +15,6 @@ from library_agent.db.models import (
 from library_agent.db.session import SessionLocal
 from library_agent.integrations.nccu_syllabus import fetch_student_number
 from library_agent.prompts.recommender_prompts import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE
-from library_agent.progress import report
 from library_agent.state import AgentState, HoldingStatus, PurchasePriority
 
 _settings = get_settings()
@@ -163,7 +162,6 @@ def recommender_node(_state: AgentState) -> AgentState:
 
     with SessionLocal() as session:
         for i, (holding, citation, course) in enumerate(rows, 1):
-            report(i, total, citation.title)  # 頂端：下面的 SKIP（數字沒變）會 continue
             try:
                 enrolled = _resolve_enrolled(session, course, enrolled_cache)
                 status = HoldingStatus(holding.status)

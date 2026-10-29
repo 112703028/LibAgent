@@ -9,7 +9,6 @@ from library_agent.config import get_settings
 from library_agent.db.models import Citation, Course
 from library_agent.db.session import SessionLocal
 from library_agent.prompts.parser_prompts import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE
-from library_agent.progress import report
 from library_agent.state import AgentState, BookCitation
 from library_agent.integrations.nccu_syllabus import fetch_syllabus_pdf
 
@@ -173,8 +172,6 @@ def parser_node(state: AgentState) -> AgentState:
         for future in as_completed(futures):
             done += 1
             course = futures[future]
-            # 放在判斷成功/失敗之前：失敗的那門課也算「已處理」，進度條才會走到 100%
-            report(done, total, f"{course.course_id} {course.course_name}", "門課")
             label = f"[{done:>5}/{total}] {course.course_id} {course.course_name} {course.instructor}（{course.semester}）"
             course_id, citations, error = future.result()
 

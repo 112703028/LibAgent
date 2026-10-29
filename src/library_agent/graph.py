@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 from langgraph.graph import END, START, StateGraph
 from sqlalchemy import select
 
-from library_agent import progress
 from library_agent.agents.crawler import crawler_node
 from library_agent.agents.discoverer import _failed_ai_citations, discoverer_node
 from library_agent.agents.librarian import librarian_node
@@ -60,17 +59,11 @@ def _init_run(run_id: str) -> None:
 def _with_tracking(name: str, fn, run_id: str):
     def wrapped(state: AgentState) -> AgentState:
         _mark_status(run_id, name, "running", started_at=datetime.now(timezone.utc))
-        # 綁定要在 running 那一列寫入「之後」：report() 更新的是該節點的最新一列，
-        # 要讓它更新到 running 這列，而不是 _init_run 留下的 pending 列。
-        token = progress.bind(run_id, name)
         try:
             result = fn(state)
         except Exception as e:
             _mark_status(run_id, name, "error", finished_at=datetime.now(timezone.utc), error=str(e)[:500])
             raise
-        finally:
-            # 一定要解除：沒解除的綁定會殘留在這條執行緒，下一個節點的進度會寫到錯的節點
-            progress.unbind(token)
         _mark_status(run_id, name, "done", finished_at=datetime.now(timezone.utc))
         return result
     return wrapped

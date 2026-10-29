@@ -1,3 +1,5 @@
+> **已被取代（2026-10-29）**：這份計畫實作的「每個節點一列、已處理 X / 共 Y 本、進度條」版本，使用者看過後改要終端機文字 log，該實作已移除。最終設計見設計文件第 5 點。保留此檔作為決策過程的紀錄。
+
 # Dashboard 處理進度 log Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
