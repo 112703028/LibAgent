@@ -9,9 +9,9 @@ FastAPI 服務，讀既有 DB 呈現缺口分析：KPI 概覽、採購優先級�
 import csv
 import html
 import io
-import json
 import threading
 import time
+import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -19,6 +19,7 @@ from fastapi import Body, FastAPI, File, UploadFile
 from fastapi.responses import HTMLResponse, StreamingResponse
 from sqlalchemy import func, select
 
+from library_agent import runlog
 from library_agent.agents.crawler import DATA_DIR
 from library_agent.dept_map import DEPARTMENT_MAP
 from library_agent.db.filters import not_superseded, purchasable
@@ -729,11 +730,16 @@ def _run_pipeline(run_id: str, source_files: list[str] | None, departments: list
         initial["source_files"] = source_files
     if departments:
         initial["departments"] = departments
+    runlog.reset()
+    runlog.install()  # 把 print()/stderr 多存一份給網頁的執行紀錄；終端機輸出不變
     try:
         build_graph(run_id).invoke(initial)
         status, error = "done", None
     except Exception as e:  # 背景執行緒的例外要自己接，否則靜默消失
+        traceback.print_exc()  # 走 stderr：終端機與網頁 log 都看得到錯誤出在哪
         status, error = "error", str(e)[:500]
+    finally:
+        runlog.uninstall()  # 成功或失敗都要還原，不能讓 stdout 永遠被換掉
     with _run_lock:
         _run_state.update(status=status, finished_at=time.time(), error=error)
 
@@ -765,6 +771,7 @@ def start_run(body: dict = Body(default={})) -> dict:
         run_id = str(time.time())
         _init_run(run_id)
         _run_state.update(status="running", started_at=time.time(), finished_at=None, error=None, run_id=run_id)
+    runlog.reset()
     threading.Thread(target=_run_pipeline, args=(run_id, source_files, departments), daemon=True).start()
     return {"ok": True}
 
@@ -805,6 +812,12 @@ async def upload_file(file: UploadFile = File(...)) -> dict:
     with open(dest, "wb") as f:
         f.write(await file.read())
     return {"ok": True, "filename": name}
+
+
+@app.get("/log")
+def get_log(after: int = 0, epoch: int | None = None) -> dict:
+    """執行紀錄（終端文字）。after=上次拿到的流水號；epoch 與目前不同（新的一次執行）就整份重給。"""
+    return runlog.read(after, epoch)
 
 
 @app.get("/status")
