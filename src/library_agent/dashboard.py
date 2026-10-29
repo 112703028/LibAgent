@@ -69,10 +69,13 @@ def _not_superseded():
 
 class CourseRef(NamedTuple):
     """一本書被某門課用到。key = required / optional / ai（該課自己的類別）；
-    in_scope = 這門課屬於目前選的學系（沒有篩選時一律 False）。"""
+    in_scope = 這門課屬於目前選的學系（沒有篩選時一律 False）。
+    sections = 同名的班數：真實資料裡《大學英文（一）》有 42 個班、《經濟學》15 個班，同名的班合成一項顯示，
+    但必須標出班數，否則「這本書被 42 個班用到」在畫面上完全看不出來。"""
     name: str
     key: str
     in_scope: bool
+    sections: int = 1
 
 
 class RecRow(NamedTuple):
@@ -176,6 +179,7 @@ def _load_data(departments: list[str] | None = None) -> dict:
                     Recommendation.id, Recommendation.priority, VerifiedBook.canonical_title,
                     HoldingCheck.status, Recommendation.suggested_copies, Recommendation.rationale,
                     Course.course_name, Course.department, Citation.is_required, Citation.raw_mention,
+                    Recommendation.course_id,
                 )
                 .join(HoldingCheck, HoldingCheck.id == Recommendation.holding_id)
                 .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id)
@@ -188,25 +192,34 @@ def _load_data(departments: list[str] | None = None) -> dict:
         # 這本書被哪些課用到（關聯表）。沒有關聯列的建議（recommender 重建前的舊格式列）退回用代表課程。
         used_by: dict[int, list[tuple]] = defaultdict(list)
         if rec_rows:
-            for rec_id, name, dept, is_required, raw_mention in s.execute(
-                select(RecommendationCourse.recommendation_id, Course.course_name, Course.department,
+            for rec_id, course_id, name, dept, is_required, raw_mention in s.execute(
+                select(RecommendationCourse.recommendation_id, RecommendationCourse.course_id,
+                       Course.course_name, Course.department,
                        RecommendationCourse.is_required, Citation.raw_mention)
                 .join(Course, Course.course_id == RecommendationCourse.course_id)
                 .join(Citation, Citation.id == RecommendationCourse.citation_id)
                 .where(RecommendationCourse.recommendation_id.in_([r[0] for r in rec_rows]))
             ).all():
-                used_by[rec_id].append((name, dept, is_required, raw_mention))
+                used_by[rec_id].append((course_id, name, dept, is_required, raw_mention))
 
         recs: list[RecRow] = []
-        for rec_id, priority, title, st, rec_copies, rationale, rep_name, rep_dept, rep_req, rep_mention in rec_rows:
+        for (rec_id, priority, title, st, rec_copies, rationale,
+             rep_name, rep_dept, rep_req, rep_mention, rep_course_id) in rec_rows:
             refs: dict[str, CourseRef] = {}
-            for name, dept, is_required, raw_mention in used_by.get(rec_id) or [(rep_name, rep_dept, rep_req, rep_mention)]:
+            section_ids: dict[str, set[str]] = defaultdict(set)    # 課名 → 這個名稱下有哪幾個班
+            entries = used_by.get(rec_id) or [(rep_course_id, rep_name, rep_dept, rep_req, rep_mention)]
+            for course_id, name, dept, is_required, raw_mention in entries:
                 key = _book_type_key(is_required, raw_mention)
                 prev = refs.get(name)
-                if prev is None or _KEY_RANK[key] < _KEY_RANK[prev.key]:
-                    refs[name] = CourseRef(name, key, raw is not None and dept in raw)
-            recs.append(RecRow(priority, sorted(refs.values(), key=lambda c: c.name), title, st,
-                               rec_copies, rationale or ""))
+                section_ids[name].add(course_id)
+                refs[name] = CourseRef(
+                    name,
+                    key if prev is None or _KEY_RANK[key] < _KEY_RANK[prev.key] else prev.key,
+                    (raw is not None and dept in raw) or (prev is not None and prev.in_scope),
+                )
+            courses = [c._replace(sections=len(section_ids[c.name]))
+                       for c in sorted(refs.values(), key=lambda c: c.name)]
+            recs.append(RecRow(priority, courses, title, st, rec_copies, rationale or ""))
         recs.sort(key=lambda r: (_PRIORITY_RANK.get(r.priority, 9),
                                  r.courses[0].name if r.courses else "", r.title))
 
@@ -304,7 +317,7 @@ def _course_cell(courses: list) -> str:
     """「課程」欄：列出這本書用到的所有課，每門課旁標明它自己的類別；屬於所選學系的課加粗。"""
     parts = []
     for c in courses:
-        text = f"{html.escape(c.name)}（{_KEY_LABEL[c.key]}）"
+        text = f"{html.escape(c.name)}（{_KEY_LABEL[c.key]}）" + (f"×{c.sections}" if c.sections > 1 else "")
         parts.append(f'<span class="c-in">{text}</span>' if c.in_scope else text)
     return "、".join(parts)
 

@@ -27,8 +27,12 @@ def _has(text: str, needle: str) -> bool:
     return needle in text
 
 
+COURSE_S = ["TESTDDS1", "TESTDDS2", "TESTDDS3"]      # 兩個班同名（S1、S2）+ 一門別的課（S3）
+TITLE_S = "TESTBOOK-SECT"
+
+
 def _cleanup():
-    ids = [COURSE_A, COURSE_B]
+    ids = [COURSE_A, COURSE_B, *COURSE_S]
     with SessionLocal() as s:
         cit_ids = [i for (i,) in s.query(Citation.id).filter(Citation.course_id.in_(ids))]
         vb_ids = [i for (i,) in s.query(VerifiedBook.id).filter(VerifiedBook.citation_id.in_(cit_ids))]
@@ -140,3 +144,53 @@ def test_export_recommendations_lists_every_course_of_the_book(shared_book):
     assert len(rows) == 1
     assert f"課-{COURSE_A}" in rows[0][1] and f"課-{COURSE_B}" in rows[0][1]
     assert "指定" in rows[0][3] and "參考" in rows[0][3]
+
+
+@pytest.fixture
+def sectioned_book():
+    """一本書被三個班用到，其中兩個班同名（真實資料：大學英文（一）有 42 個班、經濟學 15 個班）。"""
+    _cleanup()
+    with SessionLocal() as s:
+        parts = []
+        for cid, name in zip(COURSE_S, ("B同名課", "B同名課", "A別的課")):
+            s.add(Course(course_id=cid, course_name=name, semester="9999", source_file="t",
+                         raw_content="t", department=DEPT_A, enrolled_count=30))
+            s.flush()
+            c = Citation(course_id=cid, title=TITLE_S, authors="[]", is_required=True,
+                         raw_mention="指定", confidence=0.9)
+            s.add(c)
+            s.flush()
+            vb = VerifiedBook(citation_id=c.id, canonical_title=TITLE_S, canonical_authors="[]",
+                              isbn_13="9780199296095", source="nla", verified=True)
+            s.add(vb)
+            s.flush()
+            hc = HoldingCheck(verified_book_id=vb.id, status="missing", holdings_count=0)
+            s.add(hc)
+            s.flush()
+            parts.append((cid, c, hc))
+        rec = Recommendation(course_id=parts[0][0], holding_id=parts[0][2].id, priority="high",
+                             suggested_copies=3, rationale="r", book_key="test:sect")
+        s.add(rec)
+        s.flush()
+        for cid, c, _ in parts:
+            s.add(RecommendationCourse(recommendation_id=rec.id, course_id=cid, citation_id=c.id,
+                                       is_required=True, enrolled=30))
+        s.commit()
+    yield
+    _cleanup()
+
+
+def test_sections_with_the_same_name_are_collapsed_with_a_count(sectioned_book):
+    # 資料層記錄了三個班；畫面上同名的班合成一項，但必須標出班數，否則「這本書被 42 個班用到」完全看不出來
+    (row,) = [r for r in dashboard._load_data()["recs"] if r.title == TITLE_S]
+
+    assert [(c.name, c.sections) for c in row.courses] == [("A別的課", 1), ("B同名課", 2)]
+    html = dashboard._rec_table([row], [])
+    assert _has(html, "B同名課（指定）×2")
+    assert not _has(html, "A別的課（指定）×")        # 只有一個班的不加 ×1
+
+
+def test_a_filtered_view_marks_the_section_group_in_scope_when_any_section_matches(sectioned_book):
+    (row,) = [r for r in dashboard._load_data([DEPT_A])["recs"] if r.title == TITLE_S]
+
+    assert all(c.in_scope for c in row.courses)
