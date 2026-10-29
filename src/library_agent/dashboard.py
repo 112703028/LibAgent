@@ -265,6 +265,11 @@ h1 {{ font-size:22px; margin:0 0 4px; }}
 .sub {{ color:var(--text-secondary); font-size:13px; margin-bottom:20px; }}
 h2 {{ font-size:15px; margin:0 0 12px; color:var(--text-secondary); }}
 .card {{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 18px; margin-bottom:16px; }}
+/* 終端文字 log：深色底、等寬字，空的時候顯示提示 */
+.runlog {{ margin:0; padding:12px 14px; border-radius:8px; background:#1f2328; color:#e6edf3;
+  font:12px/1.55 ui-monospace,SFMono-Regular,Consolas,"Microsoft JhengHei",monospace;
+  max-height:340px; min-height:120px; overflow:auto; white-space:pre-wrap; word-break:break-all; }}
+.runlog:empty::before {{ content:"（尚無執行紀錄；按「執行」後這裡會即時顯示終端機的輸出）"; color:#8b949e; }}
 .flownote {{ margin:8px 0 0; text-align:center; font-size:12px; line-height:1.6;
   color:var(--text-secondary); }}
 .flownote b {{ color:var(--text-primary); font-weight:600; }}
@@ -353,7 +358,8 @@ th.chk, td.chk {{ width:28px; text-align:center; padding-left:6px; padding-right
 </div>
 
 <div class="card">
-  <h2>Pipeline 進度</h2>
+  <h2>Pipeline 執行紀錄</h2>
+  <pre id="runlog" class="runlog"></pre>
   <p class="flownote">
     <b>validator</b> 之後若有 AI 推薦書驗證失敗，會回到 discoverer 重推（最多 {_MAX_DISCOVERY_ITERATIONS - 1} 輪）；
     <b>match_auditor</b> 會把配對可疑、或抽取信心度不足的書送進 human_review 佇列，
@@ -395,6 +401,40 @@ th.chk, td.chk {{ width:28px; text-align:center; padding-left:6px; padding-right
 </div>
 </div>
 <script>
+// ---- 執行紀錄：把後端複製的終端文字接在文字框後面 ----
+let _logEpoch = null, _logCursor = 0, _logLines = [];
+let _logLoop = false, _logBusy = false, _logTimer = null;
+const _LOG_MAX = 2000;
+async function _pollLog() {{
+  // 同一時間只讓一個請求在飛：頁面載入時的一次性抓取與「發現正在跑」觸發的輪詢可能重疊，
+  // 兩個請求會拿到同一批行，各接一次就重複了。
+  if (_logBusy) return;
+  _logBusy = true;
+  try {{
+    const q = '/log?after=' + _logCursor + (_logEpoch !== null ? '&epoch=' + _logEpoch : '');
+    const d = await (await fetch(q)).json();
+    let changed = false;
+    if (d.epoch !== _logEpoch) {{   // 新的一次執行：清空重來，即使它還沒有任何輸出也要清掉
+      _logLines = []; _logEpoch = d.epoch; changed = true;
+    }}
+    _logCursor = d.last;
+    if (d.lines.length) {{
+      _logLines = _logLines.concat(d.lines).slice(-_LOG_MAX);
+      changed = true;
+    }}
+    if (changed) {{
+      const box = _el('runlog');
+      const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 24;  // 使用者往上捲看舊的就不要硬拉到底
+      box.textContent = _logLines.join('\\n');
+      if (atBottom) box.scrollTop = box.scrollHeight;
+    }}
+  }} catch (e) {{ /* 暫時連不上，下一輪再試 */ }}
+  _logBusy = false;
+  if (_logLoop && !_logTimer) {{
+    _logTimer = setTimeout(function() {{ _logTimer = null; _pollLog(); }}, 1000);
+  }}
+}}
+
 // 套用表格顯示：有搜尋字時只看搜尋（無視篩選按鈕）；否則看選中的篩選按鈕。
 // tableId=表格 id；dataKey=data-priority / data-status；btnSel=篩選按鈕 class；searchId=搜尋框 id
 function _applyTableView(tableId, dataKey, btnSel, searchId) {{
@@ -441,8 +481,10 @@ async function _poll() {{
     _el('runstatus').textContent = label[d.status] || d.status;
     _el('runstatus').className = 'runstatus ' + d.status;
     _el('runbtn').disabled = (d.status === 'running');
+    _logLoop = (d.status === 'running');  // 只在執行中輪詢 /log，閒置時不要讓終端機被 GET /log 洗版
     if (d.status === 'running') {{
       _sawRunning = true;
+      _pollLog();
       setTimeout(_poll, 3000);
     }} else if (_sawRunning && (d.status === 'done' || d.status === 'error')) {{
       // 親眼看過它從 running 跑到這裡結束 → 整頁資料（KPI/圖表/建議明細）都舊了，重整一次
@@ -654,6 +696,7 @@ _el('expgo').addEventListener('click', function(){{
 _loadFiles();
 _loadDepts();
 _poll();
+_pollLog();
 </script>
 </body></html>"""
 

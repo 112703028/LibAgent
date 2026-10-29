@@ -119,3 +119,19 @@ def test_each_run_starts_with_a_clean_log(clean_runlog, monkeypatch):
     dashboard._run_pipeline("Y", None, None)
 
     assert runlog.read()["lines"] == ["new run"]
+
+
+def test_render_has_run_log_panel_and_no_node_progress_rows():
+    html = dashboard._render(dashboard._load_data())
+
+    assert 'id="runlog"' in html
+    assert "/log?after=" in html                      # 前端會去拿新行
+    assert 'class="prow"' not in html and "data-node" not in html   # 舊的每節點進度列已移除
+
+
+def test_render_js_joins_log_lines_with_an_escaped_newline():
+    # HTML 是 f-string：source 裡寫 '\n' 會變成「真的換行」，讓 JS 字串字面值斷成兩行 → SyntaxError，
+    # 整個頁面的 <script> 都失效。必須寫成 '\n'，送到瀏覽器的才是 backslash + n 兩個字元。
+    html = dashboard._render(dashboard._load_data())
+
+    assert "_logLines.join('\\n')" in html
