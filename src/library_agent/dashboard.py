@@ -561,7 +561,31 @@ function _updateDeptLabel() {{
   _el('deptbtn').textContent = '學系 (' + txt + ')';
 }}
 
-// 載入「學院 → 系所」兩層樹，畫成可展開/勾選的清單（預設全勾）
+// ---- 學系篩選：選擇記在網址（?departments=甲&departments=乙），關閉面板時套用 ----
+// 記在網址而不是只記在勾選框：pipeline 跑完頁面會自動 location.reload()，重整的就是這個網址，
+// 篩選才不會掉回「全部」。用重複參數而不是逗號串接，系所名稱含逗號也不會切錯。
+const _deptFromUrl = new URLSearchParams(location.search).getAll('departments');  // 載入時的篩選，空＝全部
+let _navigate = function(url) {{ location.href = url; }};  // 獨立成函式，驗證時可以替換
+
+function _deptUrl(names) {{
+  if (!names.length) return location.pathname;   // 全部：網址保持乾淨
+  const q = new URLSearchParams();
+  names.forEach(n => q.append('departments', n));
+  return location.pathname + '?' + q.toString();
+}}
+
+function _applyDeptFilter() {{
+  // 選擇器沒載入成功（一個勾選框都沒有）：不動網址，否則一次網路錯誤就會悄悄清掉使用者的篩選
+  if (!document.querySelector('.deptchk')) return;
+  const picked = _collectChecked('.deptchk');            // null＝全部勾選；[]＝全不勾
+  if (picked !== null && picked.length === 0) return;     // 全不勾：不導向（「執行」鈕另有擋）
+  const now = picked === null ? [] : picked;
+  const same = now.length === _deptFromUrl.length && now.every(d => _deptFromUrl.includes(d));
+  if (same) return;                                       // 沒有變就不要重載
+  _navigate(_deptUrl(now));
+}}
+
+// 載入「學院 → 系所」兩層樹，畫成可展開/勾選的清單（預設全勾；網址有篩選就只勾名單內的）
 async function _loadDepts() {{
   try {{
     const d = await (await fetch('/departments')).json();
@@ -599,17 +623,28 @@ async function _loadDepts() {{
       box.querySelectorAll('.deptchk, .colchk').forEach(c => {{ c.checked = on; }});
       _updateDeptLabel();
     }}));
+    // 從網址還原勾選：沒有 departments 參數＝維持預設全勾；有就只勾名單內的，學院框跟著重算
+    if (_deptFromUrl.length) {{
+      box.querySelectorAll('.deptchk').forEach(c => {{ c.checked = _deptFromUrl.includes(c.value); }});
+      box.querySelectorAll('.dept-college').forEach(function(sec){{
+        sec.querySelector('.colchk').checked =
+          Array.from(sec.querySelectorAll('.deptchk')).every(x => x.checked);
+      }});
+    }}
     _updateDeptLabel();
   }} catch (e) {{ _el('deptfilter').innerHTML = '<span class="ff-empty">無法載入系所清單</span>'; }}
 }}
 _el('deptbtn').addEventListener('click', function(ev){{
   ev.stopPropagation();
-  _el('deptfilter').hidden = !_el('deptfilter').hidden;
+  const panel = _el('deptfilter');
+  panel.hidden = !panel.hidden;
+  if (panel.hidden) _applyDeptFilter();   // 按按鈕關閉面板也算「關閉」
 }});
 document.addEventListener('click', function(ev){{
   const panel = _el('deptfilter');
   if (!panel.hidden && !panel.contains(ev.target) && ev.target !== _el('deptbtn')) {{
     panel.hidden = true;
+    _applyDeptFilter();   // 點面板外關閉：選擇有變才導向
   }}
 }});
 
