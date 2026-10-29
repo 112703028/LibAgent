@@ -57,8 +57,11 @@ _SEEDS = [  # (course_id, department, 書名)
 ]
 
 
+_BLK_COURSE, _BLK_DEPT = "TESTFD", "TESTDEPT_D"   # 專門測「被採購條件擋掉的書」的課
+
+
 def _cleanup():
-    ids = [c for c, _, _ in _SEEDS]
+    ids = [c for c, _, _ in _SEEDS] + [_BLK_COURSE]
     with SessionLocal() as s:
         cit_ids = [i for (i,) in s.query(Citation.id).filter(Citation.course_id.in_(ids))]
         vb_ids = [i for (i,) in s.query(VerifiedBook.id).filter(VerifiedBook.citation_id.in_(cit_ids))]
@@ -169,3 +172,40 @@ def test_index_route_filters_by_repeated_departments_param(seeded):
 
     unfiltered = client.get("/")
     assert _has(unfiltered.text, "TESTBOOK-A") and _has(unfiltered.text, "TESTBOOK-B")
+
+
+# ---------- 館藏狀態圖與優先級圖用同一個「可採購」條件 ----------
+
+@pytest.fixture
+def seeded_with_blocked_book():
+    """一門課兩本書：一本正常；一本被 match_auditor 判配錯、人工尚未放行（採購條件會擋掉）。"""
+    _cleanup()
+    with SessionLocal() as s:
+        s.add(Course(course_id=_BLK_COURSE, course_name="課-TESTFD", semester="9999",
+                     source_file="test", raw_content="test", department=_BLK_DEPT))
+        s.flush()
+        for title, verdict in (("TESTBOOK-OK", None), ("TESTBOOK-MISMATCH", "mismatch")):
+            c = Citation(course_id=_BLK_COURSE, title=title, authors="[]", is_required=True,
+                         raw_mention="指定", confidence=0.9)
+            s.add(c)
+            s.flush()
+            vb = VerifiedBook(citation_id=c.id, canonical_title=title, canonical_authors="[]",
+                              source="nla", verified=True, pairing_verdict=verdict)
+            s.add(vb)
+            s.flush()
+            hc = HoldingCheck(verified_book_id=vb.id, status="missing", holdings_count=0)
+            s.add(hc)
+            s.flush()
+            s.add(Recommendation(course_id=_BLK_COURSE, holding_id=hc.id, priority="high",
+                                 suggested_copies=1, rationale="r"))
+        s.commit()
+    yield
+    _cleanup()
+
+
+def test_status_chart_excludes_books_the_purchase_gate_blocks(seeded_with_blocked_book):
+    d = dashboard._load_data([_BLK_DEPT])
+
+    assert sum(d["priority"].values()) == 1           # 優先級圖本來就套用採購條件
+    assert sum(d["status"].values()) == 1             # 館藏狀態圖也要：配錯未放行的那本不能被算進去
+    assert {r[2] for r in d["recs"]} == {"TESTBOOK-OK"}

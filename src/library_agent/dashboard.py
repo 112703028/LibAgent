@@ -137,7 +137,7 @@ def _load_data(departments: list[str] | None = None) -> dict:
                 select(HoldingCheck.status, func.count())
                 .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id)
                 .join(Citation, Citation.id == VerifiedBook.citation_id)
-                .where(_not_superseded())
+                .where(purchasable(), _not_superseded())  # 與優先級圖同一個「可採購」條件，兩張圖的底才一致
             ).group_by(HoldingCheck.status)
         ).all():
             status[st] = status.get(st, 0) + cnt
