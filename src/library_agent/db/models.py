@@ -5,9 +5,11 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -94,9 +96,12 @@ class HoldingCheck(Base):
     verified_book: Mapped["VerifiedBook"] = relationship(back_populates="holding")
     recommendation: Mapped["Recommendation | None"] = relationship(back_populates="holding")
 
-# 最終採購建議
+# 最終採購建議：一本書一筆（同一本書被多門課用到時合併，見 book_identity 與 recommender）。
+# course_id / holding_id 是「代表課程 / 代表館藏」（該組館藏冊數最大者）；
+# 這本書被哪些課用到記在 recommendation_courses。
 class Recommendation(Base):
     __tablename__ = "recommendations"
+    __table_args__ = (Index("uq_recommendations_book_key", "book_key", unique=True),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     course_id: Mapped[str] = mapped_column(ForeignKey("courses.course_id"), nullable=False)
@@ -108,8 +113,35 @@ class Recommendation(Base):
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
     )
+    # 這本書的識別鍵（isbn:<13碼> 或 title:<正規化書名>[#n]）。舊格式（一課一書一筆）的列為 NULL，
+    # recommender 下次執行時會清掉並重建；唯一索引允許多個 NULL。
+    book_key: Mapped[str | None] = mapped_column(String(500))
 
     holding: Mapped["HoldingCheck"] = relationship(back_populates="recommendation")
+    courses: Mapped[list["RecommendationCourse"]] = relationship(
+        back_populates="recommendation", cascade="all, delete-orphan", passive_deletes=True,
+    )
+
+
+# 這本書被哪些課用到：一個書目一列。人數是計算當時用的值（快照），is_required 是該課自己的類別。
+# 外鍵都是 ON DELETE CASCADE：validator / librarian 會直接 DELETE recommendations、
+# parser 會先刪舊 citations，沒有 cascade 這些節點會被外鍵擋住而崩潰。
+class RecommendationCourse(Base):
+    __tablename__ = "recommendation_courses"
+    __table_args__ = (
+        UniqueConstraint("recommendation_id", "citation_id", name="uq_reccourse_rec_citation"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    recommendation_id: Mapped[int] = mapped_column(
+        ForeignKey("recommendations.id", ondelete="CASCADE"), nullable=False)
+    course_id: Mapped[str] = mapped_column(ForeignKey("courses.course_id"), nullable=False)
+    citation_id: Mapped[int] = mapped_column(
+        ForeignKey("citations.id", ondelete="CASCADE"), nullable=False)
+    is_required: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    enrolled: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    recommendation: Mapped["Recommendation"] = relationship(back_populates="courses")
 
 # Pipeline 執行時每個節點的即時狀態（供 dashboard 流程圖顯示進度）
 class PipelineNodeRun(Base):
