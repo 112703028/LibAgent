@@ -92,3 +92,21 @@ def test_status_keeps_progress_after_node_finishes(seeded_run):
     assert validator["status"] == "done"                      # 狀態取最新一列
     assert (validator["processed"], validator["total"]) == (120, 120)  # 進度取最新一列「有進度的」
     assert validator["message"] == "最後一本"
+
+
+# ---------- 取代流程圖 ----------
+
+def test_render_has_progress_rows_and_no_mermaid():
+    from library_agent.graph import NODE_NAMES
+
+    html = dashboard._render(dashboard._load_data())
+
+    for name in NODE_NAMES:
+        assert f'data-node="{name}"' in html, f"進度區缺少節點 {name}"
+    assert "mermaid" not in html
+    assert "/static/" not in html
+
+
+def test_app_has_no_static_mount():
+    # /static 目錄只剩 mermaid.min.js，檔案刪除後目錄不存在，掛載會讓 import 失敗
+    assert "/static" not in [getattr(r, "path", None) for r in dashboard.app.routes]

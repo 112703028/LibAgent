@@ -17,7 +17,6 @@ from pathlib import Path
 
 from fastapi import Body, FastAPI, File, UploadFile
 from fastapi.responses import HTMLResponse, StreamingResponse
-from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select
 
 from library_agent.agents.crawler import DATA_DIR
@@ -33,7 +32,6 @@ from library_agent.db.models import (
 from library_agent.db.session import SessionLocal
 
 app = FastAPI(title="Library Agent 採購決策儀表板")
-app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 
 # (key, 顯示名稱, 顏色)  顏色取自 dataviz status palette
 _PRIORITY_META = [
@@ -297,7 +295,7 @@ def _rec_table(recs: list, pending: list) -> str:
 
 def _render(data: dict) -> str:
     # 延後 import：graph 會把所有 agent 模組拉進來，與本檔其他用到 graph 的地方一致
-    from library_agent.graph import _MAX_DISCOVERY_ITERATIONS
+    from library_agent.graph import _MAX_DISCOVERY_ITERATIONS, NODE_NAMES
 
     prio_bars = _bars(
         [(_PRIORITY_LABEL[k], data["priority"].get(k, 0), _PRIORITY_COLOR[k])
@@ -312,7 +310,6 @@ def _render(data: dict) -> str:
     return f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>採購決策儀表板</title>
-<script src="/static/mermaid.min.js"></script>
 <style>
 :root {{
   color-scheme: light;                /* 強制淺色，不隨 OS 深色模式變黑 */
@@ -328,7 +325,23 @@ h1 {{ font-size:22px; margin:0 0 4px; }}
 .sub {{ color:var(--text-secondary); font-size:13px; margin-bottom:20px; }}
 h2 {{ font-size:15px; margin:0 0 12px; color:var(--text-secondary); }}
 .card {{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 18px; margin-bottom:16px; }}
-.mermaid {{ margin:0; text-align:center; overflow-x:auto; }}
+/* 處理進度區：每個節點一列，用 grid 讓各列的欄位上下對齊 */
+.progress {{ display:flex; flex-direction:column; gap:2px; }}
+.prow {{ display:grid; grid-template-columns:14px 190px 160px 110px 1fr; align-items:center;
+  gap:12px; padding:7px 4px; border-bottom:1px solid var(--gridline); font-size:13px; }}
+.prow:last-child {{ border-bottom:0; }}
+.pstatus {{ width:10px; height:10px; border-radius:50%; border:1px solid rgba(0,0,0,.12); }}
+.pname {{ font-weight:600; }}
+.pname small {{ margin-left:8px; font-weight:400; color:var(--text-secondary); }}
+.pbar {{ height:6px; background:var(--track); border-radius:3px; overflow:hidden; }}
+.pbar > span {{ display:block; height:100%; width:0; background:#0ca30c;
+  transition:width .3s ease; }}
+.pcount {{ color:var(--text-secondary); font-variant-numeric:tabular-nums; }}
+.pmsg {{ color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
+@media (max-width:760px) {{
+  .prow {{ grid-template-columns:14px 1fr 110px; }}
+  .pbar, .pmsg {{ display:none; }}
+}}
 .flowlegend {{ display:flex; gap:16px; flex-wrap:wrap; justify-content:center;
   margin-top:10px; font-size:12px; color:var(--text-secondary); }}
 .flowlegend span {{ display:inline-flex; align-items:center; gap:5px; }}
@@ -424,25 +437,10 @@ th.chk, td.chk {{ width:28px; text-align:center; padding-left:6px; padding-right
 
 <div class="card">
   <h2>Pipeline 進度</h2>
-  <pre class="mermaid" id="flowchart">
-flowchart LR
-    crawler["crawler<br/>爬取課綱"]
-    parser["parser<br/>解析書目"]
-    discoverer["discoverer<br/>AI 推薦補書"]
-    validator["validator<br/>書目驗證"]
-    match_auditor["match_auditor<br/>配對稽核"]
-    librarian["librarian<br/>館藏查詢"]
-    recommender["recommender<br/>採購建議"]
-    human_review["human_review<br/>人工審核"]
-    crawler --> parser --> discoverer --> validator
-    validator -.-> discoverer
-    validator --> match_auditor
-    match_auditor --> librarian --> recommender
-    match_auditor --> human_review
-  </pre>
+  {_progress_card(NODE_NAMES)}
   <div class="flowlegend">{_flow_legend()}</div>
   <p class="flownote">
-    <b>虛線</b>為條件邊：AI 推薦書驗證失敗時回 discoverer 重推（最多 {_MAX_DISCOVERY_ITERATIONS - 1} 輪）。
+    <b>validator</b> 之後若有 AI 推薦書驗證失敗，會回到 discoverer 重推（最多 {_MAX_DISCOVERY_ITERATIONS - 1} 輪）；
     <b>match_auditor</b> 會把配對可疑、或抽取信心度不足的書送進 human_review 佇列，
     並排除在採購建議之外。
   </p>
@@ -482,27 +480,21 @@ flowchart LR
 </div>
 </div>
 <script>
-// curve:'step' 讓連線走直角折線（預設 basis 是貝茲曲線）。
-// 實測過 basis/linear/step/stepBefore/stepAfter，只有 step 系列產生 90 度轉角，
-// 其中 step 的直角比例最高；linear 只是把曲線拉直成斜線，不是直角。
-//
-// rankSpacing 拉大（LR 佈局下就是水平間距，預設 50）：discoverer 與 validator 之間
-// 同時有去程實線和回程虛線，dagre 必定把兩條邊上下錯開，去程邊因此帶一小段 Z 字折。
-// 錯開量本身無法消除（實測 50→140 時它反而從 2.5 長到 4.8），但水平距離增加得更快，
-// 折幅占比從 5.6% 降到 4.5%，線看起來才平。
-mermaid.initialize({{ startOnLoad: true, theme: 'neutral', securityLevel: 'loose',
-                      flowchart: {{ curve: 'step', rankSpacing: 90 }} }});
-
 const _NODE_COLOR = {_node_color_js()};
 
-function _updateFlowchart(nodes) {{
-  const svg = document.querySelector('#flowchart svg');
-  if (!svg) return;  // Mermaid 尚未完成首次渲染
+// 依 /status 回傳的 nodes 更新進度區。total 為 null/0（crawler、human_review、沒有待辦的節點）
+// 時顯示「—」、進度條寬度 0，不得除以零。
+function _updateProgress(nodes) {{
   nodes.forEach(function(n) {{
-    const g = svg.querySelector(`[id*="flowchart-${{n.name}}-"]`);
-    if (!g) return;
-    const shape = g.querySelector('rect, polygon, .node-bkg') || g.querySelector('*');
-    if (shape) shape.style.fill = _NODE_COLOR[n.status] || _NODE_COLOR.pending;
+    const row = document.querySelector('.prow[data-node="' + n.name + '"]');
+    if (!row) return;
+    row.querySelector('.pstatus').style.background = _NODE_COLOR[n.status] || _NODE_COLOR.pending;
+    const hasTotal = n.total !== null && n.total !== undefined && n.total > 0;
+    const pct = hasTotal ? Math.min(100, Math.round((n.processed || 0) / n.total * 100)) : 0;
+    row.querySelector('.pbar > span').style.width = pct + '%';
+    row.querySelector('.pcount').textContent =
+      hasTotal ? (n.processed || 0) + ' / ' + n.total + ' ' + (n.unit || '') : '—';
+    row.querySelector('.pmsg').textContent = n.message || '';
   }});
 }}
 
@@ -552,7 +544,7 @@ async function _poll() {{
     _el('runstatus').textContent = label[d.status] || d.status;
     _el('runstatus').className = 'runstatus ' + d.status;
     _el('runbtn').disabled = (d.status === 'running');
-    if (d.nodes) _updateFlowchart(d.nodes);
+    if (d.nodes) _updateProgress(d.nodes);
     if (d.status === 'running') {{
       _sawRunning = true;
       setTimeout(_poll, 3000);
