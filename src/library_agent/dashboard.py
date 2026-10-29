@@ -68,6 +68,19 @@ _NODE_STATUS_META = [
     ("done", "完成", "#0ca30c"),
     ("error", "錯誤", "#d03b3b"),
 ]
+_NODE_STATUS_COLOR = {k: c for k, _, c in _NODE_STATUS_META}
+
+# 進度區每個節點旁的中文說明（順序不在這裡決定，由 graph.NODE_NAMES 決定）
+_NODE_LABELS = {
+    "crawler": "爬取課綱",
+    "parser": "解析書目",
+    "discoverer": "AI 推薦補書",
+    "validator": "書目驗證",
+    "match_auditor": "配對稽核",
+    "librarian": "館藏查詢",
+    "recommender": "採購建議",
+    "human_review": "人工審核",
+}
 
 
 def _not_superseded():
@@ -175,6 +188,30 @@ def _flow_legend() -> str:
 def _node_color_js() -> str:
     """給前端 _updateFlowchart() 用的 status → 色碼對照表（JS 物件字面值）。"""
     return json.dumps({k: c for k, _, c in _NODE_STATUS_META}, ensure_ascii=False)
+
+
+def _pct(processed: int | None, total: int | None) -> int:
+    """進度條百分比。total 為 None/0（沒有迴圈的節點、沒有待辦）回 0，不得除以零；上限 100。"""
+    if not total:
+        return 0
+    return min(100, round((processed or 0) / total * 100))
+
+
+def _progress_card(node_names: list[str]) -> str:
+    """處理進度區：每個節點一列。這裡只產生「未開始、無進度」的初始畫面，
+    之後由前端輪詢 /status 後依 data-node 更新各欄（見 _updateProgress）。"""
+    rows = []
+    for name in node_names:
+        rows.append(
+            f'<div class="prow" data-node="{html.escape(name)}">'
+            f'<span class="pstatus" style="background:{_NODE_STATUS_COLOR["pending"]}"></span>'
+            f'<span class="pname">{html.escape(name)}'
+            f'<small>{html.escape(_NODE_LABELS.get(name, ""))}</small></span>'
+            f'<span class="pbar"><span style="width:{_pct(None, None)}%"></span></span>'
+            f'<span class="pcount">—</span>'
+            f'<span class="pmsg"></span></div>'
+        )
+    return '<div class="progress">' + "".join(rows) + "</div>"
 
 
 def _bars(items: list[tuple[str, int, str]]) -> str:
@@ -901,21 +938,32 @@ def status() -> dict:
             "holdings": s.scalar(select(func.count()).select_from(HoldingCheck)) or 0,
             "recommendations": s.scalar(select(func.count()).select_from(Recommendation)) or 0,
         }
-        node_rows = {}
+        node_rows = {}      # 節點 → 最新一列的狀態
+        node_progress = {}  # 節點 → 最新一列「有進度」的 (processed, total, unit, message)
         if st["run_id"]:
             rows = s.execute(
-                select(PipelineNodeRun.node_name, PipelineNodeRun.status)
+                select(PipelineNodeRun.node_name, PipelineNodeRun.status,
+                       PipelineNodeRun.processed, PipelineNodeRun.total,
+                       PipelineNodeRun.unit, PipelineNodeRun.message)
                 .where(PipelineNodeRun.run_id == st["run_id"])
                 .order_by(PipelineNodeRun.id.desc())
             ).all()
-            for node_name, node_status in rows:
+            for node_name, node_status, processed, total, unit, message in rows:
                 if node_name not in node_rows:  # 每個節點只取最新一筆（id desc 已排序）
                     node_rows[node_name] = node_status
+                # 進度不能只看最新一列：_with_tracking 結束時是「新增」一列 done / error，
+                # 那列沒有進度，只看它會讓節點一跑完「120 / 120 本」就變回「—」。
+                if total is not None and node_name not in node_progress:
+                    node_progress[node_name] = (processed, total, unit, message)
 
     nodes = []
     for name in NODE_NAMES:
-        node_status = node_rows.get(name, "pending")
-        nodes.append({"name": name, "status": node_status})
+        processed, total, unit, message = node_progress.get(name, (None, None, None, None))
+        nodes.append({
+            "name": name,
+            "status": node_rows.get(name, "pending"),
+            "processed": processed, "total": total, "unit": unit, "message": message,
+        })
 
     elapsed = None
     if st["started_at"]:
