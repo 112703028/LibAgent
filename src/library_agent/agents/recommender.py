@@ -1,4 +1,5 @@
 import math
+from dataclasses import dataclass
 
 from openai import OpenAI
 from sqlalchemy import delete, select, update
@@ -54,24 +55,79 @@ def _decide(
     return (PurchasePriority.MEDIUM if is_required else PurchasePriority.LOW), suggested
 
 
+@dataclass(frozen=True)
+class Member:
+    """一本書在某一門課裡的一筆（一個書目 + 它的館藏查詢結果）。"""
+    holding_id: int
+    holdings_count: int
+    status: HoldingStatus
+    course_id: str
+    course_name: str
+    citation_id: int
+    is_required: bool
+    enrolled: int
+
+
+@dataclass(frozen=True)
+class GroupDecision:
+    representative: Member          # 代表館藏：該組冊數最大者，同分取 holding_id 最小
+    enrolled_total: int             # 各「不同課程」人數加總
+    is_required: bool               # 任一課指定
+    status: HoldingStatus
+    current_copies: int
+    priority: PurchasePriority
+    copies: int
+    citation_ids: tuple[int, ...]   # 排序後，供冪等簽章比對
+
+
+def merge_group(members: list[Member]) -> GroupDecision:
+    """把同一本書的多筆（來自不同課程）合併成一個決策。_decide 完全不改，只是輸入從「單一課」變成「合計」：
+    - 人數：各不同課程加總。同一門課重複列同一本書，那門課只算一次（實測 8 組）。
+    - 指定：任一課指定就按指定算（取最嚴格）。
+    - 館藏：取冊數最大的一筆、**只扣一次**（逐列各扣一次會讓三門各需 2 本、館藏 3 本的書算成 0）；
+      任一筆是電子書就整本 SKIP。
+    """
+    per_course: dict[str, int] = {}
+    for m in members:
+        per_course.setdefault(m.course_id, m.enrolled)
+    enrolled_total = sum(per_course.values())
+
+    rep = max(members, key=lambda m: (m.holdings_count, -m.holding_id))
+    status = (HoldingStatus.OWNED_EBOOK
+              if any(m.status == HoldingStatus.OWNED_EBOOK for m in members) else rep.status)
+    is_required = any(m.is_required for m in members)
+    priority, copies = _decide(status, is_required, enrolled_total, rep.holdings_count)
+    return GroupDecision(
+        representative=rep, enrolled_total=enrolled_total, is_required=is_required, status=status,
+        current_copies=rep.holdings_count, priority=priority, copies=copies,
+        citation_ids=tuple(sorted(m.citation_id for m in members)),
+    )
+
+
+def _course_line(name: str, enrolled: int, is_required: bool) -> str:
+    people = f"{enrolled} 人" if enrolled > 0 else "人數不明"
+    return f"- {name}：{people}、{'指定' if is_required else '參考'}"
+
+
 def _llm_rationale(
     title: str,
-    course_name: str,
-    is_required: bool,
+    course_lines: list[tuple[str, int, bool]],
     status: HoldingStatus,
-    enrolled: int,
+    enrolled_total: int,
     current_copies: int,
     priority: PurchasePriority,
     copies: int,
 ) -> str:
-    """數字已由 _decide 定案；這裡只請 LLM 寫一句可讀理由，失敗則用模板 fallback。"""
+    """數字已由 _decide 定案；這裡只請 LLM 寫一句可讀理由，失敗則用模板 fallback。
+    course_lines：每門課 (課名, 人數, 是否指定)。同一本書可能被多門課使用且類別不同，
+    所以逐課列出；只給一個「是否指定」，LLM 會把「一指定一參考」寫成「兩門都是指定」。"""
     user_prompt = USER_PROMPT_TEMPLATE.format(
         title=title,
-        course_name=course_name,
-        book_type="指定用書" if is_required else "選用書",
+        n_courses=len(course_lines),
+        enrolled=enrolled_total if enrolled_total > 0 else "不明",
+        course_lines="\n".join(_course_line(*c) for c in course_lines),
         status_desc=_STATUS_DESC.get(status, status.value),
         current_copies=current_copies,
-        enrolled=enrolled if enrolled > 0 else "不明",
         priority=priority.value,
         copies=copies,
     )
@@ -92,9 +148,10 @@ def _llm_rationale(
     # LLM 失敗 → 模板
     if priority == PurchasePriority.SKIP:
         return "館藏已足夠，暫不需採購。"
-    who = "指定用書" if is_required else "選用書"
-    ppl = enrolled if enrolled > 0 else "不明"
-    return f"{who}，選課人數 {ppl}、現有 {current_copies} 冊，建議採購 {copies} 冊。"
+    who = "指定用書" if any(req for _, _, req in course_lines) else "選用書"
+    ppl = enrolled_total if enrolled_total > 0 else "不明"
+    return (f"{who}（{len(course_lines)} 門課），選課人數合計 {ppl}、"
+            f"現有 {current_copies} 冊，建議採購 {copies} 冊。")
 
 
 def _resolve_enrolled(session, course: Course, cache: dict[str, int]) -> int:
@@ -176,7 +233,7 @@ def recommender_node(_state: AgentState) -> AgentState:
                     continue
 
                 rationale = _llm_rationale(
-                    citation.title, course.course_name, citation.is_required,
+                    citation.title, [(course.course_name, enrolled, citation.is_required)],
                     status, enrolled, holding.holdings_count, priority, suggested_copies,
                 )
 
