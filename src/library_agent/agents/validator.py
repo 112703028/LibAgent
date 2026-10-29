@@ -14,6 +14,7 @@ from library_agent.db.session import SessionLocal
 from library_agent.integrations.google_books import QuotaExceededError, lookup as google_lookup
 from library_agent.integrations.loc import lookup as loc_lookup
 from library_agent.integrations.nla import lookup as nla_lookup
+from library_agent.progress import report
 from library_agent.state import AgentState, BookCitation, VerifiedBook
 
 
@@ -291,6 +292,7 @@ def validator_node(state: AgentState) -> AgentState:
         for future in as_completed(futures):
             done += 1
             c = futures[future]
+            report(done, total, c.title)  # 在 try 之前：驗證失敗的書也算「已處理」
             try:
                 verified, error, from_cache = future.result()
             except Exception as e:

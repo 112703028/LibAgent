@@ -10,6 +10,7 @@ from library_agent.db.models import VerifiedBook as VerifiedBookDB
 from library_agent.db.session import SessionLocal
 from library_agent.integrations.nccu_syllabus import fetch_syllabus, fetch_student_number
 from library_agent.prompts.discoverer_prompts import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE
+from library_agent.progress import report
 from library_agent.state import AgentState, BookCitation
 
 _settings = get_settings()
@@ -169,7 +170,8 @@ def discoverer_node(state: AgentState) -> AgentState:
                 q = q.where(Course.course_id.in_(course_ids))
             courses = session.scalars(q).all()
 
-            for course in courses:
+            for i, course in enumerate(courses, 1):
+                report(i, len(courses), course.course_name, "門課")  # 頂端：沒有失敗書的課會 continue
                 failed = _failed_ai_citations(session, course.course_id)
                 if not failed:
                     continue
@@ -207,6 +209,7 @@ def discoverer_node(state: AgentState) -> AgentState:
     total = len(courses)
     for i, course in enumerate(courses, 1):
         label = f"[{i:>4}/{total}] {course.course_id} {course.course_name}"
+        report(i, total, course.course_name, "門課")  # 放在頂端：下面的 SKIP 會 continue
 
         # 如果課程已經有推薦書目就跳過
         if not _needs_discovery(course.course_id, has_citations):

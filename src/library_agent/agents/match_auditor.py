@@ -27,6 +27,7 @@ from library_agent.config import get_settings
 from library_agent.db.models import Citation
 from library_agent.db.models import VerifiedBook as VerifiedBookDB
 from library_agent.db.session import SessionLocal
+from library_agent.progress import report
 from library_agent.state import AgentState
 
 _settings = get_settings()
@@ -272,6 +273,9 @@ def match_auditor_node(state: AgentState, limit: int = 0) -> AgentState:
         for it in rule_mismatch:
             flagged += _apply_verdict(session, it)
         session.commit()
+    # 進度分母是全部待稽核筆數：規則層先判掉的也算「已處理」，否則進度條會從 0 開始、
+    # 卻停在比 100% 少的位置
+    report(len(rule_mismatch), len(items), "規則層完成")
 
     # 第二層：規則認為像同一本的，交 LLM 複核。
     # 邊跑邊 commit（每 _BATCH 筆）：2000 次呼叫中途斷掉也只損失最後不足一批的進度，
@@ -301,6 +305,7 @@ def match_auditor_node(state: AgentState, limit: int = 0) -> AgentState:
                     errors.append(f"[match_auditor] vb={it['vb_id']}: {e}")
                     it["verdict"], it["judge"], it["reason"] = "same", "llm", f"ERROR: {e}"
                 flagged += _apply_verdict(session, it)
+                report(len(rule_mismatch) + n, len(items), it["orig_title"])
                 if n % _BATCH == 0:
                     session.commit()
                     print(f"  LLM 複核 {n}/{len(need_llm)}（已存檔）", flush=True)

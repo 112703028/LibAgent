@@ -9,6 +9,7 @@ from library_agent.db.models import Recommendation as RecommendationDB
 from library_agent.db.models import VerifiedBook as VerifiedBookDB
 from library_agent.db.session import SessionLocal
 from library_agent.integrations.alma import check_holding
+from library_agent.progress import report
 from library_agent.state import AgentState, BookCitation, HoldingCheck, HoldingStatus, VerifiedBook
 
 _MAX_WORKERS = 4  # 對 NCCU Alma SRU 客氣一點；每本書 check_holding 內部最多還會查 3 次
@@ -138,6 +139,7 @@ def librarian_node(state: AgentState) -> AgentState:
         for future in as_completed(futures):
             done += 1
             vb = futures[future]
+            report(done, total, vb.canonical_title)  # 在判斷 error 之前：查詢失敗的也算「已處理」
             vb_id, holding, error = future.result()
             label = f"[{done:>5}/{total}] {vb.canonical_title}"
             if error:

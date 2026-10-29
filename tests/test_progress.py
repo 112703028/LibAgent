@@ -137,3 +137,22 @@ def test_unbind_stops_writes(writes, monkeypatch):
     progress.report(2, 10)
 
     assert len(writes) == 1
+
+
+@pytest.mark.parametrize(
+    "module", ["parser", "discoverer", "validator", "match_auditor", "librarian", "recommender"]
+)
+def test_looping_nodes_report_progress(module):
+    """六個有迴圈的節點都要回報進度。
+
+    parser/discoverer/validator/librarian/recommender 的迴圈要打真實 LLM 或外部 API，
+    單元測試無法低成本驅動，所以這裡只釘住最容易被不小心弄丟的兩件事：
+    有從 progress 引入 report，且迴圈裡真的有呼叫它。
+    （match_auditor 另有行為測試：tests/test_match_auditor_progress.py）
+    """
+    import importlib
+    import inspect
+
+    mod = importlib.import_module(f"library_agent.agents.{module}")
+    assert mod.report is progress.report
+    assert "report(" in inspect.getsource(mod)
