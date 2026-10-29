@@ -111,7 +111,7 @@ class Recommendation(Base):
 
     holding: Mapped["HoldingCheck"] = relationship(back_populates="recommendation")
 
-# Pipeline 執行時每個節點的即時狀態（供 dashboard 流程圖顯示進度）
+# Pipeline 執行時每個節點的即時狀態（供 dashboard 進度區顯示）
 class PipelineNodeRun(Base):
     __tablename__ = "pipeline_node_runs"
 
@@ -122,3 +122,10 @@ class PipelineNodeRun(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error: Mapped[str | None] = mapped_column(Text)
+
+    # 節點處理進度（progress.report 寫入）：處理到第幾筆 / 本次總數 / 單位 / 最新一行訊息。
+    # 全部 nullable：沒有迴圈的節點（crawler、human_review）永遠是 NULL，畫面顯示「—」。
+    processed: Mapped[int | None] = mapped_column(Integer)
+    total: Mapped[int | None] = mapped_column(Integer)
+    unit: Mapped[str | None] = mapped_column(String(10))   # 本 | 門課
+    message: Mapped[str | None] = mapped_column(Text)
