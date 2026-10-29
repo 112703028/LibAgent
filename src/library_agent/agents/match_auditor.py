@@ -128,8 +128,11 @@ _LLM_SYSTEM = """你是圖書館編目專家。判斷「原始書目」與「書
 
 
 def _llm_same_book(client, model: str, orig_title: str, orig_authors: list[str],
-                   matched_title: str, matched_authors: list[str]) -> tuple[bool, str]:
-    """回傳 (是否同一本, 理由)。LLM 失敗時保守地判「同一本」，避免整批誤送審。"""
+                   matched_title: str, matched_authors: list[str],
+                   fail_as_same: bool = True) -> tuple[bool, str]:
+    """回傳 (是否同一本, 理由)。LLM 失敗時的保守方向由 fail_as_same 決定：
+    稽核（預設 True）保守地判「同一本」，避免整批誤送審；
+    去重（book_identity）要傳 False：失敗時判「不同本」，寧可不合併，也不要錯併。"""
     user = (
         f"原始書目：書名＝{orig_title}；作者＝{'、'.join(orig_authors) or '（無）'}\n"
         f"配到的記錄：書名＝{matched_title}；作者＝{'、'.join(matched_authors) or '（無）'}"
@@ -150,7 +153,8 @@ def _llm_same_book(client, model: str, orig_title: str, orig_authors: list[str],
             return bool(data.get("same_book")), str(data.get("reason", ""))[:300]
         except Exception as e:  # noqa: BLE001
             last_err = e
-    return True, f"LLM 判斷失敗，保守視為同一本：{last_err}"
+    verdict = "同一本" if fail_as_same else "不同本"
+    return fail_as_same, f"LLM 判斷失敗，保守視為{verdict}：{last_err}"
 
 
 def _pending_query(course_ids: list[str] | None, limit: int = 0):
