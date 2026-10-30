@@ -20,7 +20,7 @@ def test_rec_row_carries_category_token():
 
 def test_rec_table_rows_have_category_tokens():
     recs = [dashboard.RecRow("high", [dashboard.CourseRef("課", "required", False)], "書A", "missing", 1, "理由")]
-    pending = [("課", "書B", 0.5, "nla", False, "[AI推薦] x")]
+    pending = [("課", "書B", 0.5, "nla", False, "[AI推薦] x", 5)]
 
     html = dashboard._rec_table(recs, pending)
 

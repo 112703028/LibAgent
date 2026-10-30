@@ -229,9 +229,10 @@ def test_rec_table_rows_carry_rec_id_and_a_text_free_toggle():
     assert re.search(r'<button class="tbtn"[^>]*></button>', html)   # 按鈕內沒有文字：匯出 CSV 讀 textContent 不會被污染
 
 
-def test_pending_rows_have_no_toggle():
-    pending = [("課甲", "T", 0.5, "nla", True, "指定")]
+def test_pending_rows_carry_vb_id_and_a_toggle():
+    pending = [("課甲", "T", 0.5, "nla", True, "指定", 77)]
 
     html = dashboard._rec_table([], pending)
 
-    assert not _has(html, "tbtn") and not _has(html, "data-rec")
+    assert _has(html, 'data-vb="77"') and not _has(html, "data-rec")
+    assert re.search(r'<button class="tbtn"[^>]*></button>', html)

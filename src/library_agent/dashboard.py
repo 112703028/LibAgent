@@ -228,7 +228,7 @@ def _load_data(departments: list[str] | None = None) -> dict:
         pending = s.execute(
             scoped(
                 select(Course.course_name, Citation.title, Citation.confidence, VerifiedBook.source,
-                       Citation.is_required, Citation.raw_mention)
+                       Citation.is_required, Citation.raw_mention, VerifiedBook.id)
                 .join(Citation, Citation.id == VerifiedBook.citation_id)
                 .join(Course, Course.course_id == Citation.course_id)
                 .where(VerifiedBook.review_status == "pending", _not_superseded())
@@ -272,17 +272,19 @@ def _kpi_tiles(k: dict) -> str:
 
 def _rec_row(priority: str, course: str, title: str, btype: str, status_html: str,
              copies_html: str, rationale: str, btypes: str, course_html: str | None = None,
-             rec_id: int | None = None) -> str:
+             rec_id: int | None = None, vb_id: int | None = None) -> str:
     """btypes：類別 token（required / optional / ai），以空白分隔的清單（一本書涵蓋多個類別時有多個，
-    前端用「包含」比對）。rec_id：採購建議的 id；有值才有展開鈕（待審核列是書目層級、沒有建議，不給）。
+    前端用「包含」比對）。rec_id：採購建議的 id；vb_id：待審核書目（verified_book）的 id，這類列沒有建議。
+    兩者擇一有值才有展開鈕，前端依 data-rec / data-vb 決定向哪個網址取追溯。
     展開鈕內不放任何文字（箭頭由 CSS 畫），因為匯出 CSV 是讀每格的 textContent。"""
     pcolor = _PRIORITY_COLOR.get(priority, _PENDING_COLOR)
     plabel = _PRIORITY_LABEL.get(priority, _PENDING_LABEL)
-    data_rec = f' data-rec="{rec_id}"' if rec_id is not None else ""
+    data_id = (f' data-rec="{rec_id}"' if rec_id is not None else
+               f' data-vb="{vb_id}"' if vb_id is not None else "")
     toggle = ('<button class="tbtn" type="button" aria-expanded="false" aria-label="展開決策過程"></button>'
-              if rec_id is not None else "")
+              if data_id else "")
     return (
-        f'<tr data-priority="{html.escape(priority)}" data-btypes="{html.escape(btypes)}"{data_rec}>'
+        f'<tr data-priority="{html.escape(priority)}" data-btypes="{html.escape(btypes)}"{data_id}>'
         f'<td class="chk"><input type="checkbox" class="rowchk"></td>'
         f'<td><span class="pill" style="background:{pcolor}">{html.escape(plabel)}</span></td>'
         f'<td>{course_html if course_html is not None else html.escape(course or "")}</td>'
@@ -346,11 +348,11 @@ def _rec_table(recs: list, pending: list) -> str:
             rec_id=r.rec_id or None,
         ))
     # 待審核的書沒有採購建議列（它是書目層級的），理由欄改顯示驗證信心分數與來源
-    for course, title, confidence, source, is_required, raw_mention in pending:
+    for course, title, confidence, source, is_required, raw_mention, vb_id in pending:
         rationale = f"confidence {confidence:.2f} · {source or ''}"
         btype = _book_type_label(is_required, raw_mention)
         body.append(_rec_row("pending", course, title, btype, "—", "—", rationale,
-                             _book_type_key(is_required, raw_mention)))
+                             _book_type_key(is_required, raw_mention), vb_id=vb_id))
     return (
         '<table id="rectable"><thead><tr>'
         '<th class="chk"><input type="checkbox" id="rowchkall" title="全選/全不選"></th>'
@@ -477,6 +479,7 @@ tr.trace-row > td {{ background:var(--gridline); padding:14px 18px; }}
 .tr-verdict {{ flex-basis:100%; }}
 .tr-bad {{ border-color:#c0392b; background:rgba(192,57,43,.08); }}
 .tr-tag {{ display:inline-block; padding:0 6px; border-radius:5px; border:1px solid var(--border); font-size:11.5px; }}
+.tr-note {{ padding:6px 10px; border-radius:6px; border:1px solid var(--border); background:var(--gridline); }}
 .tr-calc {{ margin:4px 0 0; padding-left:20px; }}
 .tr-drift {{ margin-top:8px; padding:6px 10px; border-radius:6px; border:1px solid #e0900a; background:rgba(224,144,10,.12); }}
 .empty {{ color:var(--muted); font-size:13px; }}
@@ -633,7 +636,10 @@ document.getElementById('recsearch').addEventListener('input', _applyRecFilters)
 async function _loadTrace(tr, cell) {{
   cell.textContent = '載入中…';
   try {{
-    const r = await fetch('/trace/' + encodeURIComponent(tr.dataset.rec));
+    // 採購建議列用 data-rec；待審核列（還沒有建議）用 data-vb
+    const url = tr.dataset.rec ? '/trace/' + encodeURIComponent(tr.dataset.rec)
+                               : '/trace/pending/' + encodeURIComponent(tr.dataset.vb);
+    const r = await fetch(url);
     if (!r.ok) throw new Error('HTTP ' + r.status);
     cell.innerHTML = await r.text();
   }} catch (e) {{
@@ -938,6 +944,18 @@ def index(departments: list[str] | None = Query(None)) -> str:
     return _render(_load_data(departments))
 
 
+@app.get("/trace/pending/{vb_id}", response_class=HTMLResponse)
+def trace_pending(vb_id: int):
+    """待審核的書（還沒有採購建議）的追溯片段。找不到或已不在待審核狀態回 404。"""
+    from library_agent.trace_view import build_pending_trace, render_trace
+
+    with SessionLocal() as s:
+        result = build_pending_trace(s, vb_id)
+    if result is None:
+        return HTMLResponse("找不到這筆待審核書目（可能已被放行或退回）。", status_code=404)
+    return HTMLResponse(render_trace(result))
+
+
 @app.get("/trace/{rec_id}", response_class=HTMLResponse)
 def trace(rec_id: int):
     """一本書的決策過程（HTML 片段，內容已逸出）。前端第一次展開該列時才取。"""
@@ -999,7 +1017,7 @@ def export_pending() -> StreamingResponse:
             confidence,
             source,
         )
-        for course, title, confidence, source, is_required, raw_mention in data["pending"]
+        for course, title, confidence, source, is_required, raw_mention, _vb_id in data["pending"]
     ]
     return _csv_response(header, rows, "pending_review")
 

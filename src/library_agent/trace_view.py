@@ -63,6 +63,7 @@ class Pairing:
     reason: str | None
     review_status: str | None
     originals: list        # [(原書名, 原作者 list), ...]
+    verified: bool = True  # False＝驗證階段查無此書，matched_* 只是原書名的占位
 
 
 @dataclass(frozen=True)
@@ -103,6 +104,7 @@ class Trace:
     pairings: list
     holding: HoldingInfo | None
     calc: Calc | None
+    pending_reason: str | None = None   # 只有待審核的書有：為什麼還沒進採購建議
 
 
 def _authors(raw: str | None) -> list:
@@ -110,6 +112,26 @@ def _authors(raw: str | None) -> list:
         return json.loads(raw) if raw else []
     except (TypeError, ValueError):
         return []
+
+
+def _syllabus(course) -> Syllabus:
+    raw = course.raw_content or ""
+    return Syllabus(course.course_id, course.course_name, course.semester, raw[:MAX_SYLLABUS], len(raw))
+
+
+def _source_item(citation, course, enrolled: int) -> SourceItem:
+    return SourceItem(
+        course.course_id, course.course_name, citation.id, citation.raw_mention or "",
+        citation.title, _authors(citation.authors), citation.edition, citation.isbn,
+        citation.publisher, citation.year, book_type_key(citation.is_required, citation.raw_mention),
+        citation.confidence or 0.0, enrolled,
+    )
+
+
+def _pairing_key(vb) -> tuple:
+    """配對結果完全相同的書目會合併成一項：以這組欄位當鍵。"""
+    return (vb.canonical_title, tuple(_authors(vb.canonical_authors)), vb.isbn_13, vb.source,
+            vb.pairing_verdict, vb.pairing_judge, vb.pairing_reason, vb.review_status, bool(vb.verified))
 
 
 def _calc(members: list, stored_priority: str, stored_copies: int) -> Calc:
@@ -172,19 +194,9 @@ def build_trace(session, rec_id: int) -> Trace | None:
     holdings = []
     for citation, vb, holding, course in rows:
         enrolled = snapshot.get(citation.id, course.enrolled_count or 0)
-        syllabi.setdefault(course.course_id, Syllabus(
-            course.course_id, course.course_name, course.semester,
-            (course.raw_content or "")[:MAX_SYLLABUS], len(course.raw_content or ""),
-        ))
-        sources.append(SourceItem(
-            course.course_id, course.course_name, citation.id, citation.raw_mention or "",
-            citation.title, _authors(citation.authors), citation.edition, citation.isbn,
-            citation.publisher, citation.year, book_type_key(citation.is_required, citation.raw_mention),
-            citation.confidence or 0.0, enrolled,
-        ))
-        key = (vb.canonical_title, tuple(_authors(vb.canonical_authors)), vb.isbn_13, vb.source,
-               vb.pairing_verdict, vb.pairing_judge, vb.pairing_reason, vb.review_status)
-        grouped.setdefault(key, []).append((citation.title, _authors(citation.authors)))
+        syllabi.setdefault(course.course_id, _syllabus(course))
+        sources.append(_source_item(citation, course, enrolled))
+        grouped.setdefault(_pairing_key(vb), []).append((citation.title, _authors(citation.authors)))
         if holding is not None:
             holdings.append(holding)
             members.append(R.Member(
@@ -195,7 +207,7 @@ def build_trace(session, rec_id: int) -> Trace | None:
             ))
 
     pairings = [
-        Pairing(k[0], list(k[1]), k[2], k[3], k[4], k[5], k[6], k[7], originals)
+        Pairing(k[0], list(k[1]), k[2], k[3], k[4], k[5], k[6], k[7], originals, k[8])
         for k, originals in grouped.items()
     ]
 
@@ -212,6 +224,48 @@ def build_trace(session, rec_id: int) -> Trace | None:
     title = rows[0][1].canonical_title if rows else f"建議 #{rec.id}"
     return Trace(rec.id, title, rec.book_key, rec.rationale, list(syllabi.values()), sources,
                  pairings, holding_info, calc)
+
+
+def _pending_reason(vb, confidence: float) -> str:
+    """這本書為什麼卡在待審核（沒進採購建議）。送審來源：match_auditor 判配錯；validator 在權威書目查無此書
+    （verified=False，實測佔「未稽核」的 513/532）；解析信心低於門檻（match_auditor 不稽核這類，所以 pairing_verdict 是空的）。"""
+    from library_agent.config import get_settings
+
+    threshold = get_settings().human_review_confidence_threshold
+    parts = []
+    if vb.pairing_verdict == "mismatch":
+        parts.append(f"配對被判為配錯（{_JUDGE.get(vb.pairing_judge, '稽核')}）"
+                     + (f"：{vb.pairing_reason}" if vb.pairing_reason else ""))
+    if not vb.verified:
+        parts.append(f"驗證階段在權威書目查無此書（{vb.source}）")
+    if confidence < threshold:
+        parts.append(f"解析信心 {confidence:.2f} 低於門檻 {threshold}，驗證階段送人工審核")
+    if vb.pairing_verdict is None and vb.verified:
+        parts.append("配對尚未稽核")
+    return "；".join(parts) or "等待人工審核"
+
+
+def build_pending_trace(session, vb_id: int) -> Trace | None:
+    """待審核的書（還沒有採購建議）的追溯：只有課綱、解析、配對、館藏，沒有冊數算式。
+    找不到、或這本書不是待審核狀態時回 None。標題用原書名：配錯時配到的那本是別的書。"""
+    row = session.execute(
+        select(Citation, VerifiedBook, Course)
+        .join(VerifiedBook, VerifiedBook.citation_id == Citation.id)
+        .join(Course, Course.course_id == Citation.course_id)
+        .where(VerifiedBook.id == vb_id, VerifiedBook.review_status == "pending")
+    ).first()
+    if row is None:
+        return None
+    citation, vb, course = row
+    holding = session.scalar(select(HoldingCheck).where(HoldingCheck.verified_book_id == vb.id))
+    holding_info = None if holding is None else HoldingInfo(
+        holding.status, holding.holdings_count or 0, holding.alma_mms_id, holding.matched_edition, False)
+    k = _pairing_key(vb)
+    pairing = Pairing(k[0], list(k[1]), k[2], k[3], k[4], k[5], k[6], k[7],
+                      [(citation.title, _authors(citation.authors))], k[8])
+    return Trace(0, citation.title, None, None, [_syllabus(course)],
+                 [_source_item(citation, course, course.enrolled_count or 0)], [pairing],
+                 holding_info, None, pending_reason=_pending_reason(vb, citation.confidence or 0.0))
 
 
 # ---------------------------------------------------------------- 渲染
@@ -268,14 +322,20 @@ def _sec3(t: Trace) -> str:
         reason = f"：{_e(p.reason)}" if p.reason else ""
         review = f' <span class="tr-tag">{_e(_REVIEW.get(p.review_status, p.review_status))}</span>' if p.review_status else ""
         cls = "tr-pair tr-bad" if p.verdict == "mismatch" else "tr-pair"
+        if p.verified:
+            matched = (f'<h5>配到的書（{_e(p.source)}）</h5>{_e(p.matched_title)} '
+                       f'<span class="tr-dim">／</span> {_names(p.matched_authors)}'
+                       f'<div class="tr-dim">ISBN {_e(p.isbn)}</div>')
+            verdict = (f'稽核判定：<b>{_e(_VERDICT.get(p.verdict, p.verdict))}</b>{judge}{reason}{review}')
+        else:   # 查無此書：matched_title 只是原書名的占位，不能當成「配到的書」回顯
+            matched = f'<h5>配到的書</h5><span class="tr-dim">查無記錄（來源：{_e(p.source)}）</span>'
+            verdict = f'沒有配到書，無從稽核{review}'
         blocks.append(
             f'<div class="{cls}">'
             f'<div class="tr-side"><h5>原書（解析結果）{len(p.originals)} 個書目</h5>{originals}</div>'
             f'<div class="tr-mid">⇄</div>'
-            f'<div class="tr-side"><h5>配到的書（{_e(p.source)}）</h5>{_e(p.matched_title)} '
-            f'<span class="tr-dim">／</span> {_names(p.matched_authors)}'
-            f'<div class="tr-dim">ISBN {_e(p.isbn)}</div></div>'
-            f'<div class="tr-verdict">稽核判定：<b>{_e(_VERDICT.get(p.verdict, p.verdict))}</b>{judge}{reason}{review}</div>'
+            f'<div class="tr-side">{matched}</div>'
+            f'<div class="tr-verdict">{verdict}</div>'
             f'</div>'
         )
     return "".join(blocks) or '<p class="tr-dim">沒有配對資料。</p>'
@@ -287,12 +347,19 @@ def _sec4(t: Trace) -> str:
         return '<p class="tr-dim">尚無館藏資料。</p>'
     note = ('<div class="tr-dim">注意：各書目的館藏查詢結果不一致，這裡以冊數最大的一筆為準。</div>'
             if h.members_differ else "")
+    if t.pending_reason:
+        note += ('<div class="tr-dim">注意：驗證階段沒有配到書，這是用原書名直接查 Alma 的結果，僅供參考。</div>'
+                 if any(not p.verified for p in t.pairings) else
+                 '<div class="tr-dim">注意：這是「配到的書」的館藏；配對有疑問時，不代表原書。</div>')
     return (f"<div>狀態：<b>{_e(_STATUS.get(h.status, h.status))}</b>；現有實體 <b>{h.copies}</b> 冊；"
             f"Alma 記錄編號 {_e(h.mms_id)}；比對到的版次 {_e(h.edition)}</div>{note}")
 
 
 def _sec5(t: Trace) -> str:
     c = t.calc
+    if c is None and t.pending_reason:
+        return (f'<div class="tr-note">未進入採購建議：{_e(t.pending_reason.rstrip('。'))}。'
+                '人工放行（main review）後，recommender 才會計算冊數。</div>')
     if c is None:
         return '<p class="tr-dim">尚無館藏資料，無法重算冊數。</p>'
     people = " ＋ ".join(f"{_e(name)} {n}" for name, n in c.courses)

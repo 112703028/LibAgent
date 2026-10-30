@@ -221,3 +221,130 @@ def test_render_shows_the_arithmetic(isolated_db):
 
     assert "100" in html and "25" in html          # 合計 100 人、每 25 人 1 本
     assert "3" in html and "medium" in html
+
+
+# ---------- 待審核的書（沒有採購建議）----------
+
+def pending_world(S, *, verdict="mismatch", judge="llm", reason="書名相同但作者不同", review="pending",
+                  confidence=0.9, holding=True, title="Original Title", matched_title="Other Book",
+                  syllabus="課綱：P1", verified=True, source="nla"):
+    """播種一筆待審核的書（沒有 Recommendation），回傳 verified_book id。"""
+    with S() as s:
+        course = Course(course_id="P1", course_name="課-P1", semester="114-1", source_file="t",
+                        raw_content=syllabus, enrolled_count=30)
+        s.add(course)
+        s.flush()
+        c = Citation(course_id="P1", title=title, authors=json.dumps(["原作者"], ensure_ascii=False),
+                     is_required=True, raw_mention="指定 " + title, confidence=confidence)
+        s.add(c)
+        s.flush()
+        vb = VerifiedBook(citation_id=c.id, canonical_title=matched_title,
+                          canonical_authors=json.dumps(["別人"], ensure_ascii=False), isbn_13=ISBN,
+                          source=source, verified=verified, pairing_verdict=verdict, pairing_judge=judge,
+                          pairing_reason=reason, review_status=review)
+        s.add(vb)
+        s.flush()
+        if holding:
+            s.add(HoldingCheck(verified_book_id=vb.id, status="owned_physical", holdings_count=2,
+                               alma_mms_id="991"))
+        s.commit()
+        return vb.id
+
+
+def pending_trace_of(S, vb_id):
+    with S() as s:
+        return T.build_pending_trace(s, vb_id)
+
+
+def test_pending_trace_of_a_mismatch_explains_why_it_is_waiting(isolated_db):
+    trace = pending_trace_of(isolated_db, pending_world(isolated_db))
+
+    assert trace.title == "Original Title"                     # 標題是原書名，不是配到的那本
+    assert trace.calc is None and trace.holding is not None
+    assert len(trace.sources) == 1 and len(trace.syllabi) == 1 and len(trace.pairings) == 1
+    assert trace.pairings[0].verdict == "mismatch"
+    assert "配錯" in trace.pending_reason and "書名相同但作者不同" in trace.pending_reason
+
+
+def test_pending_trace_of_an_unaudited_book_blames_low_parse_confidence(isolated_db):
+    vb = pending_world(isolated_db, verdict=None, judge=None, reason=None, confidence=0.30)
+
+    trace = pending_trace_of(isolated_db, vb)
+
+    assert trace.pairings[0].verdict is None
+    assert "0.30" in trace.pending_reason and "尚未稽核" in trace.pending_reason
+
+
+def test_pending_trace_copes_with_no_holding_row(isolated_db):
+    trace = pending_trace_of(isolated_db, pending_world(isolated_db, holding=False))
+
+    assert trace.holding is None and trace.pending_reason
+
+
+@pytest.mark.parametrize("review", [None, "approved", "rejected"])
+def test_pending_trace_is_none_unless_the_book_is_pending(isolated_db, review):
+    assert pending_trace_of(isolated_db, pending_world(isolated_db, review=review)) is None
+
+
+def test_pending_trace_unknown_id_returns_none(isolated_db):
+    assert pending_trace_of(isolated_db, 999999) is None
+
+
+def test_render_pending_says_it_is_not_in_the_purchase_list(isolated_db):
+    html = T.render_trace(pending_trace_of(isolated_db, pending_world(isolated_db)))
+
+    assert all(f'data-sec="{n}"' in html for n in range(1, 6))
+    assert "未進入採購建議" in html and "書名相同但作者不同" in html
+    assert "配到的書" in html and "不代表原書" in html          # 館藏是配到那本的，要提醒
+    assert "tr-bad" in html                                     # 配錯的配對標紅
+    assert "<h3 class=\"tr-title\">Original Title</h3>" in html
+
+
+def test_render_pending_escapes_untrusted_text(isolated_db):
+    evil = "<script>alert(1)</script>"
+    vb = pending_world(isolated_db, reason=evil, title=evil, matched_title=evil, syllabus=evil)
+
+    html = T.render_trace(pending_trace_of(isolated_db, vb))
+
+    assert evil not in html and "&lt;script&gt;" in html
+
+
+def test_pending_endpoint_returns_the_fragment_or_404(isolated_db, monkeypatch):
+    from fastapi.testclient import TestClient
+    from library_agent import dashboard
+
+    monkeypatch.setattr(dashboard, "SessionLocal", isolated_db)
+    client = TestClient(dashboard.app)
+    vb = pending_world(isolated_db)
+
+    ok = client.get(f"/trace/pending/{vb}")
+
+    assert ok.status_code == 200 and "未進入採購建議" in ok.text and "<html" not in ok.text
+    assert client.get("/trace/pending/999999").status_code == 404
+
+
+def test_pending_trace_of_a_book_the_validator_could_not_find(isolated_db):
+    vb = pending_world(isolated_db, verdict=None, judge=None, reason=None, verified=False,
+                       source="ncl_not_found", matched_title="Original Title")
+
+    trace = pending_trace_of(isolated_db, vb)
+
+    assert trace.pairings[0].verified is False
+    assert "查無此書" in trace.pending_reason and "ncl_not_found" in trace.pending_reason
+    assert "尚未稽核" not in trace.pending_reason          # 沒配到書，談不上稽核
+
+
+def test_render_unverified_pending_says_no_record_was_matched(isolated_db):
+    vb = pending_world(isolated_db, verdict=None, judge=None, reason=None, verified=False,
+                       source="ncl_not_found", matched_title="Original Title")
+
+    html = T.render_trace(pending_trace_of(isolated_db, vb))
+
+    assert "查無記錄" in html                                # 右側不能把原書名當成「配到的書」回顯
+    assert "用原書名" in html and "不代表原書" not in html   # 館藏警語換成：是用原書名直接查的
+
+
+def test_render_pending_reason_has_no_doubled_full_stop(isolated_db):
+    html = T.render_trace(pending_trace_of(isolated_db, pending_world(isolated_db, reason="作者不同。")))
+
+    assert "。。" not in html
