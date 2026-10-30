@@ -7,6 +7,7 @@
 """
 import csv
 import io
+import re
 
 import pytest
 from fastapi.testclient import TestClient
@@ -194,3 +195,43 @@ def test_a_filtered_view_marks_the_section_group_in_scope_when_any_section_match
     (row,) = [r for r in dashboard._load_data([DEPT_A])["recs"] if r.title == TITLE_S]
 
     assert all(c.in_scope for c in row.courses)
+
+
+# ---------- 單筆追溯：端點與展開鈕 ----------
+
+def _rec_id():
+    with SessionLocal() as s:
+        return s.query(Recommendation.id).join(HoldingCheck, HoldingCheck.id == Recommendation.holding_id) \
+            .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id) \
+            .filter(VerifiedBook.canonical_title == TITLE).scalar()
+
+
+def test_trace_endpoint_returns_a_fragment_with_every_course(shared_book):
+    resp = TestClient(dashboard.app).get(f"/trace/{_rec_id()}")
+
+    assert resp.status_code == 200 and "text/html" in resp.headers["content-type"]
+    assert all(_has(resp.text, f'data-sec="{n}"') for n in range(1, 6))
+    assert _has(resp.text, f"課-{COURSE_A}") and _has(resp.text, f"課-{COURSE_B}")
+    assert not _has(resp.text, "<html")                  # 是片段，不是整頁
+
+
+def test_trace_endpoint_404_for_unknown_id():
+    assert TestClient(dashboard.app).get("/trace/999999999").status_code == 404
+
+
+def test_rec_table_rows_carry_rec_id_and_a_text_free_toggle():
+    row = dashboard.RecRow("medium", [dashboard.CourseRef("課甲", "required", False)], "T",
+                           "owned_physical", 3, "r", rec_id=42)
+
+    html = dashboard._rec_table([row], [])
+
+    assert _has(html, 'data-rec="42"')
+    assert re.search(r'<button class="tbtn"[^>]*></button>', html)   # 按鈕內沒有文字：匯出 CSV 讀 textContent 不會被污染
+
+
+def test_pending_rows_have_no_toggle():
+    pending = [("課甲", "T", 0.5, "nla", True, "指定")]
+
+    html = dashboard._rec_table([], pending)
+
+    assert not _has(html, "tbtn") and not _has(html, "data-rec")
