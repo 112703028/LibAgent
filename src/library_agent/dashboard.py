@@ -23,6 +23,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import aliased
 
 from library_agent import runlog
+from library_agent.book_kind import book_type_key, is_ai_recommended
 from library_agent.agents.crawler import DATA_DIR
 from library_agent.dept_map import DEPARTMENT_MAP
 from library_agent.db.filters import not_superseded, purchasable
@@ -86,6 +87,7 @@ class RecRow(NamedTuple):
     status: str
     copies: int
     rationale: str
+    rec_id: int = 0      # 展開追溯畫面用（GET /trace/{rec_id}）；放最後，既有建構呼叫不受影響
 
 
 # 同一門課有兩個書目時（實測 8 組），取較「重」的類別
@@ -219,14 +221,14 @@ def _load_data(departments: list[str] | None = None) -> dict:
                 )
             courses = [c._replace(sections=len(section_ids[c.name]))
                        for c in sorted(refs.values(), key=lambda c: c.name)]
-            recs.append(RecRow(priority, courses, title, st, rec_copies, rationale or ""))
+            recs.append(RecRow(priority, courses, title, st, rec_copies, rationale or "", rec_id))
         recs.sort(key=lambda r: (_PRIORITY_RANK.get(r.priority, 9),
                                  r.courses[0].name if r.courses else "", r.title))
 
         pending = s.execute(
             scoped(
                 select(Course.course_name, Citation.title, Citation.confidence, VerifiedBook.source,
-                       Citation.is_required, Citation.raw_mention)
+                       Citation.is_required, Citation.raw_mention, VerifiedBook.id)
                 .join(Citation, Citation.id == VerifiedBook.citation_id)
                 .join(Course, Course.course_id == Citation.course_id)
                 .where(VerifiedBook.review_status == "pending", _not_superseded())
@@ -269,17 +271,24 @@ def _kpi_tiles(k: dict) -> str:
 
 
 def _rec_row(priority: str, course: str, title: str, btype: str, status_html: str,
-             copies_html: str, rationale: str, btypes: str, course_html: str | None = None) -> str:
-    """btypes：類別 token（required / optional / ai），以空白分隔的清單。現在一列只有一個；
-    第 4 點把同一本書的多門課合併成一列後會有多個，前端用「包含」比對，屆時不必再改。"""
+             copies_html: str, rationale: str, btypes: str, course_html: str | None = None,
+             rec_id: int | None = None, vb_id: int | None = None) -> str:
+    """btypes：類別 token（required / optional / ai），以空白分隔的清單（一本書涵蓋多個類別時有多個，
+    前端用「包含」比對）。rec_id：採購建議的 id；vb_id：待審核書目（verified_book）的 id，這類列沒有建議。
+    兩者擇一有值才有展開鈕，前端依 data-rec / data-vb 決定向哪個網址取追溯。
+    展開鈕內不放任何文字（箭頭由 CSS 畫），因為匯出 CSV 是讀每格的 textContent。"""
     pcolor = _PRIORITY_COLOR.get(priority, _PENDING_COLOR)
     plabel = _PRIORITY_LABEL.get(priority, _PENDING_LABEL)
+    data_id = (f' data-rec="{rec_id}"' if rec_id is not None else
+               f' data-vb="{vb_id}"' if vb_id is not None else "")
+    toggle = ('<button class="tbtn" type="button" aria-expanded="false" aria-label="展開決策過程"></button>'
+              if data_id else "")
     return (
-        f'<tr data-priority="{html.escape(priority)}" data-btypes="{html.escape(btypes)}">'
+        f'<tr data-priority="{html.escape(priority)}" data-btypes="{html.escape(btypes)}"{data_id}>'
         f'<td class="chk"><input type="checkbox" class="rowchk"></td>'
         f'<td><span class="pill" style="background:{pcolor}">{html.escape(plabel)}</span></td>'
         f'<td>{course_html if course_html is not None else html.escape(course or "")}</td>'
-        f'<td>{html.escape(title or "")}</td>'
+        f'<td>{toggle}{html.escape(title or "")}</td>'
         f'<td>{btype}</td>'
         f'<td>{status_html}</td>'
         f'<td class="num">{copies_html}</td>'
@@ -287,17 +296,9 @@ def _rec_row(priority: str, course: str, title: str, btype: str, status_html: st
     )
 
 
-def _is_ai_recommended(raw_mention: str | None) -> bool:
-    """discoverer 產生的 AI 推薦書，raw_mention 會標 [AI推薦]（見 discoverer.py）。"""
-    return bool(raw_mention) and "AI推薦" in raw_mention
-
-
-def _book_type_key(is_required: bool, raw_mention: str | None) -> str:
-    """類別判定：AI 推薦 > 指定 > 參考。回傳 "ai" / "required" / "optional"。"""
-    if _is_ai_recommended(raw_mention):
-        return "ai"
-    return "required" if is_required else "optional"
-
+# 類別判定（AI 推薦 > 指定 > 參考）搬到 book_kind，追溯畫面共用；這裡保留原名稱，既有呼叫與測試不用改
+_is_ai_recommended = is_ai_recommended
+_book_type_key = book_type_key
 
 _KEY_LABEL = {"required": "指定", "optional": "參考", "ai": "AI推薦"}
 
@@ -344,13 +345,14 @@ def _rec_table(recs: list, pending: list) -> str:
         body.append(_rec_row(
             r.priority, "", r.title, "".join(_tag_for_key(k) for k in keys), status_html,
             str(r.copies), r.rationale, " ".join(keys), course_html=_course_cell(r.courses),
+            rec_id=r.rec_id or None,
         ))
     # 待審核的書沒有採購建議列（它是書目層級的），理由欄改顯示驗證信心分數與來源
-    for course, title, confidence, source, is_required, raw_mention in pending:
+    for course, title, confidence, source, is_required, raw_mention, vb_id in pending:
         rationale = f"confidence {confidence:.2f} · {source or ''}"
         btype = _book_type_label(is_required, raw_mention)
         body.append(_rec_row("pending", course, title, btype, "—", "—", rationale,
-                             _book_type_key(is_required, raw_mention)))
+                             _book_type_key(is_required, raw_mention), vb_id=vb_id))
     return (
         '<table id="rectable"><thead><tr>'
         '<th class="chk"><input type="checkbox" id="rowchkall" title="全選/全不選"></th>'
@@ -456,6 +458,30 @@ td.rationale {{ color:var(--text-secondary); font-size:12px; max-width:340px; }}
 .tag {{ display:inline-block; padding:1px 7px; border-radius:5px; font-size:11.5px; border:1px solid var(--border); color:var(--text-secondary); white-space:nowrap; }}
 .tag-ai {{ border-color:#e0900a; color:#fff; background:#e0900a; }}
 .c-in {{ font-weight:700; color:var(--text-primary); }}
+.tbtn {{ width:18px; height:18px; margin-right:6px; padding:0; border:1px solid var(--border);
+  border-radius:4px; background:var(--surface); color:var(--text-secondary); cursor:pointer; vertical-align:middle; }}
+.tbtn::before {{ content:"▸"; font-size:11px; line-height:1; }}
+.tbtn[aria-expanded="true"]::before {{ content:"▾"; }}
+tr.trace-row > td {{ background:var(--gridline); padding:14px 18px; }}
+.trace {{ font-size:13px; line-height:1.55; max-width:1100px; }}
+.tr-title {{ margin:0 0 4px; font-size:15px; }}
+.tr-rationale {{ color:var(--text-secondary); margin-bottom:8px; }}
+.tr-sec {{ background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:8px 14px 10px; margin-top:10px; }}
+.tr-sec h4 {{ margin:0 0 6px; font-size:13px; }}
+.tr-dim {{ color:var(--text-secondary); }}
+.tr-mention {{ margin:4px 0; padding:4px 10px; border-left:3px solid var(--border); color:var(--text-secondary); }}
+.tr-pre {{ white-space:pre-wrap; max-height:240px; overflow:auto; font:inherit; font-size:12px; }}
+.tr-tbl th, .tr-tbl td {{ padding:4px 8px; font-size:12px; }}
+.tr-pair {{ display:flex; gap:12px; flex-wrap:wrap; align-items:flex-start; padding:8px; border:1px solid var(--border); border-radius:6px; margin-bottom:6px; }}
+.tr-side {{ flex:1 1 280px; }}
+.tr-side h5 {{ margin:0 0 4px; font-size:12px; color:var(--text-secondary); }}
+.tr-mid {{ align-self:center; color:var(--text-secondary); }}
+.tr-verdict {{ flex-basis:100%; }}
+.tr-bad {{ border-color:#c0392b; background:rgba(192,57,43,.08); }}
+.tr-tag {{ display:inline-block; padding:0 6px; border-radius:5px; border:1px solid var(--border); font-size:11.5px; }}
+.tr-note {{ padding:6px 10px; border-radius:6px; border:1px solid var(--border); background:var(--gridline); }}
+.tr-calc {{ margin:4px 0 0; padding-left:20px; }}
+.tr-drift {{ margin-top:8px; padding:6px 10px; border-radius:6px; border:1px solid #e0900a; background:rgba(224,144,10,.12); }}
 .empty {{ color:var(--muted); font-size:13px; }}
 .cardhead {{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; }}
 .cardhead h2 {{ margin:0; }}
@@ -575,7 +601,7 @@ function _applyRecFilters() {{
   const ca = document.querySelector('.cbtn.active');
   const f = pa ? pa.dataset.f : 'all';
   const c = ca ? ca.dataset.c : 'all';
-  table.querySelectorAll('tbody tr').forEach(function(tr){{
+  table.querySelectorAll('tbody tr:not(.trace-row)').forEach(function(tr){{
     let show;
     if (kw) {{
       // 搜尋課程(第3欄) + 書名(第4欄)；欄位含 checkbox 在第1欄
@@ -588,6 +614,9 @@ function _applyRecFilters() {{
       show = (f === 'all' || tr.dataset.priority === f) && (c === 'all' || types.includes(c));
     }}
     tr.style.display = show ? '' : 'none';
+    // 展開的追溯列不是資料列：顯示與否完全跟隨上一列（收合與否另由 hidden 屬性管）
+    const nx = tr.nextElementSibling;
+    if (nx && nx.classList.contains('trace-row')) nx.style.display = show ? '' : 'none';
   }});
 }}
 
@@ -601,6 +630,47 @@ function _applyRecFilters() {{
   }});
 }});
 document.getElementById('recsearch').addEventListener('input', _applyRecFilters);
+
+// 展開／收合一本書的決策過程：第一次點才向 /trace/{{id}} 取，之後只切換顯示，不重取。
+// 片段是伺服器端已逸出的 HTML，這裡只把它設成 innerHTML，不在前端拼資料。
+async function _loadTrace(tr, cell) {{
+  cell.textContent = '載入中…';
+  try {{
+    // 採購建議列用 data-rec；待審核列（還沒有建議）用 data-vb
+    const url = tr.dataset.rec ? '/trace/' + encodeURIComponent(tr.dataset.rec)
+                               : '/trace/pending/' + encodeURIComponent(tr.dataset.vb);
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    cell.innerHTML = await r.text();
+  }} catch (e) {{
+    cell.textContent = '載入失敗（' + e.message + '）　';
+    const retry = document.createElement('button');
+    retry.type = 'button'; retry.className = 'fbtn'; retry.textContent = '重試';
+    retry.addEventListener('click', function(){{ _loadTrace(tr, cell); }});
+    cell.appendChild(retry);
+  }}
+}}
+
+const _rectable = document.getElementById('rectable');
+if (_rectable) _rectable.addEventListener('click', function(ev){{
+  const btn = ev.target.closest('.tbtn');
+  if (!btn) return;
+  const tr = btn.closest('tr');
+  let row = tr.nextElementSibling;
+  if (!row || !row.classList.contains('trace-row')) {{
+    row = document.createElement('tr');
+    row.className = 'trace-row';
+    row.hidden = true;
+    const td = document.createElement('td');
+    td.colSpan = 8;
+    row.appendChild(td);
+    tr.after(row);
+    _loadTrace(tr, td);
+  }}
+  const opening = row.hidden;
+  row.hidden = !opening;
+  btn.setAttribute('aria-expanded', opening ? 'true' : 'false');
+}});
 
 const _el = id => document.getElementById(id);
 let _sawRunning = false;  // 這個分頁是否親眼看過 running；只有這樣才代表「這次是我觸發的」
@@ -817,7 +887,7 @@ document.addEventListener('click', function(ev){{
 // 表頭全選框：勾選/取消目前「可見」的列（配合優先級篩選）
 const _chkall = _el('rowchkall');
 if (_chkall) _chkall.addEventListener('change', function(){{
-  document.querySelectorAll('#rectable tbody tr').forEach(function(tr){{
+  document.querySelectorAll('#rectable tbody tr:not(.trace-row)').forEach(function(tr){{
     if (tr.style.display !== 'none') {{
       const c = tr.querySelector('.rowchk');
       if (c) c.checked = _chkall.checked;
@@ -837,7 +907,7 @@ _el('expgo').addEventListener('click', function(){{
   const header = ['優先級','課程','書名','類別','館藏狀態','冊數','理由'];
   const lines = [header.map(_csvCell).join(',')];
   let n = 0;
-  document.querySelectorAll('#rectable tbody tr').forEach(function(tr){{
+  document.querySelectorAll('#rectable tbody tr:not(.trace-row)').forEach(function(tr){{
     if (onlyChecked) {{
       const c = tr.querySelector('.rowchk');
       if (!c || !c.checked) return;
@@ -872,6 +942,30 @@ _pollLog();
 @app.get("/", response_class=HTMLResponse)
 def index(departments: list[str] | None = Query(None)) -> str:
     return _render(_load_data(departments))
+
+
+@app.get("/trace/pending/{vb_id}", response_class=HTMLResponse)
+def trace_pending(vb_id: int):
+    """待審核的書（還沒有採購建議）的追溯片段。找不到或已不在待審核狀態回 404。"""
+    from library_agent.trace_view import build_pending_trace, render_trace
+
+    with SessionLocal() as s:
+        result = build_pending_trace(s, vb_id)
+    if result is None:
+        return HTMLResponse("找不到這筆待審核書目（可能已被放行或退回）。", status_code=404)
+    return HTMLResponse(render_trace(result))
+
+
+@app.get("/trace/{rec_id}", response_class=HTMLResponse)
+def trace(rec_id: int):
+    """一本書的決策過程（HTML 片段，內容已逸出）。前端第一次展開該列時才取。"""
+    from library_agent.trace_view import build_trace, render_trace   # 延後 import：它會載入 recommender
+
+    with SessionLocal() as s:
+        result = build_trace(s, rec_id)
+    if result is None:
+        return HTMLResponse("找不到這筆採購建議。", status_code=404)
+    return HTMLResponse(render_trace(result))
 
 
 # ---------- CSV 匯出 ----------
@@ -923,7 +1017,7 @@ def export_pending() -> StreamingResponse:
             confidence,
             source,
         )
-        for course, title, confidence, source, is_required, raw_mention in data["pending"]
+        for course, title, confidence, source, is_required, raw_mention, _vb_id in data["pending"]
     ]
     return _csv_response(header, rows, "pending_review")
 
