@@ -81,6 +81,18 @@ validator 只要查得到記錄就算 `verified=True`，實測有相當比例配
 - **測試**：recommender 會清掉不再存在的建議，所以它的測試用獨立的測試資料庫（`conftest.py` 的 `isolated_db`，
   `<開發庫>_test`），**不要**在開發庫上跑會呼叫 `recommender_node` 的測試。
 
+### 單筆追溯（dashboard 明細表每列的 ▸ 鈕）
+
+點採購建議那一列的 ▸，在下方展開這本書的決策過程：課綱原文 → 解析結果 → 驗證配對（原書 vs 配到的書並排＋
+match_auditor 判定）→ Alma 館藏 → 冊數怎麼算。**只讀**，不核准也不退回（放行仍用 `main review`）。
+
+- **端點**：`GET /trace/{id}` 回已逸出的 HTML 片段（`trace_view.py`）；前端第一次展開才取，之後只切換顯示。
+  待審核列是書目層級、沒有建議，沒有 ▸ 鈕。
+- **冊數算式是重算的**：資料庫只存結果，畫面用同一套 `recommender.merge_group` 與 `recommendation_courses.enrolled`
+  （計算當時的人數）重算；與資料庫存的建議不同時（上限、館藏或資料在建議產生後改過）會標出 `.tr-drift` 差異。
+- **課綱截斷**：最多顯示 `MAX_SYLLABUS`（6000）字，並標明原長度（最長的課綱有 32454 字）。
+- 展開鈕內不得放文字（匯出 CSV 讀 `textContent`）；展開列 `tr.trace-row` 不是資料列，篩選、搜尋、全選、匯出都要略過它。
+
 ## 資料庫
 
 ```bash

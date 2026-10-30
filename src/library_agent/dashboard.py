@@ -598,7 +598,7 @@ function _applyRecFilters() {{
   const ca = document.querySelector('.cbtn.active');
   const f = pa ? pa.dataset.f : 'all';
   const c = ca ? ca.dataset.c : 'all';
-  table.querySelectorAll('tbody tr').forEach(function(tr){{
+  table.querySelectorAll('tbody tr:not(.trace-row)').forEach(function(tr){{
     let show;
     if (kw) {{
       // 搜尋課程(第3欄) + 書名(第4欄)；欄位含 checkbox 在第1欄
@@ -611,6 +611,9 @@ function _applyRecFilters() {{
       show = (f === 'all' || tr.dataset.priority === f) && (c === 'all' || types.includes(c));
     }}
     tr.style.display = show ? '' : 'none';
+    // 展開的追溯列不是資料列：顯示與否完全跟隨上一列（收合與否另由 hidden 屬性管）
+    const nx = tr.nextElementSibling;
+    if (nx && nx.classList.contains('trace-row')) nx.style.display = show ? '' : 'none';
   }});
 }}
 
@@ -624,6 +627,44 @@ function _applyRecFilters() {{
   }});
 }});
 document.getElementById('recsearch').addEventListener('input', _applyRecFilters);
+
+// 展開／收合一本書的決策過程：第一次點才向 /trace/{{id}} 取，之後只切換顯示，不重取。
+// 片段是伺服器端已逸出的 HTML，這裡只把它設成 innerHTML，不在前端拼資料。
+async function _loadTrace(tr, cell) {{
+  cell.textContent = '載入中…';
+  try {{
+    const r = await fetch('/trace/' + encodeURIComponent(tr.dataset.rec));
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    cell.innerHTML = await r.text();
+  }} catch (e) {{
+    cell.textContent = '載入失敗（' + e.message + '）　';
+    const retry = document.createElement('button');
+    retry.type = 'button'; retry.className = 'fbtn'; retry.textContent = '重試';
+    retry.addEventListener('click', function(){{ _loadTrace(tr, cell); }});
+    cell.appendChild(retry);
+  }}
+}}
+
+const _rectable = document.getElementById('rectable');
+if (_rectable) _rectable.addEventListener('click', function(ev){{
+  const btn = ev.target.closest('.tbtn');
+  if (!btn) return;
+  const tr = btn.closest('tr');
+  let row = tr.nextElementSibling;
+  if (!row || !row.classList.contains('trace-row')) {{
+    row = document.createElement('tr');
+    row.className = 'trace-row';
+    row.hidden = true;
+    const td = document.createElement('td');
+    td.colSpan = 8;
+    row.appendChild(td);
+    tr.after(row);
+    _loadTrace(tr, td);
+  }}
+  const opening = row.hidden;
+  row.hidden = !opening;
+  btn.setAttribute('aria-expanded', opening ? 'true' : 'false');
+}});
 
 const _el = id => document.getElementById(id);
 let _sawRunning = false;  // 這個分頁是否親眼看過 running；只有這樣才代表「這次是我觸發的」
@@ -840,7 +881,7 @@ document.addEventListener('click', function(ev){{
 // 表頭全選框：勾選/取消目前「可見」的列（配合優先級篩選）
 const _chkall = _el('rowchkall');
 if (_chkall) _chkall.addEventListener('change', function(){{
-  document.querySelectorAll('#rectable tbody tr').forEach(function(tr){{
+  document.querySelectorAll('#rectable tbody tr:not(.trace-row)').forEach(function(tr){{
     if (tr.style.display !== 'none') {{
       const c = tr.querySelector('.rowchk');
       if (c) c.checked = _chkall.checked;
@@ -860,7 +901,7 @@ _el('expgo').addEventListener('click', function(){{
   const header = ['優先級','課程','書名','類別','館藏狀態','冊數','理由'];
   const lines = [header.map(_csvCell).join(',')];
   let n = 0;
-  document.querySelectorAll('#rectable tbody tr').forEach(function(tr){{
+  document.querySelectorAll('#rectable tbody tr:not(.trace-row)').forEach(function(tr){{
     if (onlyChecked) {{
       const c = tr.querySelector('.rowchk');
       if (!c || !c.checked) return;
