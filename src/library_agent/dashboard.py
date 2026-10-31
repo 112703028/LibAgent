@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from fastapi import Body, FastAPI, File, Query, UploadFile
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import aliased
 
@@ -36,7 +36,9 @@ from library_agent.db.models import (
     VerifiedBook,
 )
 from library_agent.db.session import SessionLocal
-from library_agent.review_groups import PendingItem, group_pending
+from library_agent import review_actions
+from library_agent.review_apply import pending_apply_ids
+from library_agent.review_groups import KINDS, PendingItem, group_pending
 from library_agent.trace_view import _authors   # 作者欄位是 JSON 字串，與追溯畫面同一個解析（壞掉回 []）
 
 app = FastAPI(title="Library Agent 採購決策儀表板")
@@ -260,31 +262,44 @@ def _load_data(departments: list[str] | None = None) -> dict:
                 .where(purchasable(), _not_superseded())
             ).all()
         }
-        review_rows = s.execute(
-            scoped(
-                select(VerifiedBook.id, Citation.id, Course.course_id, Course.course_name, Course.enrolled_count,
-                       Citation.title, Citation.authors, VerifiedBook.canonical_title, VerifiedBook.canonical_authors,
-                       VerifiedBook.source, VerifiedBook.verified, VerifiedBook.pairing_verdict,
-                       VerifiedBook.pairing_judge, VerifiedBook.pairing_reason, Citation.confidence)
-                .join(Citation, Citation.id == VerifiedBook.citation_id)
-                .join(Course, Course.course_id == Citation.course_id)
-                .where(VerifiedBook.review_status == "pending", _not_superseded()),
-                join_course=False,
-            )
-        ).all()
+
+        def review_items(*conditions) -> list:
+            rows = s.execute(
+                scoped(
+                    select(VerifiedBook.id, Citation.id, Course.course_id, Course.course_name, Course.enrolled_count,
+                           Citation.title, Citation.authors, VerifiedBook.canonical_title, VerifiedBook.canonical_authors,
+                           VerifiedBook.source, VerifiedBook.verified, VerifiedBook.pairing_verdict,
+                           VerifiedBook.pairing_judge, VerifiedBook.pairing_reason, Citation.confidence,
+                           VerifiedBook.review_choice, VerifiedBook.purchase_title,
+                           VerifiedBook.review_applied_at, VerifiedBook.reviewed_at)
+                    .join(Citation, Citation.id == VerifiedBook.citation_id)
+                    .join(Course, Course.course_id == Citation.course_id)
+                    .where(*conditions, _not_superseded()),
+                    join_course=False,
+                )
+            ).all()
+            return [
+                PendingItem(vb_id, cit_id, course_id, course_name, enrolled or 0, title, _authors(authors),
+                            matched_title, _authors(matched_authors), source, bool(verified), verdict, judge,
+                            reason, confidence or 0.0, choice, purchase_title, applied_at is not None, reviewed_at)
+                for (vb_id, cit_id, course_id, course_name, enrolled, title, authors, matched_title, matched_authors,
+                     source, verified, verdict, judge, reason, confidence, choice, purchase_title, applied_at,
+                     reviewed_at) in rows
+            ]
+
+        pending_items = review_items(VerifiedBook.review_status == "pending")
+        decided_items = review_items(VerifiedBook.review_choice.is_not(None))     # 「已決定」分頁（可撤銷）
+        pending_apply = len(pending_apply_ids(s))      # 全校的待套用數：套用永遠處理全部
 
     from library_agent.config import get_settings
 
-    review = group_pending(
-        [PendingItem(vb_id, cit_id, course_id, course_name, enrolled or 0, title, _authors(authors),
-                     matched_title, _authors(matched_authors), source, bool(verified), verdict, judge,
-                     reason, confidence or 0.0)
-         for (vb_id, cit_id, course_id, course_name, enrolled, title, authors, matched_title, matched_authors,
-              source, verified, verdict, judge, reason, confidence) in review_rows],
-        rec_of, get_settings().human_review_confidence_threshold,
-    )
+    threshold = get_settings().human_review_confidence_threshold
+    review = group_pending(pending_items, rec_of, threshold)
+    by_kind = group_pending(decided_items, rec_of, threshold)
+    earliest = datetime.min.replace(tzinfo=timezone.utc)
+    decided = sorted((g for kind in KINDS for g in by_kind[kind]), key=lambda g: g.reviewed_at or earliest, reverse=True)
     return {"kpis": kpis, "priority": prio, "status": status, "recs": recs, "pending": pending,
-            "review": review}
+            "review": review, "decided": decided, "pending_apply": pending_apply}
 
 
 # ---------- 呈現 ----------
@@ -434,6 +449,35 @@ def _review_list_status(g) -> str:
     return "已擋下，不在採購清單" if g.kind == "mismatch" else "不在採購清單"
 
 
+_CHOICE_LABEL = {"matched": "買配對到的書", "original": "買原書", "custom": "輸入書名加入", "none": "都不買／捨棄"}
+# 批次列：只提供不需要逐組輸入的動作（買原書、輸入書名要逐組看清楚再按）
+_BATCH_ACTIONS = {
+    "mismatch": [("matched", "買配對到的書", False), ("none", "都不買", True)],
+    "notfound": [("none", "捨棄所選", True)],
+    "other": [("matched", "買這本書", False), ("none", "都不買", True)],
+}
+
+
+def _abtn(act: str, label: str, *, negative: bool = False) -> str:
+    cls = "abtn abtn-no" if negative else "abtn"
+    return f'<button class="{cls}" type="button" data-act="{act}">{label}</button>'
+
+
+def _action_cell(g) -> str:
+    """這一組的處理動作。按鈕的語意依類別不同；書名輸入框預填原書名（多數情況只要確認或改個錯字）。"""
+    if g.kind == "mismatch":
+        body = _abtn("original", "買原書") + _abtn("matched", "買配對到的書") + _abtn("none", "都不買", negative=True)
+    elif g.kind == "notfound":
+        body = (
+            f'<input class="atitle" type="text" maxlength="500" value="{html.escape(g.title or "")}" aria-label="要採購的書名">'
+            '<input class="aisbn" type="text" maxlength="20" placeholder="ISBN（選填）" aria-label="ISBN（選填）">'
+            + _abtn("custom", "加入採購清單") + _abtn("none", "捨棄", negative=True)
+        )
+    else:
+        body = _abtn("matched", "買這本書") + _abtn("none", "都不買", negative=True)
+    return f'<td class="ract">{body}<div class="aerr" hidden></div></td>'
+
+
 def _review_row(g) -> str:
     if g.kind == "notfound":
         matched = f'<span class="rdim">查無記錄（來源：{html.escape(g.source or "—")}）</span>'
@@ -445,24 +489,58 @@ def _review_row(g) -> str:
     ids = ",".join(str(i) for i in g.vb_ids)
     return (
         f'<tr data-ids="{ids}">'
+        '<td class="chk"><input type="checkbox" class="rchk"></td>'
         '<td><button class="tbtn" type="button" aria-expanded="false" aria-label="展開決策過程"></button>'
         f'{html.escape(g.title or "")}<div class="rdim">{_names(g.authors)}</div></td>'
         f'<td>{matched}</td><td>{_review_reason(g)}</td>'
         f'<td>{courses}{items_note}</td>'
-        f'<td class="num">{g.enrolled_total}</td><td>{_review_list_status(g)}</td></tr>'
+        f'<td class="num">{g.enrolled_total}</td><td>{_review_list_status(g)}</td>'
+        f'{_action_cell(g)}</tr>'
     )
 
 
-def _review_panel(review: dict) -> str:
-    """人工審核區塊：三個分頁（配錯／查無此書／其他），每組一列＝一本書。唯讀。"""
+def _decided_row(g) -> str:
+    label = _CHOICE_LABEL.get(g.choice, g.choice or "")
+    if g.choice == "none":
+        bought, state = "—", "已退回"
+    else:
+        bought = html.escape(g.buy_title or g.matched_title or "")
+        state = "已套用" if g.applied else "待套用"
+    ids = ",".join(str(i) for i in g.vb_ids)
+    note = f' <span class="rdim">（{g.items} 個書目）</span>' if g.items > 1 else ""
+    return (
+        f'<tr data-ids="{ids}">'
+        f'<td>{html.escape(g.title or "")}{note}<div class="rdim">{_names(g.authors)}</div></td>'
+        f'<td>{html.escape(label)}</td><td>{bought}</td><td>{state}</td>'
+        '<td><button class="abtn" type="button" data-undo>撤銷</button><div class="aerr" hidden></div></td></tr>'
+    )
+
+
+def _batch_bar(kind: str) -> str:
+    buttons = "".join(
+        f'<button class="abtn{" abtn-no" if neg else ""}" type="button" data-batch="{act}">{label}</button>'
+        for act, label, neg in _BATCH_ACTIONS[kind]
+    )
+    return f'<div class="rbatch">勾選的組：{buttons}</div>'
+
+
+def _review_panel(review: dict, decided: list | None = None, pending_apply: int = 0) -> str:
+    """人工審核區塊：三個待審分頁（配錯／查無此書／其他），有決定紀錄時加「已決定」分頁。每組一列＝一本書。"""
+    decided = decided or []
     total = sum(len(review.get(k, [])) for k, _, _ in _REVIEW_TABS)
     head = ('<div class="cardhead"><h2>人工審核</h2><div class="headtools">'
             '<a class="uploadbtn" href="/export/pending" style="text-decoration:none">匯出待審清單 CSV</a>'
             '</div></div>')
-    if total == 0:
-        return f'<div class="card" id="review">{head}<p class="empty">目前沒有待審書目。</p></div>'
-    # 預設開在組數最多的分頁（並列取排在前面的）
-    opening = max((k for k, _, _ in _REVIEW_TABS), key=lambda k: len(review.get(k, [])))
+    banner = (
+        f'<div class="rapply"><span>{pending_apply} 筆決定待套用</span>'
+        '<button id="applybtn" class="runbtn" type="button" style="font-size:13px;padding:6px 14px;">套用並重算採購建議</button>'
+        '<span class="rdim">套用後，放行的書才會出現在採購清單</span></div>'
+        if pending_apply > 0 else ""
+    )
+    if total == 0 and not decided:
+        return f'<div class="card" id="review">{head}{banner}<p class="empty">目前沒有待審書目。</p></div>'
+    # 預設開在待審組數最多的分頁（並列取排在前面的）；待審都處理完了才開「已決定」
+    opening = "decided" if total == 0 else max((k for k, _, _ in _REVIEW_TABS), key=lambda k: len(review.get(k, [])))
     tabs, panels = [], []
     for kind, label, note in _REVIEW_TABS:
         groups = review.get(kind, [])
@@ -473,15 +551,26 @@ def _review_panel(review: dict) -> str:
         )
         if groups:
             body = (
-                '<table class="rtbl"><thead><tr><th>原書（課綱列的）</th><th>配到的書</th><th>原因</th>'
-                '<th>用到的課（人數）</th><th>人數合計</th><th>採購清單</th></tr></thead>'
+                _batch_bar(kind)
+                + '<table class="rtbl"><thead><tr><th class="chk"></th><th>原書（課綱列的）</th><th>配到的書</th>'
+                '<th>原因</th><th>用到的課（人數）</th><th>人數合計</th><th>採購清單</th><th>處理</th></tr></thead>'
                 f'<tbody>{"".join(_review_row(g) for g in groups)}</tbody></table>'
             )
         else:
             body = '<p class="empty">這個分類目前沒有待審的書。</p>'
         hidden = "" if active else " hidden"
         panels.append(f'<div class="rpanel" data-k="{kind}"{hidden}><p class="rnote">{note}</p>{body}</div>')
-    return (f'<div class="card" id="review">{head}<div class="filters">{"".join(tabs)}</div>'
+    if decided:
+        active = opening == "decided"
+        tabs.append(f'<button class="rtab{" active" if active else ""}" data-k="decided">已決定 {len(decided)} 組</button>')
+        hidden = "" if active else " hidden"
+        panels.append(
+            f'<div class="rpanel" data-k="decided"{hidden}><p class="rnote">做過的決定。按「撤銷」會改回待審；'
+            '放行的書要按上方「套用並重算採購建議」才會反映到採購清單。</p>'
+            '<table class="rtbl"><thead><tr><th>原書（課綱列的）</th><th>決定</th><th>採購書名</th><th>狀態</th>'
+            f'<th></th></tr></thead><tbody>{"".join(_decided_row(g) for g in decided)}</tbody></table></div>'
+        )
+    return (f'<div class="card" id="review">{head}{banner}<div class="filters">{"".join(tabs)}</div>'
             f'{"".join(panels)}</div>')
 
 
@@ -580,6 +669,21 @@ a.kpi {{ display:block; text-decoration:none; color:inherit; }}
 .rnote {{ margin:0 0 10px; font-size:12.5px; color:var(--text-secondary); }}
 .rtbl td {{ font-size:12.5px; }}
 .rdim {{ color:var(--text-secondary); }}
+.ract {{ min-width:230px; }}
+.abtn {{ font:inherit; font-size:12px; padding:3px 10px; margin:0 4px 4px 0; border-radius:6px; cursor:pointer;
+  border:1px solid var(--border); background:var(--surface); color:var(--text-primary); }}
+.abtn:hover {{ border-color:var(--text-secondary); }}
+.abtn:disabled {{ opacity:.5; cursor:not-allowed; }}
+.abtn-no {{ color:#a33; }}
+.atitle {{ display:block; width:100%; font:inherit; font-size:12.5px; padding:3px 6px; margin-bottom:4px;
+  border:1px solid var(--border); border-radius:6px; }}
+.aisbn {{ display:block; width:100%; font:inherit; font-size:12.5px; padding:3px 6px; margin-bottom:4px;
+  border:1px solid var(--border); border-radius:6px; }}
+.aerr {{ color:var(--critical); font-size:12px; margin-top:2px; }}
+.rbatch {{ margin:0 0 8px; font-size:12.5px; color:var(--text-secondary); }}
+.rapply {{ margin:0 0 10px; padding:8px 12px; border-radius:8px; border:1px solid #e0900a;
+  background:rgba(224,144,10,.10); font-size:13px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }}
+tr.rdone td {{ opacity:.45; transition:opacity .4s; }}
 table {{ border-collapse:collapse; width:100%; font-size:13px; }}
 th,td {{ border-bottom:1px solid var(--gridline); padding:8px 10px; text-align:left; vertical-align:top; }}
 th {{ color:var(--text-secondary); font-weight:600; white-space:nowrap; }}
@@ -683,7 +787,7 @@ th.chk, td.chk {{ width:28px; text-align:center; padding-left:6px; padding-right
     <div class="filters">{filter_btns}<span class="fsep"></span>{_category_btns()}</div>
     {_rec_table(data["recs"])}
   </div>
-  {_review_panel(data["review"])}
+  {_review_panel(data["review"], data.get("decided"), data.get("pending_apply", 0))}
 </div>
 </div>
 <script>
@@ -1214,6 +1318,51 @@ def _expand_departments(names: list[str] | None) -> list[str] | None:
     for name in names:
         expanded.extend(_DEPT_TO_RAW.get(name, [name]))
     return expanded
+
+
+def _review_ids(body) -> list | None:
+    """body["ids"] 必須是整數清單（布林不算）；否則回 None。個數與內容的其他檢查在 review_actions。"""
+    ids = body.get("ids") if isinstance(body, dict) else None
+    if isinstance(ids, list) and all(isinstance(i, int) and not isinstance(i, bool) for i in ids):
+        return ids
+    return None
+
+
+def _review_error(message: str) -> JSONResponse:
+    return JSONResponse({"ok": False, "message": message}, status_code=400)
+
+
+@app.post("/review/decide")
+def review_decide(body: dict = Body(...)):
+    """對一組待審書目下決定（買配對到的書／買原書／輸入書名加入／都不買）。只收 JSON；驗證失敗不寫入任何東西。"""
+    ids = _review_ids(body)
+    if ids is None:
+        return _review_error("ids 必須是整數清單")
+    title, isbn = body.get("title"), body.get("isbn")
+    if not all(v is None or isinstance(v, str) for v in (title, isbn)):
+        return _review_error("書名與 ISBN 必須是文字")
+    try:
+        with SessionLocal() as s:
+            result = review_actions.decide(s, ids, body.get("action"), title=title, isbn=isbn)
+            s.commit()
+    except review_actions.ReviewError as e:
+        return _review_error(str(e))
+    return {"ok": True, "changed": len(result.changed), "skipped": result.skipped}
+
+
+@app.post("/review/undo")
+def review_undo(body: dict = Body(...)):
+    """撤銷決定：改回待審，清掉選擇與採購書名。"""
+    ids = _review_ids(body)
+    if ids is None:
+        return _review_error("ids 必須是整數清單")
+    try:
+        with SessionLocal() as s:
+            result = review_actions.undo(s, ids)
+            s.commit()
+    except review_actions.ReviewError as e:
+        return _review_error(str(e))
+    return {"ok": True, "changed": len(result.changed), "skipped": result.skipped}
 
 
 def _run_apply() -> None:

@@ -261,3 +261,124 @@ def test_unverified_marker_disappears_once_a_human_approved_the_book(decided_wor
     recs = {r.title: r for r in dashboard._load_data()["recs"] if r.title.startswith("TESTBOOK-RV")}
 
     assert recs["TESTBOOK-RV-CONFIRMED"].unverified is False
+
+
+def test_load_data_puts_decided_books_in_decided_not_in_pending_groups(decided_world):
+    data = dashboard._load_data()
+
+    decided = [g for g in data["decided"] if g.title.startswith("TESTBOOK-RV")]
+    assert {(g.title, g.choice) for g in decided} == {("TESTBOOK-RV-BUY-MATCHED", "original"),
+                                                      ("TESTBOOK-RV-CONFIRMED", "custom")}
+    assert all(g.buy_title and not g.applied for g in decided)
+    pending_titles = {g.title for groups in data["review"].values() for g in groups}
+    assert not any(t.startswith("TESTBOOK-RV-BUY") or t.startswith("TESTBOOK-RV-CONF") for t in pending_titles)
+
+
+def test_pending_apply_counts_approved_unapplied_books(decided_world):
+    assert dashboard._load_data()["pending_apply"] >= 2          # 兩筆播種的決定（真實資料庫目前沒有任何決定）
+
+
+# ---------- 審核卡片的動作區 ----------
+
+import dataclasses
+
+
+def decided_grp(**kw):
+    base = dict(choice="original", buy_title="買的書", applied=False)
+    base.update(kw)
+    return dataclasses.replace(grp("mismatch", "原書X", vb_ids=(7,)), **base)
+
+
+def test_group_pending_carries_choice_buy_title_and_applied():
+    from library_agent.review_groups import PendingItem, group_pending
+
+    def item(vb_id, course, applied):
+        return PendingItem(vb_id=vb_id, citation_id=vb_id, course_id=course, course_name=course, enrolled=10,
+                           title="T", authors=[], matched_title="M", matched_authors=[], source="nla",
+                           verified=True, verdict="mismatch", judge="llm", reason="r", confidence=0.9,
+                           choice="original", buy_title="T", applied=applied)
+
+    groups = group_pending([item(1, "A", True), item(2, "B", False)], {}, 0.6)["mismatch"]
+
+    assert [(g.choice, g.buy_title, g.applied) for g in groups] == [("original", "T", False)]   # 組內全部已套用才算已套用
+
+
+def test_mismatch_row_has_three_action_buttons():
+    html = panel(mismatch=[grp("mismatch")])
+
+    assert all(f'data-act="{a}"' in html for a in ("original", "matched", "none"))
+    assert 'data-act="custom"' not in html
+    assert "買原書" in html and "買配對到的書" in html and "都不買" in html
+
+
+def test_notfound_row_has_a_prefilled_title_box_an_isbn_box_and_two_buttons():
+    html = panel(notfound=[grp("notfound", "找不到的書", source="ncl_not_found", judge=None, reason=None)])
+
+    assert re.search(r'<input class="atitle"[^>]*value="找不到的書"', html)
+    assert 'class="aisbn"' in html
+    assert 'data-act="custom"' in html and 'data-act="none"' in html
+    assert 'data-act="original"' not in html and 'data-act="matched"' not in html
+    assert "加入採購清單" in html and "捨棄" in html
+
+
+def test_other_row_has_two_buttons():
+    html = panel(other=[grp("other", judge=None, reason=None)])
+
+    assert 'data-act="matched"' in html and 'data-act="none"' in html
+    assert "買這本書" in html and 'data-act="original"' not in html
+
+
+def test_pending_rows_have_a_checkbox_for_batch_actions():
+    html = panel(mismatch=[grp("mismatch")])
+
+    assert 'class="rchk"' in html
+
+
+def test_batch_bars_offer_only_matched_and_none():
+    html = panel(mismatch=[grp("mismatch")], notfound=[grp("notfound", "B", vb_ids=(2,))],
+                 other=[grp("other", "C", vb_ids=(3,))])
+
+    assert 'data-batch="original"' not in html and 'data-batch="custom"' not in html
+    chunks = html.split('<div class="rpanel"')[1:]          # 逐個面板切開，避免正規表示式跨面板
+    panels = {m.group(1): chunk for chunk in chunks for m in [re.match(r' data-k="(\w+)"', chunk)] if m}
+    mm, nf = panels["mismatch"], panels["notfound"]
+    assert 'data-batch="matched"' in mm and 'data-batch="none"' in mm
+    assert 'data-batch="none"' in nf and 'data-batch="matched"' not in nf     # 查無此書沒有「買配對到的書」
+
+
+def test_decided_tab_lists_choice_status_and_undo():
+    review = {k: [] for k in KINDS}
+    done = [decided_grp(), decided_grp(choice="none", buy_title=None, applied=False, vb_ids=(8,)),
+            decided_grp(choice="custom", buy_title="輸入的書", applied=True, vb_ids=(9,))]
+
+    html = dashboard._review_panel(review, decided=done, pending_apply=0)
+
+    assert 'data-k="decided"' in html and "已決定" in html
+    assert "買原書" in html and "輸入書名加入" in html and "都不買" in html
+    assert "待套用" in html and "已套用" in html
+    assert html.count('data-undo') == 3
+    decided_panel = re.search(r'<div class="rpanel" data-k="decided".*', html, re.S).group(0)
+    assert 'class="tbtn"' not in decided_panel               # 已不是待審，沒有追溯可展開
+
+
+def test_no_decided_tab_when_nothing_was_decided():
+    assert 'data-k="decided"' not in panel(mismatch=[grp("mismatch")])
+
+
+def test_apply_banner_shows_only_when_there_is_something_to_apply():
+    review = {k: [] for k in KINDS}
+    review["mismatch"] = [grp("mismatch")]
+
+    with_banner = dashboard._review_panel(review, pending_apply=3)
+    without = dashboard._review_panel(review, pending_apply=0)
+
+    assert 'id="applybtn"' in with_banner and "3 筆決定待套用" in with_banner
+    assert 'id="applybtn"' not in without
+
+
+def test_action_area_escapes_untrusted_text():
+    evil = '"><script>alert(1)</script>'
+    html = panel(notfound=[grp("notfound", evil, source="ncl_not_found", judge=None, reason=None)])
+
+    assert "<script>alert(1)</script>" not in html
+    assert "&lt;script&gt;" in html

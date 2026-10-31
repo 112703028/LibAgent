@@ -13,6 +13,7 @@
 """
 from collections import defaultdict
 from dataclasses import dataclass
+from datetime import datetime
 
 from library_agent.agents.match_auditor import _norm
 
@@ -41,6 +42,11 @@ class PendingItem:
     judge: str | None
     reason: str | None
     confidence: float
+    # 已決定的書才有（儀表板「已決定」分頁用）
+    choice: str | None = None            # matched / original / custom / none
+    buy_title: str | None = None         # 採購書名（買原書、輸入書名時）
+    applied: bool = False                # 決定已反映到館藏與採購建議
+    reviewed_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -61,6 +67,10 @@ class ReviewGroup:
     vb_ids: tuple                 # 組內所有書目（verified_book）的 id，由小到大
     priority: str | None          # 所在採購建議的優先級（組內最嚴重者）；不在清單為 None
     copies: int | None
+    choice: str | None = None     # 已決定的組：決定、採購書名、是否已套用、決定時間（組內取第一筆／全部已套用／最近一次）
+    buy_title: str | None = None
+    applied: bool = False
+    reviewed_at: datetime | None = None
 
 
 def classify(item: PendingItem) -> str:
@@ -93,6 +103,8 @@ def _make_group(kind: str, members: list, rec_of: dict, threshold: float) -> Rev
         courses=sorted(per_course.values()), items=len(members),
         enrolled_total=sum(n for _, n in per_course.values()),
         vb_ids=tuple(m.vb_id for m in members), priority=priority, copies=copies,
+        choice=rep.choice, buy_title=rep.buy_title, applied=all(m.applied for m in members),
+        reviewed_at=max((m.reviewed_at for m in members if m.reviewed_at), default=None),
     )
 
 
