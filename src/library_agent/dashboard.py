@@ -1012,6 +1012,10 @@ async function _applyReview(btn) {{
   try {{
     await _postJson('/review/apply', {{}});
     btn.textContent = '套用中…（進度見上方執行紀錄，完成後會自動重新整理）';
+    // 與「執行 pipeline」相同：送出後要重啟狀態輪詢（閒置時它不會自己排程）。伺服器已確認工作開始，
+    // 所以直接標記「親眼看過執行中」，即使工作在下一次輪詢前就結束，也一定會重新整理。
+    _sawRunning = true;
+    _poll();
   }} catch (e) {{
     alert(e.message);
     btn.disabled = false;
