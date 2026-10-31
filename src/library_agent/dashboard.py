@@ -552,7 +552,8 @@ def _review_panel(review: dict, decided: list | None = None, pending_apply: int 
         if groups:
             body = (
                 _batch_bar(kind)
-                + '<table class="rtbl"><thead><tr><th class="chk"></th><th>原書（課綱列的）</th><th>配到的書</th>'
+                + '<table class="rtbl"><thead><tr><th class="chk"><input type="checkbox" class="rchkall" title="全選/全不選"></th>'
+                '<th>原書（課綱列的）</th><th>配到的書</th>'
                 '<th>原因</th><th>用到的課（人數）</th><th>人數合計</th><th>採購清單</th><th>處理</th></tr></thead>'
                 f'<tbody>{"".join(_review_row(g) for g in groups)}</tbody></table>'
             )
@@ -921,6 +922,120 @@ document.querySelectorAll('.rtab').forEach(function(b){{
     document.querySelectorAll('.rpanel').forEach(function(p){{ p.hidden = p.dataset.k !== b.dataset.k; }});
   }});
 }});
+
+// ---- 審核動作：決定、批次、撤銷、套用 ----
+// 成功後整頁重新整理（記住目前的分頁、回到審核區塊）：待審清單、「已決定」分頁與待套用數都由伺服器重算，
+// 畫面不會與資料不一致。
+function _reviewReload() {{
+  const active = document.querySelector('.rtab.active');
+  try {{ if (active) sessionStorage.setItem('reviewTab', active.dataset.k); }} catch (e) {{}}
+  location.hash = '#review';
+  location.reload();
+}}
+try {{
+  const k = sessionStorage.getItem('reviewTab');
+  if (k) {{
+    sessionStorage.removeItem('reviewTab');
+    const b = document.querySelector('.rtab[data-k="' + k + '"]');
+    if (b) b.click();
+  }}
+}} catch (e) {{}}
+
+async function _postJson(url, payload) {{
+  const r = await fetch(url, {{method: 'POST', headers: {{'Content-Type': 'application/json'}}, body: JSON.stringify(payload)}});
+  let data = null;
+  try {{ data = await r.json(); }} catch (e) {{}}
+  if (!r.ok || !data || data.ok === false) throw new Error((data && data.message) || ('HTTP ' + r.status));
+  return data;
+}}
+
+function _rowIds(tr) {{ return tr.dataset.ids.split(',').map(Number); }}
+
+function _rowBusy(tr, busy) {{
+  tr.querySelectorAll('.abtn').forEach(function(b){{ b.disabled = busy; }});
+}}
+
+function _rowError(tr, message) {{
+  const box = tr.querySelector('.aerr');
+  if (box) {{ box.textContent = message; box.hidden = false; }}
+}}
+
+async function _decideRow(btn) {{
+  const tr = btn.closest('tr');
+  const payload = {{ids: _rowIds(tr), action: btn.dataset.act}};
+  if (btn.dataset.act === 'custom') {{
+    payload.title = tr.querySelector('.atitle').value;
+    payload.isbn = tr.querySelector('.aisbn').value;
+  }}
+  _rowBusy(tr, true);
+  try {{
+    const d = await _postJson('/review/decide', payload);
+    if (d.changed === 0) throw new Error('這組已被處理過，請重新整理頁面');
+    _reviewReload();
+  }} catch (e) {{
+    _rowError(tr, e.message);
+    _rowBusy(tr, false);
+  }}
+}}
+
+async function _batchDecide(btn) {{
+  const panel = btn.closest('.rpanel');
+  const rows = Array.from(panel.querySelectorAll('.rchk:checked')).map(function(c){{ return c.closest('tr'); }});
+  if (!rows.length) {{ alert('請先勾選要處理的組'); return; }}
+  const ids = [].concat.apply([], rows.map(_rowIds));
+  if (!confirm('確定對 ' + rows.length + ' 組（' + ids.length + ' 筆書目）執行「' + btn.textContent + '」？')) return;
+  panel.querySelectorAll('.abtn').forEach(function(b){{ b.disabled = true; }});
+  try {{
+    for (let i = 0; i < ids.length; i += 200) {{      // 伺服器一次最多收 200 個
+      await _postJson('/review/decide', {{ids: ids.slice(i, i + 200), action: btn.dataset.batch}});
+    }}
+  }} catch (e) {{
+    alert(e.message);
+  }}
+  _reviewReload();
+}}
+
+async function _undoRow(btn) {{
+  const tr = btn.closest('tr');
+  btn.disabled = true;
+  try {{
+    await _postJson('/review/undo', {{ids: _rowIds(tr)}});
+    _reviewReload();
+  }} catch (e) {{
+    _rowError(tr, e.message);
+    btn.disabled = false;
+  }}
+}}
+
+async function _applyReview(btn) {{
+  btn.disabled = true;
+  try {{
+    await _postJson('/review/apply', {{}});
+    btn.textContent = '套用中…（進度見上方執行紀錄，完成後會自動重新整理）';
+  }} catch (e) {{
+    alert(e.message);
+    btn.disabled = false;
+  }}
+}}
+
+const _reviewCard = document.getElementById('review');
+if (_reviewCard) {{
+  _reviewCard.addEventListener('click', function(ev){{
+    const t = ev.target;
+    const act = t.closest('[data-act]');
+    if (act) return _decideRow(act);
+    const batch = t.closest('[data-batch]');
+    if (batch) return _batchDecide(batch);
+    const undo = t.closest('[data-undo]');
+    if (undo) return _undoRow(undo);
+    const apply = t.closest('#applybtn');
+    if (apply) return _applyReview(apply);
+  }});
+  _reviewCard.addEventListener('change', function(ev){{
+    const all = ev.target.closest('.rchkall');
+    if (all) all.closest('.rpanel').querySelectorAll('.rchk').forEach(function(c){{ c.checked = all.checked; }});
+  }});
+}}
 
 const _el = id => document.getElementById(id);
 let _sawRunning = false;  // 這個分頁是否親眼看過 running；只有這樣才代表「這次是我觸發的」

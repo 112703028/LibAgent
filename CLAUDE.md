@@ -108,8 +108,30 @@ match_auditor 判定）→ Alma 館藏 → 冊數怎麼算。**只讀**，不核
 - 分組規則在 `review_groups.py`（純函式）：配錯依（原書名, 配到的書名），**配到的書名必須在鍵裡**，否則同名不同作者的書會被併成一組；
   查無此書只依原書名；同一門課在組內只算一次人數。學系篩選只影響組內計入哪些書目，「所在採購建議」是全校的。
 - 採購表不再有待審列；優先級篩選的「待審核」與 KPI 卡片改成連結；待審清單的 CSV 匯出在審核卡片標頭（`/export/pending`）。
-- **還沒做**（設計在 `docs/superpowers/specs/2026-10-31-review-panel-design.md`）：第二步「採購冊數由使用者決定」、
-  第三步審核動作（配錯：買原書／買配對到的書／都不買；查無此書：輸入書名加入採購清單或捨棄）。目前審核仍只能用命令列 `main review`。
+- **還沒做**（設計在 `docs/superpowers/specs/2026-10-31-review-panel-design.md`）：「採購冊數由使用者決定」。
+
+#### 審核動作（審核卡片上的按鈕，也是 `library-agent review` 的核准／退回走的同一份邏輯：`review_actions.py`）
+
+| 類別 | 按鈕 | 結果 |
+|---|---|---|
+| 配錯 | 買配對到的書／買原書／都不買 | approved(matched)／approved(original)／rejected(none) |
+| 查無此書 | 書名輸入框（預填原書名）＋選填 ISBN → 加入採購清單；捨棄 | approved(custom)／rejected(none) |
+| 其他 | 買這本書／都不買 | approved(matched)／rejected(none) |
+
+- 一次作用在一組的所有書目；只處理 `pending` 的書目，已被別人處理的不覆蓋（回報 `skipped`）。多選批次只開放「買配對到的書」與「都不買」，有確認視窗，一次請求最多 200 個 id（前端自動分批）。
+  「已決定」分頁可撤銷（改回待審；原本是買原書／輸入書名的，一併刪掉用採購書名查的舊館藏與建議）。
+- **採購書名**：`verified_books.purchase_title / purchase_authors / purchase_isbn`，**不覆蓋** `canonical_*`（驗證器配到的證據）。
+  下游一律讀 model 的 `buy_title / buy_authors / buy_isbn`（hybrid 屬性）；**`buy_isbn` 不可 coalesce**：買原書沒有有效 ISBN 時，
+  不能沿用配到那一本的 ISBN（那正是配錯的來源）。決定另記 `review_choice / reviewed_at / review_applied_at`。
+- **決定要「套用」才反映到採購清單**：卡片上的「N 筆決定待套用 ［套用並重算採購建議］」→ `POST /review/apply`
+  （`review_apply.apply_review`）：有採購書名或沒有館藏列者用採購書名／ISBN 重查 Alma（`librarian.recheck_holdings`），
+  再由 recommender 重算全校，只有確實出現在採購建議裡、且重查沒失敗的才標 `review_applied_at`；失敗下次可重試。
+  與 `/run` 共用鎖與狀態（同時只能跑一個），結束後頁面自動重新整理。退回在讀取端立刻生效（`purchasable()`）。
+- 端點都是 JSON 的 POST：`/review/decide`、`/review/undo`、`/review/apply`；驗證失敗回 400 且不寫入。
+  validator 本來就不重驗 approved／rejected 的書，所以決定不會被重跑 pipeline 洗掉（有測試釘住）。
+- **限制**：儀表板沒有登入機制、預設只綁 `127.0.0.1`，開放區網前要另外做登入；沒有記錄是誰決定的（只記時間）。
+  「買原書」沒有 ISBN 時只能用書名查 Alma，Alma 查詢不看作者，館藏可能混到同名他書。
+- 寫入決定的測試一律用 `isolated_db`，**不要**對開發庫做真實決定。
 
 ## 資料庫
 

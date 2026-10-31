@@ -40,7 +40,8 @@ def world(isolated_db, monkeypatch):
     return state
 
 
-def decided(S, n, *, review="approved", choice="matched", purchase_title=None, holding=None, applied=False):
+def decided(S, n, *, review="approved", choice="matched", purchase_title=None, holding=None, applied=False,
+            verdict=None):
     """播種第 n 門課的一個書目；holding=(狀態, 冊數) 時一併建館藏列。回傳 verified_book id。"""
     with S() as s:
         s.add(Course(course_id=f"P{n}", course_name=f"課-P{n}", semester="114-1", source_file="t",
@@ -51,7 +52,7 @@ def decided(S, n, *, review="approved", choice="matched", purchase_title=None, h
         s.flush()
         vb = VerifiedBook(citation_id=c.id, canonical_title=f"配到的書{n}", canonical_authors="[]",
                           isbn_13="9780306406157", source="nla", verified=True, review_status=review,
-                          review_choice=choice, purchase_title=purchase_title,
+                          review_choice=choice, purchase_title=purchase_title, pairing_verdict=verdict,
                           purchase_authors="[]" if purchase_title else None,
                           reviewed_at=NOW, review_applied_at=NOW if applied else None)
         s.add(vb)
@@ -180,6 +181,26 @@ def test_apply_endpoint_refuses_while_a_run_is_in_progress(client, world):
     body = client.post("/review/apply").json()
 
     assert body["ok"] is False and "執行中" in body["message"]
+
+
+def test_decide_then_apply_puts_the_book_in_the_purchase_list_under_the_purchase_title(client, world):
+    # 端對端：配錯的書（被擋在採購清單外）→ 按「買原書」→ 套用 → 以原書名出現在採購清單
+    vb = decided(world.Session, 1, review="pending", choice=None, verdict="mismatch", holding=("missing", 0))
+    before = dashboard._load_data()
+    assert before["recs"] == [] and before["review"]["mismatch"][0].vb_ids == (vb,)
+
+    assert client.post("/review/decide", json={"ids": [vb], "action": "original"}).json()["ok"] is True
+    mid = dashboard._load_data()
+    assert mid["recs"] == [] and mid["pending_apply"] == 1             # 決定後還沒套用：清單沒有、待套用 1 筆
+    assert mid["review"]["mismatch"] == [] and mid["decided"][0].choice == "original"
+
+    result = RV.apply_review()
+
+    assert result.applied == 1 and world.check_calls == [(None, "書1")]     # 用原書名查館藏（原書沒有 ISBN）
+    after = dashboard._load_data()
+    assert [r.title for r in after["recs"]] == ["書1"]                       # 採購清單用原書名，不是配到的「配到的書1」
+    assert after["recs"][0].unverified is False and after["pending_apply"] == 0
+    assert after["decided"][0].applied is True
 
 
 def test_apply_endpoint_starts_the_job_and_marks_the_run_as_running(client, world):
