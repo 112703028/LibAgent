@@ -348,3 +348,32 @@ def test_render_pending_reason_has_no_doubled_full_stop(isolated_db):
     html = T.render_trace(pending_trace_of(isolated_db, pending_world(isolated_db, reason="作者不同。")))
 
     assert "。。" not in html
+
+
+# ---------- 代表館藏：第 ④ 段與第 ⑤ 段必須用同一筆 ----------
+
+def test_holding_section_and_calculation_agree_when_a_non_representative_holding_grew(isolated_db):
+    # recommender 當初選 C1 的館藏（2 冊）為代表；之後 C2 那筆被 librarian 更新成 3 冊，建議沒被刪
+    # （librarian 只刪「指向被更新那筆」的建議）。第 ④ 段與第 ⑤ 段的「現有冊數」不能各說各話。
+    specs = [dict(course_id="C1", enrolled=60, holdings=2), dict(course_id="C2", enrolled=40, holdings=3)]
+
+    trace = trace_of(isolated_db, world(isolated_db, specs))
+
+    assert trace.calc.current == 3
+    assert trace.holding.copies == trace.calc.current
+
+
+def _hc(id, copies):
+    from types import SimpleNamespace
+    return SimpleNamespace(id=id, holdings_count=copies)
+
+
+def test_most_copies_wins_and_a_tie_goes_to_the_smaller_id():
+    key = T._copies_then_smaller_id
+
+    assert max([_hc(1, 2), _hc(2, 9), _hc(3, 5)], key=key).id == 2
+    assert max([_hc(7, 3), _hc(4, 3)], key=key).id == 4
+
+
+def test_null_copies_count_as_zero():
+    assert max([_hc(1, None), _hc(2, 1)], key=T._copies_then_smaller_id).id == 2

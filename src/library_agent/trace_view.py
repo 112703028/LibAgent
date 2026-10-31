@@ -34,7 +34,7 @@ class Syllabus:
 
 
 @dataclass(frozen=True)
-class SourceItem:
+class SourceItem:      #解析結果
     """這本書在某門課裡的一筆書目（第 1、2 段）。"""
     course_id: str
     course_name: str
@@ -136,7 +136,11 @@ def _pairing_key(vb) -> tuple:
 
 def _calc(members: list, stored_priority: str, stored_copies: int) -> Calc:
     """用 merge_group 重算，並拆出畫面要解釋的中間值（需求、缺口）。
-    need 的算法必須與 recommender._decide 相同：總人數 0 時需求為 1。"""
+    need 的算法必須與 recommender._decide 相同：總人數 0 時需求為 1。
+    
+    members：recommender.Member 的清單。每個 Member 是「這本書在某一門課裡的一筆」，欄位有 holding_id, holdings_count, status, course_id, course_name, citation_id, is_required, enrolled。
+    stored_priority、stored_copies：資料庫裡存的建議（例如 "medium"、2）。傳進來只為了最後比對，_calc 自己不讀資料庫。
+    """
     from library_agent.agents import recommender as R   # 延後 import：它在 import 時會建構 OpenAI client
 
     decision = R.merge_group(members)
@@ -144,8 +148,10 @@ def _calc(members: list, stored_priority: str, stored_copies: int) -> Calc:
     per_course: dict[str, tuple[str, int]] = {}
     for m in sorted(members, key=lambda m: (m.course_name, m.course_id)):
         per_course.setdefault(m.course_id, (m.course_name, m.enrolled))
-    total = decision.enrolled_total
+
+    total = decision.enrolled_total  # 總人數
     need = math.ceil(total / per) if total > 0 else 1
+
     return Calc(
         courses=list(per_course.values()), enrolled_total=total, per_copy=per, need=need,
         current=decision.current_copies, gap=max(need - decision.current_copies, 0),
@@ -156,6 +162,12 @@ def _calc(members: list, stored_priority: str, stored_copies: int) -> Calc:
     )
 
 
+def _copies_then_smaller_id(holding) -> tuple:
+    """比大小用的鍵：冊數多的勝；冊數相同時 id 小的勝（取負號，讓 max 挑到 id 最小的）。
+    冊數欄位可能是 NULL，視為 0。與 recommender.merge_group 挑代表館藏的規則相同。"""
+    return (holding.holdings_count or 0, -holding.id)
+
+
 def build_trace(session, rec_id: int) -> Trace | None:
     """蒐集一筆採購建議的決策過程。找不到回 None。"""
     from library_agent.agents import recommender as R
@@ -164,10 +176,13 @@ def build_trace(session, rec_id: int) -> Trace | None:
     if rec is None:
         return None
 
+    # 取關聯表 recommendation_courses 裡屬於這筆建議的所有列。一本書被幾個書目用到，就有幾列。
     links = session.execute(
         select(RecommendationCourse).where(RecommendationCourse.recommendation_id == rec_id)
     ).scalars().all()
-    snapshot = {link.citation_id: link.enrolled for link in links}     # 計算當時的人數
+
+    snapshot = {link.citation_id: link.enrolled for link in links}     # 計算當時的人數  {citation_id: 人數}
+
     if links:
         citation_ids = list(snapshot)
     else:   # 舊格式（沒有關聯列）：退回這筆建議自己的書目
@@ -178,6 +193,11 @@ def build_trace(session, rec_id: int) -> Trace | None:
         )
         citation_ids = [own] if own is not None else []
 
+    '''
+    rows 格式 : 
+    rows = [ (citation_301, vb_301, hc_301, course_政治學),
+         (citation_302, vb_302, hc_302, course_政治學概論) ]
+    '''
     rows = session.execute(
         select(Citation, VerifiedBook, HoldingCheck, Course)
         .join(VerifiedBook, VerifiedBook.citation_id == Citation.id)
@@ -192,10 +212,11 @@ def build_trace(session, rec_id: int) -> Trace | None:
     grouped: dict[tuple, list] = {}
     members = []
     holdings = []
+
     for citation, vb, holding, course in rows:
         enrolled = snapshot.get(citation.id, course.enrolled_count or 0)
         syllabi.setdefault(course.course_id, _syllabus(course))
-        sources.append(_source_item(citation, course, enrolled))
+        sources.append(_source_item(citation, course, enrolled))    # 每個書目是一次獨立的解析結果，不是重複資料。 不去重
         grouped.setdefault(_pairing_key(vb), []).append((citation.title, _authors(citation.authors)))
         if holding is not None:
             holdings.append(holding)
@@ -213,8 +234,9 @@ def build_trace(session, rec_id: int) -> Trace | None:
 
     holding_info = calc = None
     if members:
-        rep = next((h for h in holdings if h.id == rec.holding_id),
-                   max(holdings, key=lambda h: ((h.holdings_count or 0), -h.id)))
+        # 代表館藏永遠取冊數最多者（與 merge_group 同一規則），第 ④ 段與第 ⑤ 段的「現有冊數」才會一致。
+        # 不看 rec.holding_id：建議產生後若別筆館藏被更新，它指向的那筆可能已不是最大的。
+        rep = max(holdings, key=_copies_then_smaller_id)  # 因為一本書可能有好幾筆館藏查詢結果，但第4段只能顯示一筆
         holding_info = HoldingInfo(
             rep.status, rep.holdings_count or 0, rep.alma_mms_id, rep.matched_edition,
             len({(h.status, h.holdings_count, h.alma_mms_id) for h in holdings}) > 1,
