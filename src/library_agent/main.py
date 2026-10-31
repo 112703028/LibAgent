@@ -15,6 +15,7 @@ from library_agent.db.models import (
     RecommendationCourse,
     VerifiedBook,
 )
+from library_agent import review_actions
 from library_agent.db.session import SessionLocal
 from library_agent.state import PurchasePriority
 
@@ -171,10 +172,10 @@ def review() -> None:
             if ans == "q":
                 break
             elif ans == "a":
-                vb.review_status = "approved"
+                review_actions.decide(session, [vb.id], "matched")   # 與儀表板同一份邏輯：記錄選擇與時間
                 print("  ✓ 已核准\n")
             elif ans == "r":
-                vb.review_status = "rejected"
+                review_actions.decide(session, [vb.id], "none")
                 print("  ✗ 已退回（下游將排除）\n")
             elif ans == "e":
                 new_title = input("  新書名 > ").strip()
