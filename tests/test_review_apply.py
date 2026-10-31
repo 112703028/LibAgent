@@ -121,7 +121,7 @@ def test_apply_rechecks_a_matched_book_that_has_no_holding_row(world):
 
 
 def test_apply_does_nothing_when_nothing_is_pending(world, monkeypatch):
-    monkeypatch.setattr(R, "recommender_node", lambda *a, **k: pytest.fail("沒有待套用時不該重算"))
+    monkeypatch.setattr(R, "recommend", lambda *a, **k: pytest.fail("沒有待套用時不該重算"))
 
     assert RV.apply_review() == RV.ApplyResult(0, 0, [])
 
@@ -143,13 +143,27 @@ def test_a_failed_recheck_leaves_the_book_unapplied_and_is_retried_next_time(wor
     assert second.applied == 1 and applied_at(world.Session, vb) is not None
 
 
+def test_apply_recomputes_only_the_applied_books(world, monkeypatch):
+    applied = decided(world.Session, 1, choice="matched", holding=("missing", 0))
+    decided(world.Session, 2, review="approved", choice="matched", holding=("missing", 0), applied=True)   # 已套用的不再處理
+    with world.Session() as s:
+        cit = s.get(VerifiedBook, applied).citation_id
+    seen = []
+    real = R.recommend
+    monkeypatch.setattr(R, "recommend", lambda only_citation_ids=None: seen.append(only_citation_ids) or real(only_citation_ids=only_citation_ids))
+
+    RV.apply_review()
+
+    assert seen == [{cit}]                       # 只重算這一本，不是全校
+
+
 def test_a_recommender_exception_marks_nothing_as_applied(world, monkeypatch):
     vb = decided(world.Session, 1, choice="matched", holding=("missing", 0))
 
     def boom(*args, **kwargs):
         raise RuntimeError("recommender 掛了")
 
-    monkeypatch.setattr(R, "recommender_node", boom)
+    monkeypatch.setattr(R, "recommend", boom)
 
     with pytest.raises(RuntimeError):
         RV.apply_review()

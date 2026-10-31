@@ -3,7 +3,8 @@
 審核按鈕只寫資料庫（review_actions）；放行的書要等這裡重查館藏、重算採購建議後才會出現在採購清單：
   1. 對「已核准、尚未套用」的書，有採購書名或還沒有館藏列者，用採購書名／ISBN 重查 Alma
      （librarian.recheck_holdings；館藏有變會連帶刪掉指向舊館藏的建議）
-  2. recommender 重算全校（簽章沒變不打 LLM，只有新增或數字變了的書才寫新理由）
+  2. recommender 只重算「包含這些書目」的書（recommend(only_citation_ids)）：不重寫全校的關聯列、
+     不重問無關書名的同書判斷；簽章沒變不打 LLM，只有新增或數字變了的書才寫新理由
   3. 只有「確實出現在採購建議裡」且重查沒失敗的書才標 review_applied_at；
      其餘不標，下次可重試，不留半套。recommender 若丟例外，整個流程中止、一本都不標。
 """
@@ -61,7 +62,8 @@ def apply_review() -> ApplyResult:
 
     token = runlog.bind_node("recommender")
     try:
-        out = recommender.recommender_node({})          # 例外往上丟：此時一本都不標為已套用
+        # 例外往上丟：此時一本都不標為已套用
+        out = recommender.recommend(only_citation_ids={cit for _id, cit, _t in books})
     finally:
         runlog.unbind_node(token)
 
