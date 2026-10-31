@@ -1,5 +1,4 @@
 import json
-import math
 from collections import defaultdict
 from dataclasses import dataclass
 
@@ -10,6 +9,7 @@ from library_agent.agents.match_auditor import _norm
 from library_agent.book_identity import assign_book_keys, llm_judge
 from library_agent.config import get_settings
 from library_agent.db.filters import purchasable
+from library_agent.demand import uncapped_copies
 from library_agent.db.models import (
     Citation,
     Course,
@@ -50,9 +50,7 @@ def _decide(
     """
     if status == HoldingStatus.OWNED_EBOOK:
         return PurchasePriority.SKIP, 0
-    per = max(_settings.students_per_copy, 1)
-    need = math.ceil(enrolled / per) if enrolled > 0 else 1
-    suggested = min(max(need - current_copies, 0), _settings.max_purchase_copies)
+    suggested = min(uncapped_copies(status, enrolled, current_copies), _settings.max_purchase_copies)   # 需求算式見 demand.py
     if suggested == 0:  # 現有實體館藏已足夠
         return PurchasePriority.SKIP, 0
     if current_copies <= 0:  # 完全沒有實體（missing / 只有書目記錄）

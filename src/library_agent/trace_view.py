@@ -9,13 +9,13 @@ build_trace 蒐集資料（只讀），render_trace 產生已逸出的 HTML 片�
 """
 import html
 import json
-import math
 from collections import defaultdict
 from dataclasses import dataclass
 
 from sqlalchemy import select
 
 from library_agent.book_kind import book_type_key
+from library_agent.demand import need_copies, uncapped_copies
 from library_agent.db.models import (
     Citation, Course, HoldingCheck, Recommendation, RecommendationCourse, VerifiedBook,
 )
@@ -150,11 +150,11 @@ def _calc(members: list, stored_priority: str, stored_copies: int) -> Calc:
         per_course.setdefault(m.course_id, (m.course_name, m.enrolled))
 
     total = decision.enrolled_total  # 總人數
-    need = math.ceil(total / per) if total > 0 else 1
+    need = need_copies(total)        # 與 recommender 同一份算式（demand.py）
 
     return Calc(
         courses=list(per_course.values()), enrolled_total=total, per_copy=per, need=need,
-        current=decision.current_copies, gap=max(need - decision.current_copies, 0),
+        current=decision.current_copies, gap=uncapped_copies(decision.status, total, decision.current_copies),
         cap=R._settings.max_purchase_copies, is_required=decision.is_required,
         status=decision.status.value, priority=decision.priority.value, copies=decision.copies,
         stored_priority=stored_priority, stored_copies=stored_copies,

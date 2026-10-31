@@ -164,6 +164,20 @@ class Recommendation(Base):
 # 這本書被哪些課用到：一個書目一列。人數是計算當時用的值（快照），is_required 是該課自己的類別。
 # 外鍵都是 ON DELETE CASCADE：validator / librarian 會直接 DELETE recommendations、
 # parser 會先刪舊 citations，沒有 cascade 這些節點會被外鍵擋住而崩潰。
+class PurchaseDecision(Base):
+    """人對一本書採購冊數的決定（儀表板的「決定冊數」）。以 book_key（同一本書的識別）為鍵、獨立於 recommendations：
+    recommendations 是衍生資料，librarian／recommender 會刪掉重建，決定不能跟著消失。
+    suggested_at_decision 是決定當時的系統建議，之後系統建議變了就能標示「建議已從 A 變成 B」。"""
+    __tablename__ = "purchase_decisions"
+    __table_args__ = (UniqueConstraint("book_key", name="uq_purchase_decisions_book_key"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    book_key: Mapped[str] = mapped_column(String(500), nullable=False)
+    copies: Mapped[int] = mapped_column(Integer, nullable=False)     # 0＝這次不買；留空（清除）則刪掉這一列
+    suggested_at_decision: Mapped[int] = mapped_column(Integer, nullable=False)
+    decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class RecommendationCourse(Base):
     __tablename__ = "recommendation_courses"
     __table_args__ = (
