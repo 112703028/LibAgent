@@ -16,7 +16,7 @@ from library_agent.db.models import (
 from library_agent.db.session import SessionLocal
 
 DEPT_A, DEPT_B = "TESTDEPT_RVA", "TESTDEPT_RVB"
-COURSES = ["TESTRVM1", "TESTRVM2", "TESTRVN1", "TESTRVO1"]
+COURSES = ["TESTRVM1", "TESTRVM2", "TESTRVN1", "TESTRVO1", "TESTRVP1", "TESTRVQ1"]
 T_MM, T_NF, T_OK = "TESTBOOK-RV-MM", "TESTBOOK-RV-NF", "TESTBOOK-RV-OK"
 
 
@@ -34,7 +34,7 @@ def _cleanup():
 
 
 def _seed_book(s, course_id, dept, enrolled, title, *, verified=True, verdict=None, review="pending",
-               source="nla", recommend=None):
+               source="nla", recommend=None, purchase_title=None, choice=None):
     """播種一門課的一個書目；recommend=(優先級, 冊數) 時一併建立採購建議與關聯列。"""
     s.add(Course(course_id=course_id, course_name=f"課-{course_id}", semester="9999", source_file="t",
                  raw_content="t", department=dept, enrolled_count=enrolled))
@@ -46,7 +46,8 @@ def _seed_book(s, course_id, dept, enrolled, title, *, verified=True, verdict=No
     vb = VerifiedBook(citation_id=c.id, canonical_title=title, canonical_authors="[]", source=source,
                       verified=verified, pairing_verdict=verdict,
                       pairing_judge="llm" if verdict else None, pairing_reason="作者不同" if verdict else None,
-                      review_status=review)
+                      review_status=review, review_choice=choice, purchase_title=purchase_title,
+                      purchase_authors="[]" if purchase_title else None)
     s.add(vb)
     s.flush()
     hc = HoldingCheck(verified_book_id=vb.id, status="missing", holdings_count=0)
@@ -230,3 +231,33 @@ def test_export_panel_has_no_pending_checkbox_and_kpi_links_to_the_review_panel(
 
     assert 'class="expchk" value="pending"' not in html
     assert 'class="kpi" href="#review"' in html
+
+
+# ---------- 採購書名與「未驗證」----------
+
+@pytest.fixture
+def decided_world():
+    _cleanup()
+    with SessionLocal() as s:
+        # 買原書：驗證器配到「TESTBOOK-RV-BUY-MATCHED」，人工決定採購書名「TESTBOOK-RV-BUY」
+        _seed_book(s, "TESTRVP1", DEPT_A, 20, "TESTBOOK-RV-BUY-MATCHED", verdict="mismatch", review="approved",
+                   choice="original", purchase_title="TESTBOOK-RV-BUY", recommend=("high", 2))
+        # 查無此書、但人工已確認（輸入書名加入）：不該再標「未驗證」
+        _seed_book(s, "TESTRVQ1", DEPT_A, 20, "TESTBOOK-RV-CONFIRMED", verified=False, source="ncl_not_found",
+                   review="approved", choice="custom", purchase_title="TESTBOOK-RV-CONFIRMED",
+                   recommend=("high", 2))
+        s.commit()
+    yield
+    _cleanup()
+
+
+def test_recrow_shows_the_purchase_title(decided_world):
+    titles = {r.title for r in dashboard._load_data()["recs"] if r.title.startswith("TESTBOOK-RV")}
+
+    assert "TESTBOOK-RV-BUY" in titles and "TESTBOOK-RV-BUY-MATCHED" not in titles
+
+
+def test_unverified_marker_disappears_once_a_human_approved_the_book(decided_world):
+    recs = {r.title: r for r in dashboard._load_data()["recs"] if r.title.startswith("TESTBOOK-RV")}
+
+    assert recs["TESTBOOK-RV-CONFIRMED"].unverified is False

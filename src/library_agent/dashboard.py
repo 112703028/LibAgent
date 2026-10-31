@@ -19,7 +19,7 @@ from typing import NamedTuple
 
 from fastapi import Body, FastAPI, File, Query, UploadFile
 from fastapi.responses import HTMLResponse, StreamingResponse
-from sqlalchemy import func, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import aliased
 
 from library_agent import runlog
@@ -95,6 +95,11 @@ class RecRow(NamedTuple):
 
 # 同一門課有兩個書目時（實測 8 組），取較「重」的類別
 _KEY_RANK = {"required": 0, "ai": 1, "optional": 2}
+
+
+def _confirmed():
+    """這個書目有人（或驗證器）確認過：驗證階段查到了，或人工核准了。「未驗證」標記只給兩者皆非的書。"""
+    return case((or_(VerifiedBook.verified.is_(True), VerifiedBook.review_status == "approved"), True), else_=False)
 
 
 def _load_data(departments: list[str] | None = None) -> dict:
@@ -181,10 +186,10 @@ def _load_data(departments: list[str] | None = None) -> dict:
         rec_rows = s.execute(
             rec_scoped(
                 select(
-                    Recommendation.id, Recommendation.priority, VerifiedBook.canonical_title,
+                    Recommendation.id, Recommendation.priority, VerifiedBook.buy_title,
                     HoldingCheck.status, Recommendation.suggested_copies, Recommendation.rationale,
                     Course.course_name, Course.department, Citation.is_required, Citation.raw_mention,
-                    Recommendation.course_id, VerifiedBook.verified,
+                    Recommendation.course_id, _confirmed(),
                 )
                 .join(HoldingCheck, HoldingCheck.id == Recommendation.holding_id)
                 .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id)
@@ -197,24 +202,24 @@ def _load_data(departments: list[str] | None = None) -> dict:
         # 這本書被哪些課用到（關聯表）。沒有關聯列的建議（recommender 重建前的舊格式列）退回用代表課程。
         used_by: dict[int, list[tuple]] = defaultdict(list)
         if rec_rows:
-            for rec_id, course_id, name, dept, is_required, raw_mention, verified in s.execute(
+            for rec_id, course_id, name, dept, is_required, raw_mention, confirmed in s.execute(
                 select(RecommendationCourse.recommendation_id, RecommendationCourse.course_id,
                        Course.course_name, Course.department,
-                       RecommendationCourse.is_required, Citation.raw_mention, VerifiedBook.verified)
+                       RecommendationCourse.is_required, Citation.raw_mention, _confirmed())
                 .join(Course, Course.course_id == RecommendationCourse.course_id)
                 .join(Citation, Citation.id == RecommendationCourse.citation_id)
                 .join(VerifiedBook, VerifiedBook.citation_id == RecommendationCourse.citation_id)
                 .where(RecommendationCourse.recommendation_id.in_([r[0] for r in rec_rows]))
             ).all():
-                used_by[rec_id].append((course_id, name, dept, is_required, raw_mention, verified))
+                used_by[rec_id].append((course_id, name, dept, is_required, raw_mention, confirmed))
 
         recs: list[RecRow] = []
         for (rec_id, priority, title, st, rec_copies, rationale,
-             rep_name, rep_dept, rep_req, rep_mention, rep_course_id, rep_verified) in rec_rows:
+             rep_name, rep_dept, rep_req, rep_mention, rep_course_id, rep_confirmed) in rec_rows:
             refs: dict[str, CourseRef] = {}
             section_ids: dict[str, set[str]] = defaultdict(set)    # 課名 → 這個名稱下有哪幾個班
-            entries = used_by.get(rec_id) or [(rep_course_id, rep_name, rep_dept, rep_req, rep_mention, rep_verified)]
-            for course_id, name, dept, is_required, raw_mention, _verified in entries:
+            entries = used_by.get(rec_id) or [(rep_course_id, rep_name, rep_dept, rep_req, rep_mention, rep_confirmed)]
+            for course_id, name, dept, is_required, raw_mention, _confirmed_flag in entries:
                 key = _book_type_key(is_required, raw_mention)
                 prev = refs.get(name)
                 section_ids[name].add(course_id)

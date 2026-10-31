@@ -1,5 +1,6 @@
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
@@ -25,7 +26,8 @@ def _to_status(result) -> HoldingStatus:
 
 
 def _check_one(vb: VerifiedBookDB) -> HoldingCheck:
-    result = check_holding(isbn=vb.isbn_13, title=vb.canonical_title)
+    # 查館藏用「採購書名」：人工決定買原書／輸入書名的書，要用那個書名（與 ISBN）去查，不是驗證器配到的
+    result = check_holding(isbn=vb.buy_isbn, title=vb.buy_title)
     status = _to_status(result)
 
     citation = vb.citation   # 因為VerifiedBook, Citation 有建立關聯，所以可以直接從 VerifiedBookDB 的 citation 欄位拿到對應的 CitationDB 物件
@@ -106,6 +108,42 @@ def _stage_save(session, holding: HoldingCheck, verified_book_id: int) -> bool:
         alma_mms_id=holding.alma_mms_id,
     ))
     return True
+
+
+@dataclass(frozen=True)
+class RecheckResult:
+    written: int      # 館藏有變、真的寫入的筆數
+    errors: list      # 查詢失敗的訊息
+    failed: list      # 查詢失敗的 verified_book id（呼叫端據此不標記為已套用）
+
+
+def recheck_holdings(vb_ids: list[int]) -> RecheckResult:
+    """對指定的書重查 Alma 並寫回（套用審核結果用）。沿用 _process_one / _stage_save：
+    館藏有變就連帶刪掉指向舊館藏的採購建議；個別失敗只記錄，不中斷其他書、也不動那本原有的館藏。"""
+    if not vb_ids:
+        return RecheckResult(0, [], [])
+    with SessionLocal() as session:
+        from library_agent.db.models import Citation as CitationDB
+        verified_books = session.scalars(
+            select(VerifiedBookDB).options(selectinload(VerifiedBookDB.citation))
+            .join(CitationDB, CitationDB.id == VerifiedBookDB.citation_id)
+            .where(VerifiedBookDB.id.in_(list(vb_ids)))
+        ).all()
+
+    errors: list[str] = []
+    failed: list[int] = []
+    written = 0
+    with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as executor, SessionLocal() as session:
+        for future in as_completed([executor.submit(_process_one, vb) for vb in verified_books]):
+            vb_id, holding, error = future.result()
+            if error:
+                errors.append(error)
+                failed.append(vb_id)
+                continue
+            if _stage_save(session, holding, vb_id):
+                written += 1
+        session.commit()
+    return RecheckResult(written, errors, sorted(failed))
 
 
 def librarian_node(state: AgentState) -> AgentState:

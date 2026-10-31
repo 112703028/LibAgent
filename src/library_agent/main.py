@@ -55,7 +55,7 @@ def _fetch_report_rows() -> list[dict]:
             "priority": rec.priority,
             "course_id": rec.course_id,
             "course_name": "、".join(dict.fromkeys(name for name, _ in courses)),
-            "title": vb.canonical_title,
+            "title": vb.buy_title,
             "is_required": any(required for _, required in courses),
             "suggested_copies": rec.suggested_copies,
             "rationale": rec.rationale or "",

@@ -243,7 +243,7 @@ def build_trace(session, rec_id: int) -> Trace | None:
         )
         calc = _calc(members, rec.priority, rec.suggested_copies)
 
-    title = rows[0][1].canonical_title if rows else f"建議 #{rec.id}"
+    title = rows[0][1].buy_title if rows else f"建議 #{rec.id}"
     return Trace(rec.id, title, rec.book_key, rec.rationale, list(syllabi.values()), sources,
                  pairings, holding_info, calc)
 

@@ -237,10 +237,11 @@ def recommender_node(_state: AgentState) -> AgentState:
                 ),
                 vb.id,
             ))
-            title_by_holding[holding.id] = vb.canonical_title
+            # 書名與同書認定都用「採購書名」：人工決定買原書的書，不能再被配到那本的 ISBN 併進別的書
+            title_by_holding[holding.id] = vb.buy_title
             records.append({
-                "id": vb.id, "isbn": vb.isbn_13, "title": vb.canonical_title,
-                "authors": _json_list(vb.canonical_authors),
+                "id": vb.id, "isbn": vb.buy_isbn, "title": vb.buy_title,
+                "authors": _json_list(vb.buy_authors),
             })
 
         keys = assign_book_keys(records, _make_judge())    # verified_book_id → book_key
