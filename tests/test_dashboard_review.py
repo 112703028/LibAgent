@@ -218,12 +218,57 @@ def _page(review=None):
     return dashboard._render(data)
 
 
-def test_pending_filter_button_is_a_link_to_the_review_panel_not_a_filter():
+def test_pending_is_no_longer_a_priority_filter_and_has_no_separate_link():
     html = _page()
 
     assert 'data-f="pending"' not in html                # 待審列不在採購表裡，不能再當篩選
-    assert 'class="flink" href="#review"' in html
-    assert 'id="review"' in html
+    assert 'class="flink"' not in html                   # 審核分頁就在同一張卡片頂端，不需要「見下方」的連結
+    assert html.count('id="review"') == 1
+
+
+def _page_with_reviews():
+    review = {k: [] for k in KINDS}
+    review["mismatch"] = [grp("mismatch"), grp("mismatch", "T2", vb_ids=(2,))]
+    review["notfound"] = [grp("notfound", "T3", vb_ids=(3,), source="ncl_not_found", judge=None, reason=None)]
+    data = {"kpis": {"courses": 1, "citations": 1, "verified": 1, "pending": 3, "copies": 2},
+            "priority": {"high": 1}, "status": {"missing": 1}, "recs": [_row()], "pending": [],
+            "review": review, "decided": [], "pending_apply": 0}
+    return dashboard._render(data)
+
+
+def test_purchase_list_and_review_are_tabs_of_one_card():
+    html = _page_with_reviews()
+
+    assert html.count('id="review"') == 1 and html.count('id="rectable"') == 1
+    card = html[html.index('id="review"'):]
+    assert card.index('id="rectable"') > 0                               # 採購表在同一張卡片裡
+    tabs = re.findall(r'class="rtab[^"]*" data-k="(\w+)"', html)
+    assert tabs == ["recs", "mismatch", "notfound", "other"]             # 採購建議在最前面，沒有決定就沒有「已決定」
+
+
+def test_the_purchase_tab_is_open_by_default_and_review_panels_are_hidden():
+    html = _page_with_reviews()
+
+    assert re.search(r'class="rtab active" data-k="recs"', html)
+    assert re.search(r'class="rpanel" data-k="recs"', html)              # 採購建議面板不隱藏
+    assert re.search(r'class="rpanel" data-k="mismatch" hidden', html)
+    assert re.search(r'class="rpanel" data-k="notfound" hidden', html)
+
+
+def test_the_purchase_tab_shows_how_many_books_there_are():
+    assert "採購建議 1 本" in _page_with_reviews()
+
+
+def test_kpi_pending_link_opens_the_biggest_review_tab():
+    html = _page_with_reviews()
+
+    assert 'data-review-open="mismatch"' in html                         # 配錯有 2 組，最多
+
+
+def test_without_any_review_items_there_are_no_tab_bar_just_the_purchase_list():
+    html = _page()
+
+    assert 'class="rtab' not in html and 'id="rectable"' in html and 'id="review"' in html
 
 
 def test_export_panel_has_no_pending_checkbox_and_kpi_links_to_the_review_panel():

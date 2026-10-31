@@ -524,54 +524,68 @@ def _batch_bar(kind: str) -> str:
     return f'<div class="rbatch">勾選的組：{buttons}</div>'
 
 
-def _review_panel(review: dict, decided: list | None = None, pending_apply: int = 0) -> str:
-    """人工審核區塊：三個待審分頁（配錯／查無此書／其他），有決定紀錄時加「已決定」分頁。每組一列＝一本書。"""
+def _review_panel(review: dict, decided: list | None = None, pending_apply: int = 0,
+                  rec_html: str | None = None, rec_count: int = 0) -> str:
+    """採購建議與人工審核的同一張卡片。分頁：[採購建議]（有 rec_html 時）、配錯／查無此書／其他、已決定（有決定紀錄時）。
+    每個審核分頁的一列＝一本書。沒有 rec_html 時只輸出審核部分（單獨成卡片）。"""
     decided = decided or []
     total = sum(len(review.get(k, [])) for k, _, _ in _REVIEW_TABS)
-    head = ('<div class="cardhead"><h2>人工審核</h2><div class="headtools">'
-            '<a class="uploadbtn" href="/export/pending" style="text-decoration:none">匯出待審清單 CSV</a>'
-            '</div></div>')
+    has_review = total > 0 or bool(decided)
     banner = (
         f'<div class="rapply"><span>{pending_apply} 筆決定待套用</span>'
         '<button id="applybtn" class="runbtn" type="button" style="font-size:13px;padding:6px 14px;">套用並重算採購建議</button>'
         '<span class="rdim">套用後，放行的書才會出現在採購清單</span></div>'
         if pending_apply > 0 else ""
     )
-    if total == 0 and not decided:
-        return f'<div class="card" id="review">{head}{banner}<p class="empty">目前沒有待審書目。</p></div>'
-    # 預設開在待審組數最多的分頁（並列取排在前面的）；待審都處理完了才開「已決定」
-    opening = "decided" if total == 0 else max((k for k, _, _ in _REVIEW_TABS), key=lambda k: len(review.get(k, [])))
+    export_link = '<a class="uploadbtn" href="/export/pending" style="text-decoration:none">匯出待審清單 CSV</a>'
+    standalone_head = f'<div class="cardhead"><h2>人工審核</h2><div class="headtools">{export_link}</div></div>'
+    if rec_html is None and not has_review:
+        return f'<div class="card" id="review">{standalone_head}{banner}<p class="empty">目前沒有待審書目。</p></div>'
+
+    # 待審分頁預設開在組數最多的（並列取排在前面的）；待審都處理完了才開「已決定」
+    review_open = ""
+    if has_review:
+        review_open = "decided" if total == 0 else max((k for k, _, _ in _REVIEW_TABS), key=lambda k: len(review.get(k, [])))
+    opening = "recs" if rec_html is not None else review_open
+
+    def tab(kind: str, label: str) -> str:
+        return f'<button class="rtab{" active" if kind == opening else ""}" data-k="{kind}">{label}</button>'
+
+    def panel(kind: str, inner: str) -> str:
+        hidden = "" if kind == opening else " hidden"
+        return f'<div class="rpanel" data-k="{kind}"{hidden}>{inner}</div>'
+
     tabs, panels = [], []
-    for kind, label, note in _REVIEW_TABS:
-        groups = review.get(kind, [])
-        active = kind == opening
-        tabs.append(
-            f'<button class="rtab{" active" if active else ""}" data-k="{kind}">'
-            f'{label} {len(groups)} 組（{sum(g.items for g in groups)} 筆書目）</button>'
-        )
-        if groups:
-            body = (
-                _batch_bar(kind)
-                + '<table class="rtbl"><thead><tr><th class="chk"><input type="checkbox" class="rchkall" title="全選/全不選"></th>'
-                '<th>原書（課綱列的）</th><th>配到的書</th>'
-                '<th>原因</th><th>用到的課（人數）</th><th>人數合計</th><th>採購清單</th><th>處理</th></tr></thead>'
-                f'<tbody>{"".join(_review_row(g) for g in groups)}</tbody></table>'
-            )
-        else:
-            body = '<p class="empty">這個分類目前沒有待審的書。</p>'
-        hidden = "" if active else " hidden"
-        panels.append(f'<div class="rpanel" data-k="{kind}"{hidden}><p class="rnote">{note}</p>{body}</div>')
-    if decided:
-        active = opening == "decided"
-        tabs.append(f'<button class="rtab{" active" if active else ""}" data-k="decided">已決定 {len(decided)} 組</button>')
-        hidden = "" if active else " hidden"
-        panels.append(
-            f'<div class="rpanel" data-k="decided"{hidden}><p class="rnote">做過的決定。按「撤銷」會改回待審；'
-            '放行的書要按上方「套用並重算採購建議」才會反映到採購清單。</p>'
-            '<table class="rtbl"><thead><tr><th>原書（課綱列的）</th><th>決定</th><th>採購書名</th><th>狀態</th>'
-            f'<th></th></tr></thead><tbody>{"".join(_decided_row(g) for g in decided)}</tbody></table></div>'
-        )
-    return (f'<div class="card" id="review">{head}{banner}<div class="filters">{"".join(tabs)}</div>'
+    if rec_html is not None:
+        tabs.append(tab("recs", f"採購建議 {rec_count} 本"))
+        panels.append(panel("recs", rec_html))
+    if has_review:
+        for kind, label, note in _REVIEW_TABS:
+            groups = review.get(kind, [])
+            tabs.append(tab(kind, f"{label} {len(groups)} 組（{sum(g.items for g in groups)} 筆書目）"))
+            if groups:
+                body = (
+                    _batch_bar(kind)
+                    + '<table class="rtbl"><thead><tr><th class="chk"><input type="checkbox" class="rchkall" title="全選/全不選"></th>'
+                    '<th>原書（課綱列的）</th><th>配到的書</th>'
+                    '<th>原因</th><th>用到的課（人數）</th><th>人數合計</th><th>採購清單</th><th>處理</th></tr></thead>'
+                    f'<tbody>{"".join(_review_row(g) for g in groups)}</tbody></table>'
+                )
+            else:
+                body = '<p class="empty">這個分類目前沒有待審的書。</p>'
+            panels.append(panel(kind, f'<p class="rnote">{note}</p>{body}'))
+        if decided:
+            tabs.append(tab("decided", f"已決定 {len(decided)} 組"))
+            panels.append(panel("decided", (
+                '<p class="rnote">做過的決定。按「撤銷」會改回待審；'
+                '放行的書要按上方「套用並重算採購建議」才會反映到採購清單。</p>'
+                '<table class="rtbl"><thead><tr><th>原書（課綱列的）</th><th>決定</th><th>採購書名</th><th>狀態</th>'
+                f'<th></th></tr></thead><tbody>{"".join(_decided_row(g) for g in decided)}</tbody></table>')))
+    # 只有採購建議、沒有待審也沒有決定：不需要分頁列
+    bar = (f'<div class="filters maintabs">{"".join(tabs)}<span class="tabspacer"></span>{export_link}</div>'
+           if has_review else "")
+    head = standalone_head if rec_html is None else ""
+    return (f'<div class="card" id="review" data-review-open="{review_open}">{head}{banner}{bar}'
             f'{"".join(panels)}</div>')
 
 
@@ -588,7 +602,32 @@ def _render(data: dict) -> str:
                         for k, _, _ in _STATUS_META])
     filter_btns = '<button class="fbtn active" data-f="all">全部</button>' + "".join(
         f'<button class="fbtn" data-f="{k}">{html.escape(n)}</button>' for k, n, _ in _PRIORITY_META
-    ) + f'<a class="flink" href="#review">{_PENDING_LABEL}（見下方審核區塊）</a>'
+    )
+    # 採購建議與人工審核是同一張卡片的分頁（不分成兩個區塊）；採購建議是第一個、預設開啟的分頁
+    rec_inner = f"""
+    <div class="cardhead">
+      <h2>採購建議明細</h2>
+      <div class="headtools">
+        <input id="recsearch" class="searchbox" type="search" placeholder="搜尋課程或書名…">
+        <div class="ffwrap">
+          <button id="expbtn" class="uploadbtn" type="button">匯出 CSV ▾</button>
+          <div id="exppanel" class="filefilter" hidden>
+            <div class="exp-sec">依優先級匯出：</div>
+            <label><input type="checkbox" class="expchk" value="high" checked> HIGH 高</label>
+            <label><input type="checkbox" class="expchk" value="medium" checked> MEDIUM 中</label>
+            <label><input type="checkbox" class="expchk" value="low" checked> LOW 低</label>
+            <label><input type="checkbox" class="expchk" value="skip" checked> SKIP 略過</label>
+            <div class="exp-sec"><label><input type="checkbox" id="exponlychecked"> 只匯出表格中我勾選的書</label></div>
+            <button id="expgo" class="runbtn" type="button" style="margin-top:8px;font-size:13px;padding:6px 14px;">下載 CSV</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="filters">{filter_btns}<span class="fsep"></span>{_category_btns()}</div>
+    {_rec_table(data["recs"])}
+"""
+    main_card = _review_panel(data["review"], data.get("decided"), data.get("pending_apply", 0),
+                              rec_html=rec_inner, rec_count=len(data["recs"]))
     return f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>採購決策儀表板</title>
@@ -659,10 +698,9 @@ h2 {{ font-size:15px; margin:0 0 12px; color:var(--text-secondary); }}
 .bar-row:hover .bar-fill {{ filter:brightness(1.08); }}
 .filters {{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }}
 .fsep {{ width:1px; height:18px; background:var(--border); margin:0 6px; }}
-.fbtn, .cbtn, .rtab, .flink {{ font:inherit; font-size:12.5px; padding:4px 12px; border-radius:99px; cursor:pointer;
+.fbtn, .cbtn, .rtab {{ font:inherit; font-size:12.5px; padding:4px 12px; border-radius:99px; cursor:pointer;
   border:1px solid var(--border); background:transparent; color:var(--text-secondary); }}
 .fbtn.active, .cbtn.active, .rtab.active {{ background:var(--text-primary); color:var(--surface); border-color:var(--text-primary); }}
-.flink {{ display:inline-block; text-decoration:none; }}
 a.kpi {{ display:block; text-decoration:none; color:inherit; }}
 .unv {{ display:inline-block; margin-left:6px; padding:0 6px; border-radius:5px; border:1px solid #e0900a;
   color:#a05f00; font-size:11px; vertical-align:middle; cursor:help; }}
@@ -670,6 +708,8 @@ a.kpi {{ display:block; text-decoration:none; color:inherit; }}
 .rnote {{ margin:0 0 10px; font-size:12.5px; color:var(--text-secondary); }}
 .rtbl td {{ font-size:12.5px; }}
 .rdim {{ color:var(--text-secondary); }}
+.maintabs {{ margin-bottom:14px; padding-bottom:10px; border-bottom:1px solid var(--gridline); }}
+.tabspacer {{ flex:1; }}
 .ract {{ min-width:230px; }}
 .abtn {{ font:inherit; font-size:12px; padding:3px 10px; margin:0 4px 4px 0; border-radius:6px; cursor:pointer;
   border:1px solid var(--border); background:var(--surface); color:var(--text-primary); }}
@@ -766,29 +806,7 @@ th.chk, td.chk {{ width:28px; text-align:center; padding-left:6px; padding-right
 </div>
 
 <div class="tables">
-  <div class="card">
-    <div class="cardhead">
-      <h2>採購建議明細</h2>
-      <div class="headtools">
-        <input id="recsearch" class="searchbox" type="search" placeholder="搜尋課程或書名…">
-        <div class="ffwrap">
-          <button id="expbtn" class="uploadbtn" type="button">匯出 CSV ▾</button>
-          <div id="exppanel" class="filefilter" hidden>
-            <div class="exp-sec">依優先級匯出：</div>
-            <label><input type="checkbox" class="expchk" value="high" checked> HIGH 高</label>
-            <label><input type="checkbox" class="expchk" value="medium" checked> MEDIUM 中</label>
-            <label><input type="checkbox" class="expchk" value="low" checked> LOW 低</label>
-            <label><input type="checkbox" class="expchk" value="skip" checked> SKIP 略過</label>
-            <div class="exp-sec"><label><input type="checkbox" id="exponlychecked"> 只匯出表格中我勾選的書</label></div>
-            <button id="expgo" class="runbtn" type="button" style="margin-top:8px;font-size:13px;padding:6px 14px;">下載 CSV</button>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div class="filters">{filter_btns}<span class="fsep"></span>{_category_btns()}</div>
-    {_rec_table(data["recs"])}
-  </div>
-  {_review_panel(data["review"], data.get("decided"), data.get("pending_apply", 0))}
+  {main_card}
 </div>
 </div>
 <script>
@@ -920,6 +938,15 @@ document.querySelectorAll('.rtab').forEach(function(b){{
   b.addEventListener('click', function(){{
     document.querySelectorAll('.rtab').forEach(function(x){{ x.classList.toggle('active', x === b); }});
     document.querySelectorAll('.rpanel').forEach(function(p){{ p.hidden = p.dataset.k !== b.dataset.k; }});
+  }});
+}});
+
+// KPI「待人工審核」卡片：連結會捲到卡片，同時開啟待審最多的分頁
+document.querySelectorAll('a.kpi[href="#review"]').forEach(function(a){{
+  a.addEventListener('click', function(){{
+    const card = document.getElementById('review');
+    const tab = card && card.querySelector('.rtab[data-k="' + card.dataset.reviewOpen + '"]');
+    if (tab) tab.click();
   }});
 }});
 
