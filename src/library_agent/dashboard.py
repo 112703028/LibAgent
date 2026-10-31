@@ -1216,6 +1216,41 @@ def _expand_departments(names: list[str] | None) -> list[str] | None:
     return expanded
 
 
+def _run_apply() -> None:
+    """背景執行「套用審核結果」。與 pipeline 共用 _run_state／_run_lock 與網頁執行紀錄：同時只能有一個在跑，
+    結束後頁面既有的輪詢會自動重整。"""
+    from library_agent.review_apply import apply_review
+    runlog.reset()
+    runlog.install()
+    try:
+        apply_review()
+        status, error = "done", None
+    except Exception as e:  # 背景執行緒的例外要自己接，否則靜默消失
+        traceback.print_exc()
+        status, error = "error", str(e)[:500]
+    finally:
+        runlog.uninstall()
+    with _run_lock:
+        _run_state.update(status=status, finished_at=time.time(), error=error)
+
+
+@app.post("/review/apply")
+def review_apply_start() -> dict:
+    """把審核決定反映到館藏與採購建議（重查館藏＋重算採購建議），背景執行。"""
+    from library_agent.review_apply import pending_apply_ids
+
+    with _run_lock:
+        if _run_state["status"] == "running":
+            return {"ok": False, "message": "有工作正在執行中，請稍後再試"}
+        with SessionLocal() as s:
+            count = len(pending_apply_ids(s))
+        if count == 0:
+            return {"ok": False, "message": "沒有待套用的審核結果"}
+        _run_state.update(status="running", started_at=time.time(), finished_at=None, error=None, run_id=None)
+    threading.Thread(target=_run_apply, daemon=True).start()
+    return {"ok": True, "count": count}
+
+
 @app.post("/run")
 def start_run(body: dict = Body(default={})) -> dict:
     """在背景執行緒啟動整條 pipeline。source_files/departments 為 None/空＝全部；一次只准一個。
