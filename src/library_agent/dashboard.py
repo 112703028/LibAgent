@@ -316,16 +316,14 @@ def _kpi_tiles(k: dict) -> str:
 
 def _rec_row(priority: str, course: str, title: str, btype: str, status_html: str,
              copies_html: str, rationale: str, btypes: str, course_html: str | None = None,
-             rec_id: int | None = None, vb_id: int | None = None, unverified: bool = False) -> str:
+             rec_id: int | None = None, unverified: bool = False) -> str:
     """btypes：類別 token（required / optional / ai），以空白分隔的清單（一本書涵蓋多個類別時有多個，
-    前端用「包含」比對）。rec_id：採購建議的 id；vb_id：待審核書目（verified_book）的 id，這類列沒有建議。
-    兩者擇一有值才有展開鈕，前端依 data-rec / data-vb 決定向哪個網址取追溯。
+    前端用「包含」比對）。rec_id：採購建議的 id，有值才有展開鈕（取 GET /trace/{rec_id}）。
     展開鈕與「未驗證」標記內都不放任何文字（由 CSS 畫），因為匯出 CSV 是讀每格的 textContent。
     unverified：這本書有書目在驗證階段查無此書。"""
     pcolor = _PRIORITY_COLOR.get(priority, _PENDING_COLOR)
     plabel = _PRIORITY_LABEL.get(priority, _PENDING_LABEL)
-    data_id = (f' data-rec="{rec_id}"' if rec_id is not None else
-               f' data-vb="{vb_id}"' if vb_id is not None else "")
+    data_id = f' data-rec="{rec_id}"' if rec_id is not None else ""
     toggle = ('<button class="tbtn" type="button" aria-expanded="false" aria-label="展開決策過程"></button>'
               if data_id else "")
     marker = ('<span class="unv" title="驗證階段查無此書，館藏是用書名直接查詢的結果"></span>'
@@ -356,10 +354,6 @@ def _tag_for_key(key: str) -> str:
     if key == "ai":
         return '<span class="tag tag-ai">AI推薦</span>'
     return f'<span class="tag">{_KEY_LABEL[key]}</span>'
-
-
-def _book_type_label(is_required: bool, raw_mention: str | None) -> str:
-    return _tag_for_key(_book_type_key(is_required, raw_mention))
 
 
 def _course_cell(courses: list) -> str:
@@ -763,15 +757,19 @@ function _applyRecFilters() {{
 }});
 document.getElementById('recsearch').addEventListener('input', _applyRecFilters);
 
-// 展開／收合一本書的決策過程：第一次點才向 /trace/{{id}} 取，之後只切換顯示，不重取。
+// 展開／收合一本書的決策過程：第一次點才向伺服器取，之後只切換顯示，不重取。
+// 採購建議列用 data-rec 取 /trace/{{id}}；審核列用 data-ids（一組可含多個書目）取 /trace/pending?ids=…。
 // 片段是伺服器端已逸出的 HTML，這裡只把它設成 innerHTML，不在前端拼資料。
+function _traceUrl(tr) {{
+  if (tr.dataset.rec) return '/trace/' + encodeURIComponent(tr.dataset.rec);
+  return '/trace/pending?' + tr.dataset.ids.split(',')
+    .map(function(i){{ return 'ids=' + encodeURIComponent(i); }}).join('&');
+}}
+
 async function _loadTrace(tr, cell) {{
   cell.textContent = '載入中…';
   try {{
-    // 採購建議列用 data-rec；待審核列（還沒有建議）用 data-vb
-    const url = tr.dataset.rec ? '/trace/' + encodeURIComponent(tr.dataset.rec)
-                               : '/trace/pending?ids=' + encodeURIComponent(tr.dataset.vb);
-    const r = await fetch(url);
+    const r = await fetch(_traceUrl(tr));
     if (!r.ok) throw new Error('HTTP ' + r.status);
     cell.innerHTML = await r.text();
   }} catch (e) {{
@@ -783,8 +781,7 @@ async function _loadTrace(tr, cell) {{
   }}
 }}
 
-const _rectable = document.getElementById('rectable');
-if (_rectable) _rectable.addEventListener('click', function(ev){{
+function _onTraceClick(ev) {{
   const btn = ev.target.closest('.tbtn');
   if (!btn) return;
   const tr = btn.closest('tr');
@@ -794,7 +791,7 @@ if (_rectable) _rectable.addEventListener('click', function(ev){{
     row.className = 'trace-row';
     row.hidden = true;
     const td = document.createElement('td');
-    td.colSpan = 8;
+    td.colSpan = tr.children.length;      // 採購表 8 欄、審核表 6 欄
     row.appendChild(td);
     tr.after(row);
     _loadTrace(tr, td);
@@ -802,6 +799,18 @@ if (_rectable) _rectable.addEventListener('click', function(ev){{
   const opening = row.hidden;
   row.hidden = !opening;
   btn.setAttribute('aria-expanded', opening ? 'true' : 'false');
+}}
+['rectable', 'review'].forEach(function(id){{
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('click', _onTraceClick);
+}});
+
+// 人工審核區塊的分頁切換：只顯示被點的分頁的面板
+document.querySelectorAll('.rtab').forEach(function(b){{
+  b.addEventListener('click', function(){{
+    document.querySelectorAll('.rtab').forEach(function(x){{ x.classList.toggle('active', x === b); }});
+    document.querySelectorAll('.rpanel').forEach(function(p){{ p.hidden = p.dataset.k !== b.dataset.k; }});
+  }});
 }});
 
 const _el = id => document.getElementById(id);
