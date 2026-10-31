@@ -11,6 +11,8 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
+from sqlalchemy import case
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -79,8 +81,44 @@ class VerifiedBook(Base):
     pairing_judge: Mapped[str | None] = mapped_column(String(10))   # rule | llm
     pairing_reason: Mapped[str | None] = mapped_column(Text)
 
+    # 人工審核的決定（儀表板的審核按鈕）。review_status 仍是 approved / rejected；這裡多記「怎麼決定的」：
+    #   matched = 買配對到的書、original = 買原書、custom = 使用者輸入書名、none = 都不買
+    review_choice: Mapped[str | None] = mapped_column(String(10))
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    review_applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))   # NULL = 決定還沒反映到館藏與採購建議
+    # 「採購書名」：買原書／使用者輸入時填。不覆蓋 canonical_*（那是驗證器配到的證據，審核要留著）。
+    purchase_title: Mapped[str | None] = mapped_column(String(500))
+    purchase_authors: Mapped[str | None] = mapped_column(Text)    # JSON array string
+    purchase_isbn: Mapped[str | None] = mapped_column(String(20))
+
     citation: Mapped["Citation"] = relationship(back_populates="verified_book")
     holding: Mapped["HoldingCheck | None"] = relationship(back_populates="verified_book")
+
+    # 下游（查館藏、算採購建議、報表）一律讀 buy_*：有採購書名就用採購欄位，否則用驗證器配到的。
+    # ISBN 不能 coalesce：買原書沒有 ISBN 時，不能沿用配到那一本的 ISBN（那正是配錯的來源），所以看 purchase_title。
+    @hybrid_property
+    def buy_title(self):
+        return self.purchase_title if self.purchase_title is not None else self.canonical_title
+
+    @buy_title.expression
+    def buy_title(cls):
+        return case((cls.purchase_title.is_not(None), cls.purchase_title), else_=cls.canonical_title)
+
+    @hybrid_property
+    def buy_authors(self):
+        return self.purchase_authors if self.purchase_title is not None else self.canonical_authors
+
+    @buy_authors.expression
+    def buy_authors(cls):
+        return case((cls.purchase_title.is_not(None), cls.purchase_authors), else_=cls.canonical_authors)
+
+    @hybrid_property
+    def buy_isbn(self):
+        return self.purchase_isbn if self.purchase_title is not None else self.isbn_13
+
+    @buy_isbn.expression
+    def buy_isbn(cls):
+        return case((cls.purchase_title.is_not(None), cls.purchase_isbn), else_=cls.isbn_13)
 
 # Librarian 查 Alma 的結果
 class HoldingCheck(Base):
