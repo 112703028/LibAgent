@@ -250,7 +250,7 @@ def build_trace(session, rec_id: int) -> Trace | None:
 
 def _pending_reason(vb, confidence: float) -> str:
     """這本書為什麼卡在待審核（沒進採購建議）。送審來源：match_auditor 判配錯；validator 在權威書目查無此書
-    （verified=False，實測佔「未稽核」的 513/532）；解析信心低於門檻（match_auditor 不稽核這類，所以 pairing_verdict 是空的）。"""
+    （verified=False，實測「未稽核」的 532 筆全是這類，其中 19 筆信心也偏低）；解析信心低於門檻（match_auditor 不稽核這類，所以 pairing_verdict 是空的）。"""
     from library_agent.config import get_settings
 
     threshold = get_settings().human_review_confidence_threshold
