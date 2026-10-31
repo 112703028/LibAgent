@@ -110,3 +110,123 @@ def test_pending_list_for_kpi_and_export_is_unchanged(review_world):
     pending = dashboard._load_data()["pending"]
 
     assert all(len(row) == 7 for row in pending)                              # /export/pending 與 KPI 仍依賴這個形狀
+
+
+# ---------- 渲染：審核卡片（不碰資料庫）----------
+
+import re
+
+from library_agent.review_groups import KINDS, ReviewGroup
+
+
+def grp(kind, title="TitleX", *, matched="MatchedY", authors=("原作者",), matched_authors=("別人",),
+        source="google_books", judge="llm", reason="作者不同", low=False, courses=(("課甲", 60),), items=1,
+        priority=None, copies=None, vb_ids=(1,)):
+    return ReviewGroup(kind=kind, title=title, authors=list(authors), matched_title=matched,
+                       matched_authors=list(matched_authors), source=source, judge=judge, reason=reason,
+                       low_confidence=low, courses=list(courses), items=items,
+                       enrolled_total=sum(n for _, n in courses), vb_ids=tuple(vb_ids),
+                       priority=priority, copies=copies)
+
+
+def panel(**kw):
+    return dashboard._review_panel({k: kw.get(k, []) for k in KINDS})
+
+
+def test_review_panel_has_three_tabs_with_group_and_item_counts():
+    html = panel(mismatch=[grp("mismatch", items=2, vb_ids=(1, 2)), grp("mismatch", "T2", vb_ids=(3,))],
+                 notfound=[grp("notfound", "T3", vb_ids=(4,))])
+
+    assert len(re.findall(r'class="rtab', html)) == 3
+    assert "配錯" in html and "2 組（3 筆書目）" in html
+    assert "查無此書" in html and "1 組（1 筆書目）" in html
+
+
+def test_review_panel_lists_mismatch_with_both_books_and_reason():
+    html = panel(mismatch=[grp("mismatch", "Macroeconomics", matched="Macroeconomics: A Modern Approach",
+                               reason="書名相同但作者不同", judge="llm")])
+
+    assert "Macroeconomics: A Modern Approach" in html and "書名相同但作者不同" in html
+    assert "LLM" in html and "已擋下" in html            # 配錯的書不在採購清單
+    assert 'data-ids="1"' in html
+
+
+def test_review_panel_notfound_shows_no_record_and_the_priority_it_still_has():
+    html = panel(notfound=[grp("notfound", source="ncl_not_found", judge=None, reason=None,
+                               priority="high", copies=4)])
+
+    assert "查無記錄" in html and "ncl_not_found" in html
+    assert dashboard._PRIORITY_LABEL["high"] in html and "4" in html
+
+
+def test_review_panel_empty_states():
+    assert "目前沒有待審書目" in panel() and 'class="rtab' not in panel()
+    one_empty = panel(mismatch=[grp("mismatch")])
+    assert "目前沒有待審的書" in one_empty                 # 其他分頁沒有組：顯示說明、不報錯
+
+
+def test_review_panel_opens_on_the_tab_with_the_most_groups():
+    html = panel(mismatch=[grp("mismatch")],
+                 notfound=[grp("notfound", "A", vb_ids=(2,)), grp("notfound", "B", vb_ids=(3,))])
+
+    assert re.search(r'class="rtab active" data-k="notfound"', html)
+    assert re.search(r'class="rpanel" data-k="mismatch" hidden', html)
+
+
+def test_review_panel_escapes_untrusted_text():
+    evil = "<script>alert(1)</script>"
+    html = panel(mismatch=[grp("mismatch", evil, matched=evil, reason=evil, authors=(evil,), courses=((evil, 3),))])
+
+    assert evil not in html and "&lt;script&gt;" in html
+
+
+def test_review_panel_toggle_button_has_no_text():
+    html = panel(mismatch=[grp("mismatch")])
+
+    assert re.search(r'<button class="tbtn"[^>]*></button>', html)
+
+
+# ---------- 渲染：採購表與整頁 ----------
+
+def _row(**kw):
+    return dashboard.RecRow("high", [dashboard.CourseRef("課甲", "required", False)], "T", "missing", 2, "r",
+                            rec_id=5, **kw)
+
+
+def test_unverified_recommendation_carries_a_text_free_marker():
+    html = dashboard._rec_table([_row(unverified=True)])
+
+    assert 'data-unverified="1"' in html
+    assert re.search(r'<span class="unv"[^>]*></span>', html)          # 標記文字由 CSS 畫，匯出 CSV 才不會多出文字
+
+
+def test_verified_recommendation_has_no_marker():
+    html = dashboard._rec_table([_row()])
+
+    assert "unv" not in html and "data-unverified" not in html
+
+
+def test_rec_table_has_no_pending_rows():
+    assert 'data-priority="pending"' not in dashboard._rec_table([_row()])
+
+
+def _page(review=None):
+    data = {"kpis": {"courses": 1, "citations": 1, "verified": 1, "pending": 3, "copies": 2},
+            "priority": {"high": 1}, "status": {"missing": 1}, "recs": [_row()], "pending": [],
+            "review": review or {k: [] for k in KINDS}}
+    return dashboard._render(data)
+
+
+def test_pending_filter_button_is_a_link_to_the_review_panel_not_a_filter():
+    html = _page()
+
+    assert 'data-f="pending"' not in html                # 待審列不在採購表裡，不能再當篩選
+    assert 'class="flink" href="#review"' in html
+    assert 'id="review"' in html
+
+
+def test_export_panel_has_no_pending_checkbox_and_kpi_links_to_the_review_panel():
+    html = _page()
+
+    assert 'class="expchk" value="pending"' not in html
+    assert 'class="kpi" href="#review"' in html

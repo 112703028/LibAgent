@@ -307,30 +307,36 @@ def _kpi_tiles(k: dict) -> str:
         ("建議採購總冊數", k["copies"], "accent"),
     ]
     return "".join(
-        f'<div class="kpi"><div class="val {cls}">{val}</div><div class="lbl">{lbl}</div></div>'
+        (f'<a class="kpi" href="#review"><div class="val {cls}">{val}</div><div class="lbl">{lbl}</div></a>'
+         if lbl == "待人工審核" else
+         f'<div class="kpi"><div class="val {cls}">{val}</div><div class="lbl">{lbl}</div></div>')
         for lbl, val, cls in tiles
     )
 
 
 def _rec_row(priority: str, course: str, title: str, btype: str, status_html: str,
              copies_html: str, rationale: str, btypes: str, course_html: str | None = None,
-             rec_id: int | None = None, vb_id: int | None = None) -> str:
+             rec_id: int | None = None, vb_id: int | None = None, unverified: bool = False) -> str:
     """btypes：類別 token（required / optional / ai），以空白分隔的清單（一本書涵蓋多個類別時有多個，
     前端用「包含」比對）。rec_id：採購建議的 id；vb_id：待審核書目（verified_book）的 id，這類列沒有建議。
     兩者擇一有值才有展開鈕，前端依 data-rec / data-vb 決定向哪個網址取追溯。
-    展開鈕內不放任何文字（箭頭由 CSS 畫），因為匯出 CSV 是讀每格的 textContent。"""
+    展開鈕與「未驗證」標記內都不放任何文字（由 CSS 畫），因為匯出 CSV 是讀每格的 textContent。
+    unverified：這本書有書目在驗證階段查無此書。"""
     pcolor = _PRIORITY_COLOR.get(priority, _PENDING_COLOR)
     plabel = _PRIORITY_LABEL.get(priority, _PENDING_LABEL)
     data_id = (f' data-rec="{rec_id}"' if rec_id is not None else
                f' data-vb="{vb_id}"' if vb_id is not None else "")
     toggle = ('<button class="tbtn" type="button" aria-expanded="false" aria-label="展開決策過程"></button>'
               if data_id else "")
+    marker = ('<span class="unv" title="驗證階段查無此書，館藏是用書名直接查詢的結果"></span>'
+              if unverified else "")
+    unv_attr = ' data-unverified="1"' if unverified else ""
     return (
-        f'<tr data-priority="{html.escape(priority)}" data-btypes="{html.escape(btypes)}"{data_id}>'
+        f'<tr data-priority="{html.escape(priority)}" data-btypes="{html.escape(btypes)}"{data_id}{unv_attr}>'
         f'<td class="chk"><input type="checkbox" class="rowchk"></td>'
         f'<td><span class="pill" style="background:{pcolor}">{html.escape(plabel)}</span></td>'
         f'<td>{course_html if course_html is not None else html.escape(course or "")}</td>'
-        f'<td>{toggle}{html.escape(title or "")}</td>'
+        f'<td>{toggle}{html.escape(title or "")}{marker}</td>'
         f'<td>{btype}</td>'
         f'<td>{status_html}</td>'
         f'<td class="num">{copies_html}</td>'
@@ -375,8 +381,8 @@ def _category_btns() -> str:
     )
 
 
-def _rec_table(recs: list, pending: list) -> str:
-    if not recs and not pending:
+def _rec_table(recs: list) -> str:
+    if not recs:
         return '<p class="empty">尚無採購建議，請先執行 pipeline。</p>'
     body = []
     for r in recs:
@@ -387,14 +393,8 @@ def _rec_table(recs: list, pending: list) -> str:
         body.append(_rec_row(
             r.priority, "", r.title, "".join(_tag_for_key(k) for k in keys), status_html,
             str(r.copies), r.rationale, " ".join(keys), course_html=_course_cell(r.courses),
-            rec_id=r.rec_id or None,
+            rec_id=r.rec_id or None, unverified=r.unverified,
         ))
-    # 待審核的書沒有採購建議列（它是書目層級的），理由欄改顯示驗證信心分數與來源
-    for course, title, confidence, source, is_required, raw_mention, vb_id in pending:
-        rationale = f"confidence {confidence:.2f} · {source or ''}"
-        btype = _book_type_label(is_required, raw_mention)
-        body.append(_rec_row("pending", course, title, btype, "—", "—", rationale,
-                             _book_type_key(is_required, raw_mention), vb_id=vb_id))
     return (
         '<table id="rectable"><thead><tr>'
         '<th class="chk"><input type="checkbox" id="rowchkall" title="全選/全不選"></th>'
@@ -402,6 +402,88 @@ def _rec_table(recs: list, pending: list) -> str:
         '<th>館藏狀態</th><th>冊數</th><th>理由</th></tr></thead>'
         f'<tbody>{"".join(body)}</tbody></table>'
     )
+
+
+# 審核分頁：(kind, 分頁名稱, 給新手的一句說明)
+_REVIEW_TABS = [
+    ("mismatch", "配錯", "稽核判定「配到的書」與課綱列的不是同一本。這些書<b>不在</b>採購清單裡，要人工確認後才會納入。"),
+    ("notfound", "查無此書", "驗證階段在權威書目查不到這本書，館藏是用書名直接查詢的結果。這些書<b>仍在</b>採購清單裡，請留意。"),
+    ("other", "其他", "其他需要人工確認的書。"),
+]
+_JUDGE_LABEL = {"rule": "字串規則", "llm": "LLM"}
+
+
+def _names(authors: list) -> str:
+    return html.escape("、".join(authors)) if authors else '<span class="rdim">（無作者）</span>'
+
+
+def _review_reason(g) -> str:
+    if g.kind == "mismatch":
+        by = _JUDGE_LABEL.get(g.judge, "稽核")
+        return f"配錯（{html.escape(by)}）" + (f"：{html.escape(g.reason)}" if g.reason else "")
+    if g.kind == "notfound":
+        return "驗證階段查無此書" + ("；解析信心偏低" if g.low_confidence else "")
+    return "解析信心偏低，驗證階段送審" if g.low_confidence else "等待人工審核"
+
+
+def _review_list_status(g) -> str:
+    """這組在採購清單裡的狀況：有建議就顯示優先級與冊數；配錯的被擋下。"""
+    if g.priority is not None:
+        color = _PRIORITY_COLOR.get(g.priority, _PENDING_COLOR)
+        label = _PRIORITY_LABEL.get(g.priority, g.priority)
+        return f'<span class="pill" style="background:{color}">{html.escape(label)}</span> {g.copies} 冊'
+    return "已擋下，不在採購清單" if g.kind == "mismatch" else "不在採購清單"
+
+
+def _review_row(g) -> str:
+    if g.kind == "notfound":
+        matched = f'<span class="rdim">查無記錄（來源：{html.escape(g.source or "—")}）</span>'
+    else:
+        matched = (f'{html.escape(g.matched_title or "")}<div class="rdim">{_names(g.matched_authors)}'
+                   f' · {html.escape(g.source or "—")}</div>')
+    courses = "、".join(f"{html.escape(n)} {e}" for n, e in g.courses)
+    items_note = f' <span class="rdim">（{g.items} 個書目）</span>' if g.items > 1 else ""
+    ids = ",".join(str(i) for i in g.vb_ids)
+    return (
+        f'<tr data-ids="{ids}">'
+        '<td><button class="tbtn" type="button" aria-expanded="false" aria-label="展開決策過程"></button>'
+        f'{html.escape(g.title or "")}<div class="rdim">{_names(g.authors)}</div></td>'
+        f'<td>{matched}</td><td>{_review_reason(g)}</td>'
+        f'<td>{courses}{items_note}</td>'
+        f'<td class="num">{g.enrolled_total}</td><td>{_review_list_status(g)}</td></tr>'
+    )
+
+
+def _review_panel(review: dict) -> str:
+    """人工審核區塊：三個分頁（配錯／查無此書／其他），每組一列＝一本書。唯讀。"""
+    total = sum(len(review.get(k, [])) for k, _, _ in _REVIEW_TABS)
+    head = ('<div class="cardhead"><h2>人工審核</h2><div class="headtools">'
+            '<a class="uploadbtn" href="/export/pending" style="text-decoration:none">匯出待審清單 CSV</a>'
+            '</div></div>')
+    if total == 0:
+        return f'<div class="card" id="review">{head}<p class="empty">目前沒有待審書目。</p></div>'
+    # 預設開在組數最多的分頁（並列取排在前面的）
+    opening = max((k for k, _, _ in _REVIEW_TABS), key=lambda k: len(review.get(k, [])))
+    tabs, panels = [], []
+    for kind, label, note in _REVIEW_TABS:
+        groups = review.get(kind, [])
+        active = kind == opening
+        tabs.append(
+            f'<button class="rtab{" active" if active else ""}" data-k="{kind}">'
+            f'{label} {len(groups)} 組（{sum(g.items for g in groups)} 筆書目）</button>'
+        )
+        if groups:
+            body = (
+                '<table class="rtbl"><thead><tr><th>原書（課綱列的）</th><th>配到的書</th><th>原因</th>'
+                '<th>用到的課（人數）</th><th>人數合計</th><th>採購清單</th></tr></thead>'
+                f'<tbody>{"".join(_review_row(g) for g in groups)}</tbody></table>'
+            )
+        else:
+            body = '<p class="empty">這個分類目前沒有待審的書。</p>'
+        hidden = "" if active else " hidden"
+        panels.append(f'<div class="rpanel" data-k="{kind}"{hidden}><p class="rnote">{note}</p>{body}</div>')
+    return (f'<div class="card" id="review">{head}<div class="filters">{"".join(tabs)}</div>'
+            f'{"".join(panels)}</div>')
 
 
 def _render(data: dict) -> str:
@@ -417,7 +499,7 @@ def _render(data: dict) -> str:
                         for k, _, _ in _STATUS_META])
     filter_btns = '<button class="fbtn active" data-f="all">全部</button>' + "".join(
         f'<button class="fbtn" data-f="{k}">{html.escape(n)}</button>' for k, n, _ in _PRIORITY_META
-    ) + f'<button class="fbtn" data-f="pending">{_PENDING_LABEL}</button>'
+    ) + f'<a class="flink" href="#review">{_PENDING_LABEL}（見下方審核區塊）</a>'
     return f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>採購決策儀表板</title>
@@ -488,9 +570,17 @@ h2 {{ font-size:15px; margin:0 0 12px; color:var(--text-secondary); }}
 .bar-row:hover .bar-fill {{ filter:brightness(1.08); }}
 .filters {{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }}
 .fsep {{ width:1px; height:18px; background:var(--border); margin:0 6px; }}
-.fbtn, .cbtn {{ font:inherit; font-size:12.5px; padding:4px 12px; border-radius:99px; cursor:pointer;
+.fbtn, .cbtn, .rtab, .flink {{ font:inherit; font-size:12.5px; padding:4px 12px; border-radius:99px; cursor:pointer;
   border:1px solid var(--border); background:transparent; color:var(--text-secondary); }}
-.fbtn.active, .cbtn.active {{ background:var(--text-primary); color:var(--surface); border-color:var(--text-primary); }}
+.fbtn.active, .cbtn.active, .rtab.active {{ background:var(--text-primary); color:var(--surface); border-color:var(--text-primary); }}
+.flink {{ display:inline-block; text-decoration:none; }}
+a.kpi {{ display:block; text-decoration:none; color:inherit; }}
+.unv {{ display:inline-block; margin-left:6px; padding:0 6px; border-radius:5px; border:1px solid #e0900a;
+  color:#a05f00; font-size:11px; vertical-align:middle; cursor:help; }}
+.unv::after {{ content:"未驗證"; }}
+.rnote {{ margin:0 0 10px; font-size:12.5px; color:var(--text-secondary); }}
+.rtbl td {{ font-size:12.5px; }}
+.rdim {{ color:var(--text-secondary); }}
 table {{ border-collapse:collapse; width:100%; font-size:13px; }}
 th,td {{ border-bottom:1px solid var(--gridline); padding:8px 10px; text-align:left; vertical-align:top; }}
 th {{ color:var(--text-secondary); font-weight:600; white-space:nowrap; }}
@@ -585,7 +675,6 @@ th.chk, td.chk {{ width:28px; text-align:center; padding-left:6px; padding-right
             <label><input type="checkbox" class="expchk" value="medium" checked> MEDIUM 中</label>
             <label><input type="checkbox" class="expchk" value="low" checked> LOW 低</label>
             <label><input type="checkbox" class="expchk" value="skip" checked> SKIP 略過</label>
-            <label><input type="checkbox" class="expchk" value="pending" checked> 待審核</label>
             <div class="exp-sec"><label><input type="checkbox" id="exponlychecked"> 只匯出表格中我勾選的書</label></div>
             <button id="expgo" class="runbtn" type="button" style="margin-top:8px;font-size:13px;padding:6px 14px;">下載 CSV</button>
           </div>
@@ -593,8 +682,9 @@ th.chk, td.chk {{ width:28px; text-align:center; padding-left:6px; padding-right
       </div>
     </div>
     <div class="filters">{filter_btns}<span class="fsep"></span>{_category_btns()}</div>
-    {_rec_table(data["recs"], data["pending"])}
+    {_rec_table(data["recs"])}
   </div>
+  {_review_panel(data["review"])}
 </div>
 </div>
 <script>
