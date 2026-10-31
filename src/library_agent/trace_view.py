@@ -267,27 +267,47 @@ def _pending_reason(vb, confidence: float) -> str:
     return "；".join(parts) or "等待人工審核"
 
 
-def build_pending_trace(session, vb_id: int) -> Trace | None:
+def build_pending_trace(session, vb_ids: list[int]) -> Trace | None:
     """待審核的書（還沒有採購建議）的追溯：只有課綱、解析、配對、館藏，沒有冊數算式。
-    找不到、或這本書不是待審核狀態時回 None。標題用原書名：配錯時配到的那本是別的書。"""
-    row = session.execute(
+    一組可含多個書目（同一本書被多門課列出）：課綱依課去重、來源每書目一列、相同的配對合併。
+    只收仍是待審核狀態的；全部都不是（或沒給 id）回 None。
+    標題用原書名：配錯時配到的那本是別的書。"""
+    rows = session.execute(
         select(Citation, VerifiedBook, Course)
         .join(VerifiedBook, VerifiedBook.citation_id == Citation.id)
         .join(Course, Course.course_id == Citation.course_id)
-        .where(VerifiedBook.id == vb_id, VerifiedBook.review_status == "pending")
-    ).first()
-    if row is None:
+        .where(VerifiedBook.id.in_(list(vb_ids)), VerifiedBook.review_status == "pending")
+        .order_by(Course.course_name, Citation.id)
+    ).all()
+    if not rows:
         return None
-    citation, vb, course = row
-    holding = session.scalar(select(HoldingCheck).where(HoldingCheck.verified_book_id == vb.id))
-    holding_info = None if holding is None else HoldingInfo(
-        holding.status, holding.holdings_count or 0, holding.alma_mms_id, holding.matched_edition, False)
-    k = _pairing_key(vb)
-    pairing = Pairing(k[0], list(k[1]), k[2], k[3], k[4], k[5], k[6], k[7],
-                      [(citation.title, _authors(citation.authors))], k[8])
-    return Trace(0, citation.title, None, None, [_syllabus(course)],
-                 [_source_item(citation, course, course.enrolled_count or 0)], [pairing],
-                 holding_info, None, pending_reason=_pending_reason(vb, citation.confidence or 0.0))
+    holdings = session.scalars(
+        select(HoldingCheck).where(HoldingCheck.verified_book_id.in_([vb.id for _, vb, _ in rows]))
+    ).all()
+
+    syllabi: dict[str, Syllabus] = {}
+    sources: list[SourceItem] = []
+    grouped: dict[tuple, list] = {}
+    reasons: dict[str, None] = {}                      # 去重並保持順序
+    for citation, vb, course in rows:
+        syllabi.setdefault(course.course_id, _syllabus(course))
+        sources.append(_source_item(citation, course, course.enrolled_count or 0))
+        grouped.setdefault(_pairing_key(vb), []).append((citation.title, _authors(citation.authors)))
+        reasons.setdefault(_pending_reason(vb, citation.confidence or 0.0))
+    pairings = [
+        Pairing(k[0], list(k[1]), k[2], k[3], k[4], k[5], k[6], k[7], originals, k[8])
+        for k, originals in grouped.items()
+    ]
+
+    holding_info = None
+    if holdings:
+        rep = max(holdings, key=_copies_then_smaller_id)
+        holding_info = HoldingInfo(
+            rep.status, rep.holdings_count or 0, rep.alma_mms_id, rep.matched_edition,
+            len({(h.status, h.holdings_count, h.alma_mms_id) for h in holdings}) > 1,
+        )
+    return Trace(0, rows[0][0].title, None, None, list(syllabi.values()), sources, pairings,
+                 holding_info, None, pending_reason="；".join(reasons))
 
 
 # ---------------------------------------------------------------- 渲染

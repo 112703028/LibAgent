@@ -227,14 +227,16 @@ def test_render_shows_the_arithmetic(isolated_db):
 
 def pending_world(S, *, verdict="mismatch", judge="llm", reason="書名相同但作者不同", review="pending",
                   confidence=0.9, holding=True, title="Original Title", matched_title="Other Book",
-                  syllabus="課綱：P1", verified=True, source="nla"):
+                  syllabus="課綱：P1", verified=True, source="nla", course_id="P1"):
     """播種一筆待審核的書（沒有 Recommendation），回傳 verified_book id。"""
     with S() as s:
-        course = Course(course_id="P1", course_name="課-P1", semester="114-1", source_file="t",
-                        raw_content=syllabus, enrolled_count=30)
-        s.add(course)
-        s.flush()
-        c = Citation(course_id="P1", title=title, authors=json.dumps(["原作者"], ensure_ascii=False),
+        course = s.scalar(select(Course).where(Course.course_id == course_id))
+        if course is None:
+            course = Course(course_id=course_id, course_name=f"課-{course_id}", semester="114-1",
+                            source_file="t", raw_content=syllabus, enrolled_count=30)
+            s.add(course)
+            s.flush()
+        c = Citation(course_id=course_id, title=title, authors=json.dumps(["原作者"], ensure_ascii=False),
                      is_required=True, raw_mention="指定 " + title, confidence=confidence)
         s.add(c)
         s.flush()
@@ -251,9 +253,10 @@ def pending_world(S, *, verdict="mismatch", judge="llm", reason="書名相同但
         return vb.id
 
 
-def pending_trace_of(S, vb_id):
+def pending_trace_of(S, vb_ids):
+    ids = vb_ids if isinstance(vb_ids, list) else [vb_ids]
     with S() as s:
-        return T.build_pending_trace(s, vb_id)
+        return T.build_pending_trace(s, ids)
 
 
 def test_pending_trace_of_a_mismatch_explains_why_it_is_waiting(isolated_db):
@@ -307,20 +310,6 @@ def test_render_pending_escapes_untrusted_text(isolated_db):
     html = T.render_trace(pending_trace_of(isolated_db, vb))
 
     assert evil not in html and "&lt;script&gt;" in html
-
-
-def test_pending_endpoint_returns_the_fragment_or_404(isolated_db, monkeypatch):
-    from fastapi.testclient import TestClient
-    from library_agent import dashboard
-
-    monkeypatch.setattr(dashboard, "SessionLocal", isolated_db)
-    client = TestClient(dashboard.app)
-    vb = pending_world(isolated_db)
-
-    ok = client.get(f"/trace/pending/{vb}")
-
-    assert ok.status_code == 200 and "未進入採購建議" in ok.text and "<html" not in ok.text
-    assert client.get("/trace/pending/999999").status_code == 404
 
 
 def test_pending_trace_of_a_book_the_validator_could_not_find(isolated_db):
@@ -377,3 +366,64 @@ def test_most_copies_wins_and_a_tie_goes_to_the_smaller_id():
 
 def test_null_copies_count_as_zero():
     assert max([_hc(1, None), _hc(2, 1)], key=T._copies_then_smaller_id).id == 2
+
+
+# ---------- 待審核追溯：一組可含多個書目 ----------
+
+def test_pending_trace_merges_several_items_of_one_group(isolated_db):
+    v1 = pending_world(isolated_db, course_id="P1")
+    v2 = pending_world(isolated_db, course_id="P2")
+
+    trace = pending_trace_of(isolated_db, [v1, v2])
+
+    assert len(trace.syllabi) == 2 and len(trace.sources) == 2
+    assert len(trace.pairings) == 1 and len(trace.pairings[0].originals) == 2     # 相同的配對合併
+    assert trace.title == "Original Title"
+
+
+def test_pending_trace_skips_items_no_longer_pending(isolated_db):
+    v1 = pending_world(isolated_db, course_id="P1")
+    v2 = pending_world(isolated_db, course_id="P2", review="approved")     # 已被別人放行
+
+    trace = pending_trace_of(isolated_db, [v1, v2])
+
+    assert len(trace.sources) == 1 and trace.sources[0].course_id == "P1"
+
+
+def test_pending_trace_with_no_ids_returns_none(isolated_db):
+    assert pending_trace_of(isolated_db, []) is None
+
+
+def _client(isolated_db, monkeypatch):
+    from fastapi.testclient import TestClient
+    from library_agent import dashboard
+
+    monkeypatch.setattr(dashboard, "SessionLocal", isolated_db)
+    return TestClient(dashboard.app)
+
+
+def test_pending_endpoint_accepts_several_ids(isolated_db, monkeypatch):
+    client = _client(isolated_db, monkeypatch)
+    v1 = pending_world(isolated_db, course_id="P1")
+    v2 = pending_world(isolated_db, course_id="P2")
+
+    ok = client.get(f"/trace/pending?ids={v1}&ids={v2}")
+
+    assert ok.status_code == 200 and "未進入採購建議" in ok.text and "<html" not in ok.text
+    assert "課-P1" in ok.text and "課-P2" in ok.text
+
+
+def test_pending_endpoint_rejects_missing_too_many_or_malformed_ids(isolated_db, monkeypatch):
+    client = _client(isolated_db, monkeypatch)
+
+    assert client.get("/trace/pending").status_code == 400
+    assert client.get("/trace/pending?" + "&".join(f"ids={i}" for i in range(1, 52))).status_code == 400
+    assert client.get("/trace/pending?ids=abc").status_code == 422        # 非數字：FastAPI 的預設回應
+
+
+def test_pending_endpoint_404_when_nothing_is_pending(isolated_db, monkeypatch):
+    client = _client(isolated_db, monkeypatch)
+    v = pending_world(isolated_db, review="approved")
+
+    assert client.get(f"/trace/pending?ids={v}").status_code == 404
+    assert client.get("/trace/pending?ids=999999").status_code == 404

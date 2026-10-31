@@ -36,6 +36,8 @@ from library_agent.db.models import (
     VerifiedBook,
 )
 from library_agent.db.session import SessionLocal
+from library_agent.review_groups import PendingItem, group_pending
+from library_agent.trace_view import _authors   # 作者欄位是 JSON 字串，與追溯畫面同一個解析（壞掉回 []）
 
 app = FastAPI(title="Library Agent 採購決策儀表板")
 
@@ -88,6 +90,7 @@ class RecRow(NamedTuple):
     copies: int
     rationale: str
     rec_id: int = 0      # 展開追溯畫面用（GET /trace/{rec_id}）；放最後，既有建構呼叫不受影響
+    unverified: bool = False   # 這本書有書目在驗證階段查無此書（館藏是用書名直接查的結果）
 
 
 # 同一門課有兩個書目時（實測 8 組），取較「重」的類別
@@ -181,7 +184,7 @@ def _load_data(departments: list[str] | None = None) -> dict:
                     Recommendation.id, Recommendation.priority, VerifiedBook.canonical_title,
                     HoldingCheck.status, Recommendation.suggested_copies, Recommendation.rationale,
                     Course.course_name, Course.department, Citation.is_required, Citation.raw_mention,
-                    Recommendation.course_id,
+                    Recommendation.course_id, VerifiedBook.verified,
                 )
                 .join(HoldingCheck, HoldingCheck.id == Recommendation.holding_id)
                 .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id)
@@ -194,23 +197,24 @@ def _load_data(departments: list[str] | None = None) -> dict:
         # 這本書被哪些課用到（關聯表）。沒有關聯列的建議（recommender 重建前的舊格式列）退回用代表課程。
         used_by: dict[int, list[tuple]] = defaultdict(list)
         if rec_rows:
-            for rec_id, course_id, name, dept, is_required, raw_mention in s.execute(
+            for rec_id, course_id, name, dept, is_required, raw_mention, verified in s.execute(
                 select(RecommendationCourse.recommendation_id, RecommendationCourse.course_id,
                        Course.course_name, Course.department,
-                       RecommendationCourse.is_required, Citation.raw_mention)
+                       RecommendationCourse.is_required, Citation.raw_mention, VerifiedBook.verified)
                 .join(Course, Course.course_id == RecommendationCourse.course_id)
                 .join(Citation, Citation.id == RecommendationCourse.citation_id)
+                .join(VerifiedBook, VerifiedBook.citation_id == RecommendationCourse.citation_id)
                 .where(RecommendationCourse.recommendation_id.in_([r[0] for r in rec_rows]))
             ).all():
-                used_by[rec_id].append((course_id, name, dept, is_required, raw_mention))
+                used_by[rec_id].append((course_id, name, dept, is_required, raw_mention, verified))
 
         recs: list[RecRow] = []
         for (rec_id, priority, title, st, rec_copies, rationale,
-             rep_name, rep_dept, rep_req, rep_mention, rep_course_id) in rec_rows:
+             rep_name, rep_dept, rep_req, rep_mention, rep_course_id, rep_verified) in rec_rows:
             refs: dict[str, CourseRef] = {}
             section_ids: dict[str, set[str]] = defaultdict(set)    # 課名 → 這個名稱下有哪幾個班
-            entries = used_by.get(rec_id) or [(rep_course_id, rep_name, rep_dept, rep_req, rep_mention)]
-            for course_id, name, dept, is_required, raw_mention in entries:
+            entries = used_by.get(rec_id) or [(rep_course_id, rep_name, rep_dept, rep_req, rep_mention, rep_verified)]
+            for course_id, name, dept, is_required, raw_mention, _verified in entries:
                 key = _book_type_key(is_required, raw_mention)
                 prev = refs.get(name)
                 section_ids[name].add(course_id)
@@ -221,7 +225,8 @@ def _load_data(departments: list[str] | None = None) -> dict:
                 )
             courses = [c._replace(sections=len(section_ids[c.name]))
                        for c in sorted(refs.values(), key=lambda c: c.name)]
-            recs.append(RecRow(priority, courses, title, st, rec_copies, rationale or "", rec_id))
+            recs.append(RecRow(priority, courses, title, st, rec_copies, rationale or "", rec_id,
+                               unverified=any(not e[5] for e in entries)))
         recs.sort(key=lambda r: (_PRIORITY_RANK.get(r.priority, 9),
                                  r.courses[0].name if r.courses else "", r.title))
 
@@ -237,7 +242,44 @@ def _load_data(departments: list[str] | None = None) -> dict:
             )
         ).all()
 
-    return {"kpis": kpis, "priority": prio, "status": status, "recs": recs, "pending": pending}
+        # 人工審核區塊：待審書目分類並合併成「一組一本書」。學系篩選只影響組內計入哪些書目；
+        # 「所在採購建議」是全校的（與冊數一致），所以 rec_of 不套學系篩選。
+        rec_of = {
+            cit_id: (priority, copies_n)
+            for cit_id, priority, copies_n in s.execute(
+                select(RecommendationCourse.citation_id, Recommendation.priority, Recommendation.suggested_copies)
+                .join(Recommendation, Recommendation.id == RecommendationCourse.recommendation_id)
+                .join(HoldingCheck, HoldingCheck.id == Recommendation.holding_id)
+                .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id)
+                .join(Citation, Citation.id == VerifiedBook.citation_id)
+                .where(purchasable(), _not_superseded())
+            ).all()
+        }
+        review_rows = s.execute(
+            scoped(
+                select(VerifiedBook.id, Citation.id, Course.course_id, Course.course_name, Course.enrolled_count,
+                       Citation.title, Citation.authors, VerifiedBook.canonical_title, VerifiedBook.canonical_authors,
+                       VerifiedBook.source, VerifiedBook.verified, VerifiedBook.pairing_verdict,
+                       VerifiedBook.pairing_judge, VerifiedBook.pairing_reason, Citation.confidence)
+                .join(Citation, Citation.id == VerifiedBook.citation_id)
+                .join(Course, Course.course_id == Citation.course_id)
+                .where(VerifiedBook.review_status == "pending", _not_superseded()),
+                join_course=False,
+            )
+        ).all()
+
+    from library_agent.config import get_settings
+
+    review = group_pending(
+        [PendingItem(vb_id, cit_id, course_id, course_name, enrolled or 0, title, _authors(authors),
+                     matched_title, _authors(matched_authors), source, bool(verified), verdict, judge,
+                     reason, confidence or 0.0)
+         for (vb_id, cit_id, course_id, course_name, enrolled, title, authors, matched_title, matched_authors,
+              source, verified, verdict, judge, reason, confidence) in review_rows],
+        rec_of, get_settings().human_review_confidence_threshold,
+    )
+    return {"kpis": kpis, "priority": prio, "status": status, "recs": recs, "pending": pending,
+            "review": review}
 
 
 # ---------- 呈現 ----------
@@ -638,7 +680,7 @@ async function _loadTrace(tr, cell) {{
   try {{
     // 採購建議列用 data-rec；待審核列（還沒有建議）用 data-vb
     const url = tr.dataset.rec ? '/trace/' + encodeURIComponent(tr.dataset.rec)
-                               : '/trace/pending/' + encodeURIComponent(tr.dataset.vb);
+                               : '/trace/pending?ids=' + encodeURIComponent(tr.dataset.vb);
     const r = await fetch(url);
     if (!r.ok) throw new Error('HTTP ' + r.status);
     cell.innerHTML = await r.text();
@@ -944,15 +986,18 @@ def index(departments: list[str] | None = Query(None)) -> str:
     return _render(_load_data(departments))
 
 
-@app.get("/trace/pending/{vb_id}", response_class=HTMLResponse)
-def trace_pending(vb_id: int):
-    """待審核的書（還沒有採購建議）的追溯片段。找不到或已不在待審核狀態回 404。"""
+@app.get("/trace/pending", response_class=HTMLResponse)
+def trace_pending(ids: list[int] | None = Query(None)):
+    """待審核的書（還沒有採購建議）的追溯片段；一組可含多個書目（ids 重複帶）。
+    沒有 id 或超過 50 個回 400（非數字由 FastAPI 回 422）；全部都已不在待審核狀態回 404。"""
     from library_agent.trace_view import build_pending_trace, render_trace
 
+    if not ids or len(ids) > 50:
+        return HTMLResponse("請提供 1 到 50 個待審核書目的 id。", status_code=400)
     with SessionLocal() as s:
-        result = build_pending_trace(s, vb_id)
+        result = build_pending_trace(s, ids)
     if result is None:
-        return HTMLResponse("找不到這筆待審核書目（可能已被放行或退回）。", status_code=404)
+        return HTMLResponse("找不到待審核的書目（可能已被放行或退回）。", status_code=404)
     return HTMLResponse(render_trace(result))
 
 
