@@ -25,10 +25,10 @@ def cell(html, cls):
     return re.search(rf'<td class="{cls}[^"]*"[^>]*>.*?</td>', html, re.S).group(0)
 
 
-def test_the_header_has_a_decision_column_after_the_copies_column():
+def test_the_decision_sits_in_the_far_right_actions_column_after_the_copies_and_rationale():
     html = table(row())
 
-    assert html.index("<th>冊數</th>") < html.index("<th>決定冊數</th>") < html.index("<th>理由</th>")
+    assert html.index("<th>冊數</th>") < html.index("<th>理由</th>") < html.index("<th>處理</th>")
 
 
 def test_rec_row_shows_the_suggestion_the_need_marker_and_a_decision_box():
@@ -38,7 +38,7 @@ def test_rec_row_shows_the_suggestion_the_need_marker_and_a_decision_box():
     assert 'data-need="26"' in num and "cut" in num                  # 被上限截斷：需求 26，建議 5
     assert re.sub(r"<[^>]+>", "", num) == "5"                        # 文字內容只有系統建議
     assert re.search(r'<input class="dec-in" type="number" min="0" max="9999" step="1"', html)
-    assert 'data-key="title:t"' in html and 'placeholder="採用建議"' in html
+    assert 'data-key="title:t"' in html and 'placeholder="尚未決定"' in html
 
 
 def test_cut_marker_only_when_the_need_exceeds_the_suggestion():
@@ -85,7 +85,8 @@ def test_no_stale_flag_when_the_suggestion_has_not_changed():
 def test_decision_cell_has_no_text_nodes():
     dec = cell(table(row(decided=12, stale_from=3)), "dec")
 
-    assert re.sub(r"<[^>]+>", "", dec) == ""
+    # 處理欄只有按鈕的文字；「需求」「建議已從 A 變成 B」的提示由 CSS 畫，輸入框的值也不是文字節點
+    assert re.sub(r"<[^>]+>", "", dec) == "移出採購單"
 
 
 def test_row_carries_the_final_copies_for_the_kpi_and_export():

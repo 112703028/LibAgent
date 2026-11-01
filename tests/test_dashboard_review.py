@@ -171,7 +171,7 @@ def test_review_panel_opens_on_the_tab_with_the_most_groups():
                  notfound=[grp("notfound", "A", vb_ids=(2,)), grp("notfound", "B", vb_ids=(3,))])
 
     assert re.search(r'class="rtab active" data-k="notfound"', html)
-    assert re.search(r'class="rpanel" data-k="mismatch" hidden', html)
+    assert re.search(r'class="rpanel" data-k="mismatch"[^>]*hidden', html)
 
 
 def test_review_panel_escapes_untrusted_text():
@@ -251,7 +251,7 @@ def test_purchase_list_and_review_are_tabs_of_one_card():
     card = html[html.index('id="review"'):]
     assert card.index('id="rectable"') > 0                               # 採購表在同一張卡片裡
     tabs = re.findall(r'class="rtab[^"]*" data-k="(\w+)"', html)
-    assert tabs == ["recs", "mismatch", "notfound", "other"]             # 採購建議在最前面，沒有決定就沒有「已決定」
+    assert tabs == ["recs", "cart", "mismatch", "notfound", "other"]     # 採購建議、採購單在最前面，沒有決定紀錄就沒有「審核紀錄」
 
 
 def test_the_purchase_tab_is_open_by_default_and_review_panels_are_hidden():
@@ -259,8 +259,8 @@ def test_the_purchase_tab_is_open_by_default_and_review_panels_are_hidden():
 
     assert re.search(r'class="rtab active" data-k="recs"', html)
     assert re.search(r'class="rpanel" data-k="recs"', html)              # 採購建議面板不隱藏
-    assert re.search(r'class="rpanel" data-k="mismatch" hidden', html)
-    assert re.search(r'class="rpanel" data-k="notfound" hidden', html)
+    assert re.search(r'class="rpanel" data-k="mismatch"[^>]*hidden', html)
+    assert re.search(r'class="rpanel" data-k="notfound"[^>]*hidden', html)
 
 
 def test_the_purchase_tab_shows_how_many_books_there_are():
@@ -273,10 +273,11 @@ def test_kpi_pending_link_opens_the_biggest_review_tab():
     assert 'data-review-open="mismatch"' in html                         # 配錯有 2 組，最多
 
 
-def test_without_any_review_items_there_are_no_tab_bar_just_the_purchase_list():
+def test_without_any_review_items_the_tab_bar_has_only_the_purchase_list_and_the_cart():
     html = _page()
 
-    assert 'class="rtab' not in html and 'id="rectable"' in html and 'id="review"' in html
+    assert re.findall(r'class="rtab[^"]*" data-k="(.+?)"', html) == ["recs", "cart"]
+    assert 'id="rectable"' in html and 'id="review"' in html
 
 
 def test_export_panel_has_no_pending_checkbox_and_kpi_links_to_the_review_panel():
@@ -406,12 +407,12 @@ def test_decided_tab_lists_choice_status_and_undo():
 
     html = dashboard._review_panel(review, decided=done, pending_apply=0)
 
-    assert 'data-k="decided"' in html and "已決定" in html
+    assert 'data-k="decided"' in html and "審核紀錄" in html
     assert "買原書" in html and "輸入書名加入" in html and "都不買" in html
     assert "待套用" in html and "已套用" in html
     assert html.count('data-undo') == 3
     decided_panel = re.search(r'<div class="rpanel" data-k="decided".*', html, re.S).group(0)
-    assert 'class="tbtn"' not in decided_panel               # 已不是待審，沒有追溯可展開
+    assert 'class="tbtn"' in decided_panel                   # 審核紀錄也能展開看決策過程（與其他分頁一致）
 
 
 def test_no_decided_tab_when_nothing_was_decided():

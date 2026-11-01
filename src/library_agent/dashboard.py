@@ -378,12 +378,14 @@ def _rec_row(priority: str, course: str, title: str, btype: str, status_html: st
              copies_html: str, rationale: str, btypes: str, course_html: str | None = None,
              rec_id: int | None = None, unverified: bool = False, book_key: str | None = None,
              need: int = 0, cut: bool = False, decided: int | None = None, stale_from: int | None = None,
-             final: int = 0) -> str:
+             final: int = 0, in_cart: bool = False, suggested: int = 0, search: str = "") -> str:
     """btypes：類別 token（required / optional / ai），以空白分隔的清單（一本書涵蓋多個類別時有多個，
     前端用「包含」比對）。rec_id：採購建議的 id，有值才有展開鈕（取 GET /trace/{rec_id}）。
     展開鈕與「未驗證」標記內都不放任何文字（由 CSS 畫），因為匯出 CSV 是讀每格的 textContent。
     unverified：這本書有書目在驗證階段查無此書。
-    決定冊數（採購人員自己填）：book_key 為 None（舊格式的建議）的列沒有輸入框；留空＝採用系統建議，0＝這次不買。
+    處理欄（最右）：決定冊數輸入框＋「加入採購單／移出採購單」按鈕。book_key 為 None（舊格式的建議）的列沒有；
+    留空＝還沒決定（不在採購單），填 0＝這次不買，填大於 0＝加入採購單。系統建議為 0 時不能直接「加入」（沒有東西可加）。
+    in_cart：這本書在採購單裡（決定 > 0）；search：這一列可被搜尋的文字（小寫，這裡負責逸出）。
     「需求 N」（被上限截斷時）與「建議已從 A 變成 B」都由 CSS 用 data-* 畫，輸入框的值也不是文字節點。"""
     pcolor = _PRIORITY_COLOR.get(priority, _PENDING_COLOR)
     plabel = _PRIORITY_LABEL.get(priority, _PENDING_LABEL)
@@ -398,14 +400,19 @@ def _rec_row(priority: str, course: str, title: str, btype: str, status_html: st
     else:
         saved = "" if decided is None else str(decided)
         stale = f' data-stale="{stale_from}" data-now="{html.escape(copies_html)}"' if stale_from is not None else ""
+        cart_attr = ' disabled title="系統建議為 0，請直接填冊數"' if (not in_cart and suggested <= 0) else ""
+        cart_label = "移出採購單" if in_cart else "加入採購單"
         dec_cell = (
             f'<td class="dec"{stale}><input class="dec-in{" has" if decided is not None else ""}" type="number" '
             f'min="0" max="9999" step="1" data-key="{html.escape(book_key)}" data-saved="{saved}" '
-            f'placeholder="採用建議" value="{saved}" aria-label="決定冊數"><div class="aerr" hidden></div></td>'
+            f'placeholder="尚未決定" value="{saved}" aria-label="決定冊數">'
+            f'<button class="abtn cartbtn" type="button" data-cart{cart_attr}>{cart_label}</button>'
+            f'<div class="aerr" hidden></div></td>'
         )
+    incart_attr = ' data-incart="1"' if in_cart else ""
     return (
         f'<tr data-priority="{html.escape(priority)}" data-btypes="{html.escape(btypes)}" '
-        f'data-final="{final}"{data_id}{unv_attr}>'
+        f'data-final="{final}" data-search="{html.escape(search)}"{incart_attr}{data_id}{unv_attr}>'
         f'<td class="chk"><input type="checkbox" class="rowchk"></td>'
         f'<td><span class="pill" style="background:{pcolor}">{html.escape(plabel)}</span></td>'
         f'<td>{course_html if course_html is not None else html.escape(course or "")}</td>'
@@ -413,8 +420,8 @@ def _rec_row(priority: str, course: str, title: str, btype: str, status_html: st
         f'<td>{btype}</td>'
         f'<td>{status_html}</td>'
         f'<td class="{"num cut" if cut else "num"}" data-need="{need}">{copies_html}</td>'
-        f'{dec_cell}'
-        f'<td class="rationale">{html.escape(rationale or "")}</td></tr>'
+        f'<td class="rationale">{html.escape(rationale or "")}</td>'
+        f'{dec_cell}</tr>'
     )
 
 
@@ -465,12 +472,14 @@ def _rec_table(recs: list) -> str:
             str(r.copies), r.rationale, " ".join(keys), course_html=_course_cell(r.courses),
             rec_id=r.rec_id or None, unverified=r.unverified, book_key=r.book_key, need=r.need,
             cut=r.need > r.copies, decided=r.decided, stale_from=r.stale_from, final=r.final,
+            in_cart=r.in_cart, suggested=r.copies,
+            search=" ".join([*(c.name for c in r.courses), r.title or ""]).lower(),
         ))
     return (
         '<table id="rectable"><thead><tr>'
         '<th class="chk"><input type="checkbox" id="rowchkall" title="全選/全不選"></th>'
         '<th>優先級</th><th>課程</th><th>書名</th><th>類別</th>'
-        '<th>館藏狀態</th><th>冊數</th><th>決定冊數</th><th>理由</th></tr></thead>'
+        '<th>館藏狀態</th><th>冊數</th><th>理由</th><th>處理</th></tr></thead>'
         f'<tbody>{"".join(body)}</tbody></table>'
     )
 
@@ -535,28 +544,38 @@ def _action_cell(g) -> str:
     return f'<td class="ract">{body}<div class="aerr" hidden></div></td>'
 
 
+def _courses_cell(g) -> str:
+    courses = "、".join(f"{html.escape(n)} {e}" for n, e in g.courses)
+    items_note = f' <span class="rdim">（{g.items} 個書目）</span>' if g.items > 1 else ""
+    return f"{courses}{items_note}"
+
+
 def _review_row(g) -> str:
+    """審核列：勾選｜優先級｜課程｜▸書名｜配到的書｜原因｜人數合計｜處理（與採購表同一套骨架）。"""
     if g.kind == "notfound":
         matched = f'<span class="rdim">查無記錄（來源：{html.escape(g.source or "—")}）</span>'
+        searchable = [g.title or ""]
     else:
         matched = (f'{html.escape(g.matched_title or "")}<div class="rdim">{_names(g.matched_authors)}'
                    f' · {html.escape(g.source or "—")}</div>')
-    courses = "、".join(f"{html.escape(n)} {e}" for n, e in g.courses)
-    items_note = f' <span class="rdim">（{g.items} 個書目）</span>' if g.items > 1 else ""
+        searchable = [g.title or "", g.matched_title or ""]
+    search = " ".join([*searchable, *(n for n, _ in g.courses)]).lower()
     ids = ",".join(str(i) for i in g.vb_ids)
     return (
-        f'<tr data-ids="{ids}">'
+        f'<tr data-ids="{ids}" data-priority="{html.escape(g.priority or "none")}" data-search="{html.escape(search)}">'
         '<td class="chk"><input type="checkbox" class="rchk"></td>'
+        f'<td>{_review_list_status(g)}</td>'
+        f'<td>{_courses_cell(g)}</td>'
         '<td><button class="tbtn" type="button" aria-expanded="false" aria-label="展開決策過程"></button>'
         f'{html.escape(g.title or "")}<div class="rdim">{_names(g.authors)}</div></td>'
         f'<td>{matched}</td><td>{_review_reason(g)}</td>'
-        f'<td>{courses}{items_note}</td>'
-        f'<td class="num">{g.enrolled_total}</td><td>{_review_list_status(g)}</td>'
+        f'<td class="num">{g.enrolled_total}</td>'
         f'{_action_cell(g)}</tr>'
     )
 
 
 def _decided_row(g) -> str:
+    """審核紀錄列：勾選｜課程｜▸書名｜決定｜採購書名｜狀態｜處理（撤銷）。"""
     label = _CHOICE_LABEL.get(g.choice, g.choice or "")
     if g.choice == "none":
         bought, state = "—", "已退回"
@@ -564,10 +583,13 @@ def _decided_row(g) -> str:
         bought = html.escape(g.buy_title or g.matched_title or "")
         state = "已套用" if g.applied else "待套用"
     ids = ",".join(str(i) for i in g.vb_ids)
-    note = f' <span class="rdim">（{g.items} 個書目）</span>' if g.items > 1 else ""
+    search = " ".join([g.title or "", g.buy_title or "", *(n for n, _ in g.courses)]).lower()
     return (
-        f'<tr data-ids="{ids}">'
-        f'<td>{html.escape(g.title or "")}{note}<div class="rdim">{_names(g.authors)}</div></td>'
+        f'<tr data-ids="{ids}" data-priority="none" data-search="{html.escape(search)}">'
+        '<td class="chk"><input type="checkbox" class="rchk"></td>'
+        f'<td>{_courses_cell(g)}</td>'
+        '<td><button class="tbtn" type="button" aria-expanded="false" aria-label="展開決策過程"></button>'
+        f'{html.escape(g.title or "")}<div class="rdim">{_names(g.authors)}</div></td>'
         f'<td>{html.escape(label)}</td><td>{bought}</td><td>{state}</td>'
         '<td><button class="abtn" type="button" data-undo>撤銷</button><div class="aerr" hidden></div></td></tr>'
     )
@@ -581,10 +603,32 @@ def _batch_bar(kind: str) -> str:
     return f'<div class="rbatch">勾選的組：{buttons}</div>'
 
 
+def _purchase_batch_bars() -> str:
+    """採購建議與採購單共用同一個面板，各有一條批次列，由面板的 data-view 決定顯示哪一條（見 CSS）。
+    每個按鈕都是 POST /purchase/decide-many 的一個 mode；沒有「全部改成 N 本」，一次把上百本改成同一冊數太容易出錯。"""
+    return (
+        '<div class="rbatch rbatch-all">勾選的書：'
+        '<button class="abtn" type="button" data-pbatch="suggested">加入採購單（採用系統建議）</button>'
+        '<button class="abtn abtn-no" type="button" data-pbatch="zero">設為不買</button>'
+        '<button class="abtn" type="button" data-pbatch="clear">清除決定</button></div>'
+        '<div class="rbatch rbatch-cart">勾選的書：'
+        '<button class="abtn" type="button" data-pbatch="clear">移出採購單</button>'
+        '<button class="abtn abtn-no" type="button" data-pbatch="zero">設為不買</button></div>'
+    )
+
+
+def _log_batch_bar() -> str:
+    return ('<div class="rbatch">勾選的組：'
+            '<button class="abtn" type="button" data-ubatch="undo">撤銷所選</button></div>')
+
+
 def _review_panel(review: dict, decided: list | None = None, pending_apply: int = 0,
-                  rec_html: str | None = None, rec_count: int = 0) -> str:
-    """採購建議與人工審核的同一張卡片。分頁：[採購建議]（有 rec_html 時）、配錯／查無此書／其他、已決定（有決定紀錄時）。
-    每個審核分頁的一列＝一本書。沒有 rec_html 時只輸出審核部分（單獨成卡片）。"""
+                  rec_html: str | None = None, rec_count: int = 0, toolbar_html: str | None = None,
+                  cart_books: int = 0, cart_copies: int = 0) -> str:
+    """採購建議與人工審核的同一張卡片。分頁（有 rec_html 時）：採購建議｜採購單｜配錯｜查無此書｜其他｜審核紀錄。
+    「採購單」不是另一張表：它與採購建議共用同一個面板（只是只顯示 data-incart 的列），所以沒有自己的面板，
+    改冊數、加入、移出時兩邊自然同步。每個面板有 data-filters（工具列要顯示哪些篩選）與 data-export（匯出哪種欄位）。
+    沒有 rec_html 時只輸出審核部分（單獨成卡片）。"""
     decided = decided or []
     total = sum(len(review.get(k, [])) for k, _, _ in _REVIEW_TABS)
     has_review = total > 0 or bool(decided)
@@ -594,28 +638,29 @@ def _review_panel(review: dict, decided: list | None = None, pending_apply: int 
         '<span class="rdim">套用後，放行的書才會出現在採購清單</span></div>'
         if pending_apply > 0 else ""
     )
-    export_link = '<a class="uploadbtn" href="/export/pending" style="text-decoration:none">匯出待審清單 CSV</a>'
-    standalone_head = f'<div class="cardhead"><h2>人工審核</h2><div class="headtools">{export_link}</div></div>'
+    standalone_head = '<div class="cardhead"><h2>人工審核</h2></div>'
     if rec_html is None and not has_review:
         return f'<div class="card" id="review">{standalone_head}{banner}<p class="empty">目前沒有待審書目。</p></div>'
 
-    # 待審分頁預設開在組數最多的（並列取排在前面的）；待審都處理完了才開「已決定」
+    # 待審分頁預設開在組數最多的（並列取排在前面的）；待審都處理完了才開「審核紀錄」
     review_open = ""
     if has_review:
         review_open = "decided" if total == 0 else max((k for k, _, _ in _REVIEW_TABS), key=lambda k: len(review.get(k, [])))
     opening = "recs" if rec_html is not None else review_open
 
-    def tab(kind: str, label: str) -> str:
-        return f'<button class="rtab{" active" if kind == opening else ""}" data-k="{kind}">{label}</button>'
+    def tab(kind: str, label: str, extra: str = "") -> str:
+        return f'<button class="rtab{" active" if kind == opening else ""}" data-k="{kind}"{extra}>{label}</button>'
 
-    def panel(kind: str, inner: str) -> str:
+    def panel(kind: str, inner: str, filters: str, export: str, extra: str = "") -> str:
         hidden = "" if kind == opening else " hidden"
-        return f'<div class="rpanel" data-k="{kind}"{hidden}>{inner}</div>'
+        return (f'<div class="rpanel" data-k="{kind}" data-filters="{filters}" data-export="{export}"{extra}{hidden}>'
+                f'{inner}</div>')
 
     tabs, panels = [], []
     if rec_html is not None:
         tabs.append(tab("recs", f"採購建議 {rec_count} 本"))
-        panels.append(panel("recs", rec_html))
+        tabs.append(tab("cart", f"採購單 {cart_books} 本·{cart_copies} 冊", ' data-panel="recs"'))
+        panels.append(panel("recs", rec_html, "prio cat", "recs", ' data-view="all"'))
     if has_review:
         for kind, label, note in _REVIEW_TABS:
             groups = review.get(kind, [])
@@ -624,26 +669,27 @@ def _review_panel(review: dict, decided: list | None = None, pending_apply: int 
                 body = (
                     _batch_bar(kind)
                     + '<table class="rtbl"><thead><tr><th class="chk"><input type="checkbox" class="rchkall" title="全選/全不選"></th>'
-                    '<th>原書（課綱列的）</th><th>配到的書</th>'
-                    '<th>原因</th><th>用到的課（人數）</th><th>人數合計</th><th>採購清單</th><th>處理</th></tr></thead>'
+                    '<th>優先級</th><th>用到的課（人數）</th><th>原書（課綱列的）</th><th>配到的書</th>'
+                    '<th>原因</th><th>人數合計</th><th>處理</th></tr></thead>'
                     f'<tbody>{"".join(_review_row(g) for g in groups)}</tbody></table>'
                 )
             else:
                 body = '<p class="empty">這個分類目前沒有待審的書。</p>'
-            panels.append(panel(kind, f'<p class="rnote">{note}</p>{body}'))
+            panels.append(panel(kind, f'<p class="rnote">{note}</p>{body}', "" if kind == "mismatch" else "prio", "review"))
         if decided:
-            tabs.append(tab("decided", f"已決定 {len(decided)} 組"))
+            tabs.append(tab("decided", f"審核紀錄 {len(decided)} 組"))
             panels.append(panel("decided", (
-                '<p class="rnote">做過的決定。按「撤銷」會改回待審；'
+                '<p class="rnote">做過的審核決定。按「撤銷」會改回待審；'
                 '放行的書要按上方「套用並重算採購建議」才會反映到採購清單。</p>'
-                '<table class="rtbl"><thead><tr><th>原書（課綱列的）</th><th>決定</th><th>採購書名</th><th>狀態</th>'
-                f'<th></th></tr></thead><tbody>{"".join(_decided_row(g) for g in decided)}</tbody></table>')))
-    # 只有採購建議、沒有待審也沒有決定：不需要分頁列
-    bar = (f'<div class="filters maintabs">{"".join(tabs)}<span class="tabspacer"></span>{export_link}</div>'
-           if has_review else "")
+                + _log_batch_bar()
+                + '<table class="rtbl"><thead><tr><th class="chk"><input type="checkbox" class="rchkall" title="全選/全不選"></th>'
+                '<th>用到的課</th><th>原書（課綱列的）</th><th>決定</th><th>採購書名</th><th>狀態</th><th>處理</th></tr></thead>'
+                f'<tbody>{"".join(_decided_row(g) for g in decided)}</tbody></table>'), "", "log"))
+    # 有採購建議時一定有分頁列（至少「採購建議」與「採購單」）；單獨的審核卡片只在有審核項目時才有
+    bar = f'<div class="filters maintabs">{"".join(tabs)}</div>' if (rec_html is not None or has_review) else ""
     head = standalone_head if rec_html is None else ""
     return (f'<div class="card" id="review" data-review-open="{review_open}">{head}{banner}{bar}'
-            f'{"".join(panels)}</div>')
+            f'{toolbar_html or ""}{"".join(panels)}</div>')
 
 
 def _render(data: dict) -> str:
@@ -660,31 +706,31 @@ def _render(data: dict) -> str:
     filter_btns = '<button class="fbtn active" data-f="all">全部</button>' + "".join(
         f'<button class="fbtn" data-f="{k}">{html.escape(n)}</button>' for k, n, _ in _PRIORITY_META
     )
-    # 採購建議與人工審核是同一張卡片的分頁（不分成兩個區塊）；採購建議是第一個、預設開啟的分頁
-    rec_inner = f"""
-    <div class="cardhead">
-      <h2>採購建議明細</h2>
-      <div class="headtools">
-        <input id="recsearch" class="searchbox" type="search" placeholder="搜尋課程或書名…">
-        <div class="ffwrap">
-          <button id="expbtn" class="uploadbtn" type="button">匯出 CSV ▾</button>
-          <div id="exppanel" class="filefilter" hidden>
-            <div class="exp-sec">依優先級匯出：</div>
-            <label><input type="checkbox" class="expchk" value="high" checked> HIGH 高</label>
-            <label><input type="checkbox" class="expchk" value="medium" checked> MEDIUM 中</label>
-            <label><input type="checkbox" class="expchk" value="low" checked> LOW 低</label>
-            <label><input type="checkbox" class="expchk" value="skip" checked> SKIP 略過</label>
-            <div class="exp-sec"><label><input type="checkbox" id="exponlychecked"> 只匯出表格中我勾選的書</label></div>
-            <button id="expgo" class="runbtn" type="button" style="margin-top:8px;font-size:13px;padding:6px 14px;">下載 CSV</button>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div class="filters">{filter_btns}<span class="fsep"></span>{_category_btns()}</div>
-    {_rec_table(data["recs"])}
-"""
-    main_card = _review_panel(data["review"], data.get("decided"), data.get("pending_apply", 0),
-                              rec_html=rec_inner, rec_count=len(data["recs"]))
+    # 採購建議、採購單與人工審核是同一張卡片的分頁；採購建議是第一個、預設開啟的分頁。
+    # 工具列（搜尋、篩選、匯出）只有一條，對目前開著的分頁生效；篩選與匯出的欄位由面板的 data-filters／data-export 決定。
+    toolbar = (
+        '<div class="toolbar" id="toolbar">'
+        '<input id="recsearch" class="searchbox" type="search" placeholder="搜尋課程或書名…">'
+        f'<div class="tb-prio">{filter_btns}</div>'
+        f'<div class="tb-cat">{_category_btns()}</div>'
+        '<div class="ffwrap tb-export">'
+        '<button id="expbtn" class="uploadbtn" type="button">匯出 CSV ▾</button>'
+        '<div id="exppanel" class="filefilter" hidden>'
+        '<div class="exp-prio"><div class="exp-sec">依優先級匯出：</div>'
+        '<label><input type="checkbox" class="expchk" value="high" checked> HIGH 高</label>'
+        '<label><input type="checkbox" class="expchk" value="medium" checked> MEDIUM 中</label>'
+        '<label><input type="checkbox" class="expchk" value="low" checked> LOW 低</label>'
+        '<label><input type="checkbox" class="expchk" value="skip" checked> SKIP 略過</label></div>'
+        '<div class="exp-sec"><label><input type="checkbox" id="exponlychecked"> 只匯出表格中我勾選的列</label></div>'
+        '<button id="expgo" class="runbtn" type="button" style="margin-top:8px;font-size:13px;padding:6px 14px;">下載 CSV</button>'
+        '</div></div></div>'
+    )
+    recs = data["recs"]
+    main_card = _review_panel(
+        data["review"], data.get("decided"), data.get("pending_apply", 0),
+        rec_html=_purchase_batch_bars() + _rec_table(recs), rec_count=len(recs), toolbar_html=toolbar,
+        cart_books=sum(r.in_cart for r in recs), cart_copies=sum(r.final for r in recs),
+    )
     return f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>採購決策儀表板</title>
@@ -765,6 +811,14 @@ a.kpi {{ display:block; text-decoration:none; color:inherit; }}
 .rnote {{ margin:0 0 10px; font-size:12.5px; color:var(--text-secondary); }}
 .rtbl td {{ font-size:12.5px; }}
 .rdim {{ color:var(--text-secondary); }}
+.toolbar {{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:0 0 12px; }}
+.tb-prio, .tb-cat {{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }}
+.tb-prio[hidden], .tb-cat[hidden], .exp-prio[hidden] {{ display:none; }}
+.tb-export {{ margin-left:auto; }}
+.cartbtn {{ display:block; margin:4px 0 0; }}
+.rbatch-cart {{ display:none; }}
+.rpanel[data-view="cart"] .rbatch-all {{ display:none; }}
+.rpanel[data-view="cart"] .rbatch-cart {{ display:block; }}
 td.num.cut::after {{ content:"（需求 " attr(data-need) "）"; font-weight:400; font-size:11px; color:#a05f00; white-space:nowrap; }}
 td.dec {{ min-width:100px; }}
 .dec-in {{ width:84px; font:inherit; font-size:12.5px; padding:3px 6px; border:1px solid var(--border); border-radius:6px; }}
