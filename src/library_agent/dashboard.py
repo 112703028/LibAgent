@@ -19,7 +19,8 @@ from typing import NamedTuple
 
 from fastapi import Body, FastAPI, File, Query, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import case, delete, func, or_, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import aliased
 
 from library_agent import runlog
@@ -1540,6 +1541,43 @@ def review_undo(body: dict = Body(...)):
     except review_actions.ReviewError as e:
         return _review_error(str(e))
     return {"ok": True, "changed": len(result.changed), "skipped": result.skipped}
+
+
+_MAX_DECIDED_COPIES = 9999
+
+
+@app.post("/purchase/decide")
+def purchase_decide(body: dict = Body(...)):
+    """記錄人對一本書採購冊數的決定。copies 為整數 0–9999（0＝這次不買，書仍留在清單）；
+    null／省略＝清除決定（採用系統建議）。決定以 book_key 對應，存在獨立的 purchase_decisions，
+    recommendations 被刪掉重建也不會消失。只收 JSON；驗證失敗回 400 且不寫入。"""
+    key = body.get("book_key") if isinstance(body, dict) else None
+    if not isinstance(key, str) or not key.strip():
+        return _review_error("book_key 必須是非空的文字")
+    key = key.strip()
+    copies = body.get("copies")
+    if copies is not None and (isinstance(copies, bool) or not isinstance(copies, int)
+                               or not 0 <= copies <= _MAX_DECIDED_COPIES):
+        return _review_error(f"冊數必須是 0 到 {_MAX_DECIDED_COPIES} 的整數（留空＝採用系統建議）")
+
+    with SessionLocal() as s:
+        suggested = s.scalar(select(Recommendation.suggested_copies).where(Recommendation.book_key == key))
+        if copies is None:             # 清除：對應的建議已不存在也要能清掉
+            s.execute(delete(PurchaseDecision).where(PurchaseDecision.book_key == key))
+            s.commit()
+            return {"ok": True, "copies": None, "suggested": suggested, "final": suggested}
+        if suggested is None:
+            return JSONResponse({"ok": False, "message": "找不到這本書的採購建議（可能已被重算移除，請重新整理頁面）"},
+                                status_code=404)
+        now = datetime.now(timezone.utc)
+        s.execute(
+            pg_insert(PurchaseDecision)
+            .values(book_key=key, copies=copies, suggested_at_decision=suggested, decided_at=now)
+            .on_conflict_do_update(index_elements=["book_key"], set_={
+                "copies": copies, "suggested_at_decision": suggested, "decided_at": now})
+        )
+        s.commit()
+    return {"ok": True, "copies": copies, "suggested": suggested, "final": copies}
 
 
 def _run_apply() -> None:
