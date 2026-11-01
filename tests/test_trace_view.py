@@ -4,6 +4,7 @@
 鎖住「畫面上的說明」與 recommender.merge_group 的實際結果一致。
 """
 import json
+from datetime import datetime, timezone
 
 import pytest
 from sqlalchemy import select
@@ -227,8 +228,10 @@ def test_render_shows_the_arithmetic(isolated_db):
 
 def pending_world(S, *, verdict="mismatch", judge="llm", reason="書名相同但作者不同", review="pending",
                   confidence=0.9, holding=True, title="Original Title", matched_title="Other Book",
-                  syllabus="課綱：P1", verified=True, source="nla", course_id="P1"):
-    """播種一筆待審核的書（沒有 Recommendation），回傳 verified_book id。"""
+                  syllabus="課綱：P1", verified=True, source="nla", course_id="P1",
+                  choice=None, purchase_title=None, applied=False):
+    """播種一筆待審核的書（沒有 Recommendation），回傳 verified_book id。
+    choice／purchase_title／applied：模擬已經在儀表板做過決定的書（審核紀錄）。"""
     with S() as s:
         course = s.scalar(select(Course).where(Course.course_id == course_id))
         if course is None:
@@ -243,7 +246,10 @@ def pending_world(S, *, verdict="mismatch", judge="llm", reason="書名相同但
         vb = VerifiedBook(citation_id=c.id, canonical_title=matched_title,
                           canonical_authors=json.dumps(["別人"], ensure_ascii=False), isbn_13=ISBN,
                           source=source, verified=verified, pairing_verdict=verdict, pairing_judge=judge,
-                          pairing_reason=reason, review_status=review)
+                          pairing_reason=reason, review_status=review, review_choice=choice,
+                          purchase_title=purchase_title,
+                          purchase_authors="[]" if purchase_title else None,
+                          review_applied_at=datetime(2026, 11, 1, tzinfo=timezone.utc) if applied else None)
         s.add(vb)
         s.flush()
         if holding:
@@ -427,3 +433,66 @@ def test_pending_endpoint_404_when_nothing_is_pending(isolated_db, monkeypatch):
 
     assert client.get(f"/trace/pending?ids={v}").status_code == 404
     assert client.get("/trace/pending?ids=999999").status_code == 404
+
+
+# ---------- 審核紀錄：已決定的書也能展開看決策過程 ----------
+
+DECIDED = [("matched", "approved", "買配對到的書"), ("original", "approved", "買原書"),
+           ("custom", "approved", "輸入書名加入"), ("none", "rejected", "都不買")]
+
+
+@pytest.mark.parametrize("choice,review,label", DECIDED)
+def test_decided_books_can_be_traced(isolated_db, choice, review, label):
+    pt = "我要買的書" if choice in ("original", "custom") else None
+    vb = pending_world(isolated_db, review=review, choice=choice, purchase_title=pt)
+
+    trace = pending_trace_of(isolated_db, vb)
+
+    assert trace is not None and trace.pending_reason is None             # 已不是待審
+    assert label in trace.decision and (pt is None or pt in trace.decision)
+
+
+def test_the_section_five_of_a_decided_book_shows_the_decision_not_the_pending_note(isolated_db):
+    waiting = pending_world(isolated_db, course_id="P1", review="approved", choice="original", purchase_title="X", applied=False)
+    done = pending_world(isolated_db, course_id="P2", review="approved", choice="matched", applied=True)
+
+    html_waiting = T.render_trace(pending_trace_of(isolated_db, waiting))
+    html_done = T.render_trace(pending_trace_of(isolated_db, done))
+
+    assert "人工決定" in html_waiting and "待套用" in html_waiting and "未進入採購建議" not in html_waiting
+    assert "人工決定" in html_done and "已套用" in html_done and "未進入採購建議" not in html_done
+
+
+def test_a_rejected_decision_says_it_will_not_be_purchased(isolated_db):
+    vb = pending_world(isolated_db, review="rejected", choice="none")
+
+    html = T.render_trace(pending_trace_of(isolated_db, vb))
+
+    assert "都不買" in html and "不會採購" in html
+
+
+def test_decision_text_escapes_the_purchase_title(isolated_db):
+    evil = "<script>alert(1)</script>"
+    vb = pending_world(isolated_db, review="approved", choice="custom", purchase_title=evil)
+
+    html = T.render_trace(pending_trace_of(isolated_db, vb))
+
+    assert evil not in html and "&lt;script&gt;" in html
+
+
+def test_a_group_with_pending_and_decided_items_shows_both_notes(isolated_db):
+    p = pending_world(isolated_db, course_id="P1")
+    d = pending_world(isolated_db, course_id="P2", review="approved", choice="matched", applied=True)
+
+    html = T.render_trace(pending_trace_of(isolated_db, [p, d]))
+
+    assert "未進入採購建議" in html and "人工決定" in html
+
+
+def test_endpoint_accepts_decided_ids(isolated_db, monkeypatch):
+    client = _client(isolated_db, monkeypatch)
+    v = pending_world(isolated_db, review="approved", choice="matched")
+
+    resp = client.get(f"/trace/pending?ids={v}")
+
+    assert resp.status_code == 200 and "人工決定" in resp.text

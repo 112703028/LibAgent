@@ -12,7 +12,7 @@ import json
 from collections import defaultdict
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from library_agent.book_kind import book_type_key
 from library_agent.demand import need_copies, uncapped_copies
@@ -105,6 +105,7 @@ class Trace:
     holding: HoldingInfo | None
     calc: Calc | None
     pending_reason: str | None = None   # 只有待審核的書有：為什麼還沒進採購建議
+    decision: str | None = None         # 只有已在儀表板做過決定的書有：人工決定了什麼、是否已套用
 
 
 def _authors(raw: str | None) -> list:
@@ -267,16 +268,31 @@ def _pending_reason(vb, confidence: float) -> str:
     return "；".join(parts) or "等待人工審核"
 
 
+_CHOICE_LABEL = {"matched": "買配對到的書", "original": "買原書", "custom": "輸入書名加入", "none": "都不買"}
+
+
+def _decision_text(vb) -> str:
+    """審核紀錄裡這本書的人工決定：決定了什麼、採購書名、決定是否已反映到館藏與採購建議。"""
+    text = f"人工決定：{_CHOICE_LABEL.get(vb.review_choice, vb.review_choice or '')}"
+    if vb.purchase_title:
+        text += f"（採購書名「{vb.purchase_title}」）"
+    if vb.review_choice == "none":
+        return text + "，不會採購"
+    return text + ("；已套用到館藏與採購建議" if vb.review_applied_at else "；待套用")
+
+
 def build_pending_trace(session, vb_ids: list[int]) -> Trace | None:
-    """待審核的書（還沒有採購建議）的追溯：只有課綱、解析、配對、館藏，沒有冊數算式。
+    """待審核的書（還沒有採購建議），以及已在儀表板做過決定的書（審核紀錄）的追溯：
+    只有課綱、解析、配對、館藏，沒有冊數算式；待審的說明為什麼還沒進採購建議，已決定的說明人工決定了什麼。
     一組可含多個書目（同一本書被多門課列出）：課綱依課去重、來源每書目一列、相同的配對合併。
-    只收仍是待審核狀態的；全部都不是（或沒給 id）回 None。
+    只收待審或有決定紀錄的；全部都不是（或沒給 id）回 None。
     標題用原書名：配錯時配到的那本是別的書。"""
     rows = session.execute(
         select(Citation, VerifiedBook, Course)
         .join(VerifiedBook, VerifiedBook.citation_id == Citation.id)
         .join(Course, Course.course_id == Citation.course_id)
-        .where(VerifiedBook.id.in_(list(vb_ids)), VerifiedBook.review_status == "pending")
+        .where(VerifiedBook.id.in_(list(vb_ids)),
+               or_(VerifiedBook.review_status == "pending", VerifiedBook.review_choice.is_not(None)))
         .order_by(Course.course_name, Citation.id)
     ).all()
     if not rows:
@@ -289,11 +305,15 @@ def build_pending_trace(session, vb_ids: list[int]) -> Trace | None:
     sources: list[SourceItem] = []
     grouped: dict[tuple, list] = {}
     reasons: dict[str, None] = {}                      # 去重並保持順序
+    decisions: dict[str, None] = {}
     for citation, vb, course in rows:
         syllabi.setdefault(course.course_id, _syllabus(course))
         sources.append(_source_item(citation, course, course.enrolled_count or 0))
         grouped.setdefault(_pairing_key(vb), []).append((citation.title, _authors(citation.authors)))
-        reasons.setdefault(_pending_reason(vb, citation.confidence or 0.0))
+        if vb.review_choice:
+            decisions.setdefault(_decision_text(vb))
+        else:
+            reasons.setdefault(_pending_reason(vb, citation.confidence or 0.0))
     pairings = [
         Pairing(k[0], list(k[1]), k[2], k[3], k[4], k[5], k[6], k[7], originals, k[8])
         for k, originals in grouped.items()
@@ -307,7 +327,8 @@ def build_pending_trace(session, vb_ids: list[int]) -> Trace | None:
             len({(h.status, h.holdings_count, h.alma_mms_id) for h in holdings}) > 1,
         )
     return Trace(0, rows[0][0].title, None, None, list(syllabi.values()), sources, pairings,
-                 holding_info, None, pending_reason="；".join(reasons))
+                 holding_info, None, pending_reason="；".join(reasons) or None,
+                 decision="；".join(decisions) or None)
 
 
 # ---------------------------------------------------------------- 渲染
@@ -399,9 +420,14 @@ def _sec4(t: Trace) -> str:
 
 def _sec5(t: Trace) -> str:
     c = t.calc
-    if c is None and t.pending_reason:
-        return (f'<div class="tr-note">未進入採購建議：{_e(t.pending_reason.rstrip('。'))}。'
-                '人工放行（main review）後，recommender 才會計算冊數。</div>')
+    if c is None and (t.decision or t.pending_reason):
+        notes = []
+        if t.decision:
+            notes.append(f'<div class="tr-note">{_e(t.decision)}。</div>')
+        if t.pending_reason:
+            notes.append(f'<div class="tr-note">未進入採購建議：{_e(t.pending_reason.rstrip('。'))}。'
+                         '人工放行（main review）後，recommender 才會計算冊數。</div>')
+        return "".join(notes)
     if c is None:
         return '<p class="tr-dim">尚無館藏資料，無法重算冊數。</p>'
     people = " ＋ ".join(f"{_e(name)} {n}" for name, n in c.courses)

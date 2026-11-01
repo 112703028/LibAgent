@@ -1443,8 +1443,8 @@ def index(departments: list[str] | None = Query(None)) -> str:
 
 @app.get("/trace/pending", response_class=HTMLResponse)
 def trace_pending(ids: list[int] | None = Query(None)):
-    """待審核的書（還沒有採購建議）的追溯片段；一組可含多個書目（ids 重複帶）。
-    沒有 id 或超過 50 個回 400（非數字由 FastAPI 回 422）；全部都已不在待審核狀態回 404。"""
+    """待審核的書（還沒有採購建議）與審核紀錄（已做過決定）的追溯片段；一組可含多個書目（ids 重複帶）。
+    沒有 id 或超過 50 個回 400（非數字由 FastAPI 回 422）；全部都既非待審也沒有決定紀錄回 404。"""
     from library_agent.trace_view import build_pending_trace, render_trace
 
     if not ids or len(ids) > 50:
@@ -1452,7 +1452,7 @@ def trace_pending(ids: list[int] | None = Query(None)):
     with SessionLocal() as s:
         result = build_pending_trace(s, ids)
     if result is None:
-        return HTMLResponse("找不到待審核的書目（可能已被放行或退回）。", status_code=404)
+        return HTMLResponse("找不到待審核或已決定的書目。", status_code=404)
     return HTMLResponse(render_trace(result))
 
 
