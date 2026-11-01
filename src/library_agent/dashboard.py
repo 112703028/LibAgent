@@ -102,8 +102,13 @@ class RecRow(NamedTuple):
 
     @property
     def final(self) -> int:
-        """最終採購冊數：有決定用決定，否則用系統建議。"""
-        return self.copies if self.decided is None else self.decided
+        """最終採購冊數＝採購單裡的冊數：有決定就用決定，**沒決定是 0**（系統建議只是參考，沒加入就不算要買）。"""
+        return 0 if self.decided is None else self.decided
+
+    @property
+    def in_cart(self) -> bool:
+        """在採購單裡：明確決定了大於 0 的冊數。決定 0＝明確排除，沒決定＝還沒決定，兩者都不在採購單。"""
+        return self.decided is not None and self.decided > 0
 
 
 # 同一門課有兩個書目時（實測 8 組），取較「重」的類別
@@ -326,7 +331,8 @@ def _load_data(departments: list[str] | None = None) -> dict:
     by_kind = group_pending(decided_items, rec_of, threshold)
     earliest = datetime.min.replace(tzinfo=timezone.utc)
     decided = sorted((g for kind in KINDS for g in by_kind[kind]), key=lambda g: g.reviewed_at or earliest, reverse=True)
-    kpis["copies_final"] = sum(r.final for r in recs)      # 採用冊數：有決定用決定，否則用系統建議（kpis["copies"] 是系統建議）
+    kpis["copies_final"] = sum(r.final for r in recs)      # 採購單冊數：各書的決定冊數總和（kpis["copies"] 是系統建議）
+    kpis["cart_books"] = sum(r.in_cart for r in recs)      # 採購單書數
     return {"kpis": kpis, "priority": prio, "status": status, "recs": recs, "pending": pending,
             "review": review, "decided": decided, "pending_apply": pending_apply}
 
@@ -348,21 +354,24 @@ def _bars(items: list[tuple[str, int, str]]) -> str:
 
 
 def _kpi_tiles(k: dict) -> str:
+    # (標籤, 值, 樣式, 元素 id)：id 讓前端在改冊數、加入、移出採購單時就地更新
     tiles = [
-        ("課程數", k["courses"], ""),
-        ("書目數", k["citations"], ""),
-        ("已驗證", k["verified"], ""),
-        ("待人工審核", k["pending"], "warn" if k["pending"] else ""),
-        ("系統建議冊數", k["copies"], "accent"),
-        ("採用冊數", k.get("copies_final", k["copies"]), "accent"),    # 有決定用決定，否則用系統建議
+        ("課程數", k["courses"], "", None),
+        ("書目數", k["citations"], "", None),
+        ("已驗證", k["verified"], "", None),
+        ("待人工審核", k["pending"], "warn" if k["pending"] else "", None),
+        ("系統建議冊數", k["copies"], "accent", None),                        # 系統建議的總和（只是參考）
+        ("採購單冊數", k.get("copies_final", 0), "accent", "kpi-final"),       # 採購單裡各書的決定冊數總和
+        ("採購單書數", k.get("cart_books", 0), "", "kpi-cart-books"),
     ]
-    return "".join(
-        (f'<a class="kpi" href="#review"><div class="val {cls}">{val}</div><div class="lbl">{lbl}</div></a>'
-         if lbl == "待人工審核" else
-         f'<div class="kpi"><div class="val {cls}"{" id=" + chr(34) + "kpi-final" + chr(34) if lbl == "採用冊數" else ""}>'
-         f'{val}</div><div class="lbl">{lbl}</div></div>')
-        for lbl, val, cls in tiles
-    )
+    out = []
+    for lbl, val, cls, el_id in tiles:
+        if lbl == "待人工審核":
+            out.append(f'<a class="kpi" href="#review"><div class="val {cls}">{val}</div><div class="lbl">{lbl}</div></a>')
+        else:
+            id_attr = f' id="{el_id}"' if el_id else ""
+            out.append(f'<div class="kpi"><div class="val {cls}"{id_attr}>{val}</div><div class="lbl">{lbl}</div></div>')
+    return "".join(out)
 
 
 def _rec_row(priority: str, course: str, title: str, btype: str, status_html: str,
@@ -1402,7 +1411,7 @@ _el('expgo').addEventListener('click', function(){{
     const copies = numCell.textContent.trim();
     const decided = input ? input.value.trim() : '';
     const cells = Array.from(tr.querySelectorAll('td')).slice(1, 6).map(td => td.textContent)
-      .concat([copies, numCell.dataset.need || '', decided, decided !== '' ? decided : copies,
+      .concat([copies, numCell.dataset.need || '', decided, decided !== '' ? decided : '0',
                tr.querySelector('td.rationale').textContent]);
     lines.push(cells.map(_csvCell).join(','));
     n++;
@@ -1612,7 +1621,7 @@ _MAX_DECIDED_COPIES = 9999
 @app.post("/purchase/decide")
 def purchase_decide(body: dict = Body(...)):
     """記錄人對一本書採購冊數的決定。copies 為整數 0–9999（0＝這次不買，書仍留在清單）；
-    null／省略＝清除決定（採用系統建議）。決定以 book_key 對應，存在獨立的 purchase_decisions，
+    null／省略＝清除決定（回到「還沒決定」，不在採購單）。決定以 book_key 對應，存在獨立的 purchase_decisions，
     recommendations 被刪掉重建也不會消失。只收 JSON；驗證失敗回 400 且不寫入。"""
     key = body.get("book_key") if isinstance(body, dict) else None
     if not isinstance(key, str) or not key.strip():
@@ -1628,7 +1637,7 @@ def purchase_decide(body: dict = Body(...)):
         if copies is None:             # 清除：對應的建議已不存在也要能清掉
             s.execute(delete(PurchaseDecision).where(PurchaseDecision.book_key == key))
             s.commit()
-            return {"ok": True, "copies": None, "suggested": suggested, "final": suggested}
+            return {"ok": True, "copies": None, "suggested": suggested, "final": 0}     # 沒決定＝不在採購單
         if suggested is None:
             return JSONResponse({"ok": False, "message": "找不到這本書的採購建議（可能已被重算移除，請重新整理頁面）"},
                                 status_code=404)

@@ -31,7 +31,7 @@ _PRIORITY_ORDER = [
 def _fetch_report_rows() -> list[dict]:
     """採購建議是「一本書一筆」（見 recommender）。course_name 是用到這本書的所有課、以「、」串接；
     is_required 為任一課指定；course_id 是代表課程。回傳的鍵不能隨意增減：_write_csv 的 DictWriter 依賴它們。
-    need_copies＝不設上限的需求；decided_copies＝人決定的冊數（沒決定為 None）；final_copies＝最終採購冊數。"""
+    need_copies＝不設上限的需求；decided_copies＝人決定的冊數（沒決定為 None）；final_copies＝採購單裡的冊數（沒決定為 0）。"""
     with SessionLocal() as session:
         recs = session.execute(
             select(Recommendation, VerifiedBook, Course.course_name, Citation.is_required,
@@ -70,7 +70,7 @@ def _fetch_report_rows() -> list[dict]:
             "rationale": rec.rationale or "",
             "need_copies": need,
             "decided_copies": decided,
-            "final_copies": rec.suggested_copies if decided is None else decided,
+            "final_copies": 0 if decided is None else decided,       # 採購單：沒決定的書不算要買
         })
     return rows
 
@@ -111,7 +111,7 @@ def _print_report(rows: list[dict]) -> None:
         if counts[p.value]:
             print(f"  {p.value:<8} {counts[p.value]:>4} 筆")
     print(f"  {'合計建議採購冊數':<10} {total_purchase:>4} 冊")
-    print(f"  {'合計採用冊數':<10} {sum(r['final_copies'] for r in rows):>4} 冊（有決定用決定，否則用建議）")
+    print(f"  {'合計採購單冊數':<10} {sum(r['final_copies'] for r in rows):>4} 冊（只算人明確決定要買的）")
     print(f"{'='*60}\n")
 
 

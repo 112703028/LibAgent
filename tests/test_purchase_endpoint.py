@@ -84,13 +84,13 @@ def test_zero_is_stored_as_zero_and_is_not_a_clear(client, isolated_db):
 # ---------- 清除 ----------
 
 @pytest.mark.parametrize("payload", [{"copies": None}, {}])
-def test_clearing_removes_the_decision_and_final_returns_to_the_suggestion(client, isolated_db, payload):
+def test_clearing_removes_the_decision_and_the_book_leaves_the_cart(client, isolated_db, payload):
     add_rec(isolated_db, suggested=5)
     post(client, book_key=KEY, copies=12)
 
     body = post(client, book_key=KEY, **payload).json()
 
-    assert body == {"ok": True, "copies": None, "suggested": 5, "final": 5}
+    assert body == {"ok": True, "copies": None, "suggested": 5, "final": 0}      # 沒決定＝不在採購單，最終 0
     assert rows(isolated_db) == []
 
 
@@ -102,7 +102,7 @@ def test_clearing_a_decision_whose_recommendation_is_gone_still_succeeds(client,
 
     body = post(client, book_key="orphan", copies=None).json()
 
-    assert body["ok"] is True and body["suggested"] is None
+    assert body["ok"] is True and body["suggested"] is None and body["final"] == 0
     assert rows(isolated_db) == []
 
 
