@@ -1,6 +1,6 @@
-"""GET /cart：整個採購單（全校，不分學系）給頁首購物車抽屜用（獨立測試資料庫；絕不碰開發庫）。
+"""GET /cart：整個購物車（全校，不分學系）給頁首購物車抽屜用（獨立測試資料庫；絕不碰開發庫）。
 
-採購單＝有決定冊數 N ≥ 1 的書；沒決定與決定 0（明確排除）都不在裡面。
+購物車＝有決定冊數 N ≥ 1 的書；沒決定與決定 0（明確排除）都不在裡面。
 只列「現在還在採購清單裡」的書（與採購表同一個 purchasable() 條件），所以數字與採購表一致。
 """
 import pytest
@@ -38,8 +38,8 @@ def test_only_books_decided_above_zero_are_in_the_cart(client, isolated_db):
     add_rec(isolated_db, B, suggested=3, n=2)
     add_rec(isolated_db, C, suggested=2, n=3)
     decide(isolated_db, A, 12)
-    decide(isolated_db, B, 0)               # 明確排除：不在採購單
-                                            # C 沒決定：不在採購單
+    decide(isolated_db, B, 0)               # 明確排除：不在購物車
+                                            # C 沒決定：不在購物車
 
     body = client.get("/cart").json()
 

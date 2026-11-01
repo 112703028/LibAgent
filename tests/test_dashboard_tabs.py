@@ -1,8 +1,8 @@
-"""各分頁統一的版面：分頁列、共用工具列、欄位骨架、批次列、列上的資料屬性、頁首的採購單（購物車）抽屜。
+"""各分頁統一的版面：分頁列、共用工具列、欄位骨架、批次列、列上的資料屬性、頁首的購物車抽屜。
 
 統一的骨架：每張表第一格是勾選，其次「優先級｜課程｜▸ 書名｜…」，最右一欄是最後的動作（採購建議是「採購冊數」，審核是「處理」）；
 每個面板頂端有同一種批次列；工具列（搜尋、篩選、匯出）只有一條，對目前開著的分頁生效。
-採購單不是分頁：它是頁首左上角的購物車圖示，點開是整個採購單（全校、不隨學系篩選）的抽屜。
+購物車不是分頁：它是頁首左上角的購物車圖示，點開是整個購物車（全校、不隨學系篩選）的抽屜。
 """
 import re
 
@@ -21,7 +21,7 @@ def rec(**kw):
 
 
 def page(recs=None, review=None, decided=None, cart=(0, 0), pending_apply=0):
-    """cart＝(書數, 冊數)：全校的採購單合計（頁首購物車圖示上的數字），與頁面上這批書（可能被學系篩選）無關。"""
+    """cart＝(書數, 冊數)：全校的購物車合計（頁首購物車圖示上的數字），與頁面上這批書（可能被學系篩選）無關。"""
     recs = [rec()] if recs is None else recs
     data = {"kpis": {"courses": 1, "citations": 1, "verified": 1, "pending": 0, "copies": 5,
                      "copies_final": sum(r.final for r in recs), "cart_books": sum(r.in_cart for r in recs)},
@@ -85,7 +85,7 @@ def test_the_cart_is_a_header_button_with_a_school_wide_count_and_a_hidden_drawe
     html = markup(page([rec(decided=12)], reviews(), cart=(3, 40)))
 
     btn = re.search(r'<button[^>]*id="cartbtn"[^>]*>(.*?)</button>', html, re.S)
-    assert btn and 'aria-label="採購單"' in btn.group(0)
+    assert btn and 'aria-label="購物車"' in btn.group(0)
     assert re.search(r'id="cartcount"[^>]*>3<', btn.group(0))                    # 全校 3 本，不是頁面上（可能被學系篩選）的書數
     assert html.index('id="cartbtn"') < html.index('class="card"') < html.index('id="review"')   # 在頁首，卡片之前
     drawer = re.search(r'<aside[^>]*id="cartdrawer"[^>]*>', html).group(0)
@@ -172,7 +172,8 @@ def test_without_a_top_bar_the_banner_is_always_visible():
 def test_the_ui_says_purchase_suggestions_not_purchase_list():
     html = markup(page([rec()], reviews(), [decided_group()], pending_apply=2))
 
-    assert "採購清單" not in html                       # 「採購清單」容易和「採購單（購物車）」搞混
+    assert "採購清單" not in html                       # 「採購清單」容易和「購物車」搞混
+    assert "採購單" not in page([rec(decided=2)], reviews(), [decided_group()], cart=(1, 2), pending_apply=2)   # 連 JS 的提示文字都算：統一叫「購物車」
     assert "加入採購建議" in html and "套用後，放行的書才會出現在採購建議" in html
 
 
@@ -313,7 +314,7 @@ def test_purchase_and_log_panels_have_a_batch_bar_and_pending_panels_do_not():
     recs_chunk = pn["recs"][1]
     bars = re.findall(r'<div class="rbatch[^"]*">.*?</div>', recs_chunk, re.S)
 
-    assert len(bars) == 1                                                     # 採購單移到抽屜，只剩一條批次列
+    assert len(bars) == 1                                                     # 購物車移到抽屜，只剩一條批次列
     assert [m for m in re.findall(r'data-pbatch="(\w+)"', bars[0])] == ["suggested", "zero", "clear"]
     assert "加入購物車（採用系統建議）" in bars[0] and "設為不買" in bars[0] and "清除決定" in bars[0]
     for kind in ("mismatch", "notfound", "other"):

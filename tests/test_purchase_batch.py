@@ -1,9 +1,9 @@
-"""POST /purchase/decide-many：批次加入採購單／設為不買／清除決定（獨立測試資料庫）。
+"""POST /purchase/decide-many：批次加入購物車／設為不買／清除決定（獨立測試資料庫）。
 
 mode：
-  suggested  決定冊數＝伺服器端「當下」的系統建議（＝加入採購單）；系統建議為 0 的略過
+  suggested  決定冊數＝伺服器端「當下」的系統建議（＝加入購物車）；系統建議為 0 的略過
   zero       決定冊數＝0（這次不買，明確排除）
-  clear      刪除決定（回到還沒決定、不在採購單）
+  clear      刪除決定（回到還沒決定、不在購物車）
 """
 from datetime import datetime, timezone
 

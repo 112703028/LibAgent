@@ -101,7 +101,7 @@ def test_recrow_without_a_cut_has_need_equal_to_the_suggestion(world):
 def test_final_is_zero_when_nothing_was_decided(world):
     r = row(SMALL)
 
-    # 採購單語意：沒決定的書不在採購單，最終冊數為 0（系統建議只是參考）
+    # 購物車語意：沒決定的書不在購物車，最終冊數為 0（系統建議只是參考）
     assert r.decided is None and r.stale_from is None and r.copies == 2 and r.final == 0 and not r.in_cart
 
 
@@ -143,14 +143,14 @@ def test_legacy_recommendation_without_a_book_key_has_no_decision_slot(world):
 
 def test_kpi_cart_totals_count_only_decided_books(world):
     before = dashboard._load_data()["kpis"]
-    decide(BIG, 12, suggested_at=5)          # 加入採購單：12 冊
+    decide(BIG, 12, suggested_at=5)          # 加入購物車：12 冊
     decide(SMALL, 0, suggested_at=2)         # 明確排除：不算
 
     after = dashboard._load_data()["kpis"]
 
     assert after["copies"] == before["copies"]                              # 系統建議不受決定影響
-    assert after["copies_final"] == before["copies_final"] + 12             # 採購單冊數只加決定的 12
-    assert after["cart_books"] == before["cart_books"] + 1                  # 採購單書數只加 1 本（0 不算）
+    assert after["copies_final"] == before["copies_final"] + 12             # 購物車冊數只加決定的 12
+    assert after["cart_books"] == before["cart_books"] + 1                  # 購物車書數只加 1 本（0 不算）
 
 
 def test_adopted_total_is_the_sum_of_the_final_copies_of_the_listed_recommendations(world):
@@ -185,4 +185,4 @@ def test_export_csv_has_the_new_columns(world):
     big = next(r for r in rows if len(r) > idx["書名"] and r[idx["書名"]] == BIG)
     small = next(r for r in rows if len(r) > idx["書名"] and r[idx["書名"]] == SMALL)
     assert [big[idx[k]] for k in ("冊數", "需求冊數", "決定冊數", "最終採購數")] == ["5", "26", "12", "12"]
-    assert [small[idx[k]] for k in ("冊數", "需求冊數", "決定冊數", "最終採購數")] == ["2", "2", "", "0"]    # 沒決定：決定欄留空、不在採購單
+    assert [small[idx[k]] for k in ("冊數", "需求冊數", "決定冊數", "最終採購數")] == ["2", "2", "", "0"]    # 沒決定：決定欄留空、不在購物車

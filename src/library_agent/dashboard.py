@@ -103,12 +103,12 @@ class RecRow(NamedTuple):
 
     @property
     def final(self) -> int:
-        """最終採購冊數＝採購單裡的冊數：有決定就用決定，**沒決定是 0**（系統建議只是參考，沒加入就不算要買）。"""
+        """最終採購冊數＝購物車裡的冊數：有決定就用決定，**沒決定是 0**（系統建議只是參考，沒加入就不算要買）。"""
         return 0 if self.decided is None else self.decided
 
     @property
     def in_cart(self) -> bool:
-        """在採購單裡：明確決定了大於 0 的冊數。決定 0＝明確排除，沒決定＝還沒決定，兩者都不在採購單。"""
+        """在購物車裡：明確決定了大於 0 的冊數。決定 0＝明確排除，沒決定＝還沒決定，兩者都不在購物車。"""
         return self.decided is not None and self.decided > 0
 
 
@@ -122,7 +122,7 @@ def _confirmed():
 
 
 def _load_cart(s) -> list[dict]:
-    """整個採購單（全校，不分學系）：決定冊數 ≥ 1 且這本書現在還在採購建議裡（與採購表同一個 purchasable() 條件）。
+    """整個購物車（全校，不分學系）：決定冊數 ≥ 1 且這本書現在還在採購建議裡（與採購表同一個 purchasable() 條件）。
     決定以 book_key 對應；對不上任何採購建議的決定（建議後來被重建掉）不列也不算，與採購表一致。
     排序：優先級高的在前，同優先級依書名、再依 book_key（穩定）。"""
     rows = s.execute(
@@ -344,7 +344,7 @@ def _load_data(departments: list[str] | None = None) -> dict:
         pending_items = review_items(VerifiedBook.review_status == "pending")
         decided_items = review_items(VerifiedBook.review_choice.is_not(None))     # 「已決定」分頁（可撤銷）
         pending_apply = len(pending_apply_ids(s))      # 全校的待套用數：套用永遠處理全部
-        cart_items = _load_cart(s)                      # 全校的採購單（頁首購物車圖示的數字），不隨學系篩選
+        cart_items = _load_cart(s)                      # 全校的購物車（頁首購物車圖示的數字），不隨學系篩選
 
     from library_agent.config import get_settings
 
@@ -353,8 +353,8 @@ def _load_data(departments: list[str] | None = None) -> dict:
     by_kind = group_pending(decided_items, rec_of, threshold)
     earliest = datetime.min.replace(tzinfo=timezone.utc)
     decided = sorted((g for kind in KINDS for g in by_kind[kind]), key=lambda g: g.reviewed_at or earliest, reverse=True)
-    kpis["copies_final"] = sum(r.final for r in recs)      # 採購單冊數：各書的決定冊數總和（kpis["copies"] 是系統建議）
-    kpis["cart_books"] = sum(r.in_cart for r in recs)      # 採購單書數
+    kpis["copies_final"] = sum(r.final for r in recs)      # 購物車冊數：各書的決定冊數總和（kpis["copies"] 是系統建議）
+    kpis["cart_books"] = sum(r.in_cart for r in recs)      # 購物車書數
     return {"kpis": kpis, "priority": prio, "status": status, "recs": recs, "pending": pending,
             "review": review, "decided": decided, "pending_apply": pending_apply,
             "cart": {"books": len(cart_items), "copies": sum(i["copies"] for i in cart_items)}}
@@ -377,15 +377,15 @@ def _bars(items: list[tuple[str, int, str]]) -> str:
 
 
 def _kpi_tiles(k: dict) -> str:
-    # (標籤, 值, 樣式, 元素 id)：id 讓前端在改冊數、加入、移出採購單時就地更新
+    # (標籤, 值, 樣式, 元素 id)：id 讓前端在改冊數、加入、移出購物車時就地更新
     tiles = [
         ("課程數", k["courses"], "", None),
         ("書目數", k["citations"], "", None),
         ("已驗證", k["verified"], "", None),
         ("待人工審核", k["pending"], "warn" if k["pending"] else "", None),
         ("系統建議冊數", k["copies"], "accent", None),                        # 系統建議的總和（只是參考）
-        ("採購單冊數", k.get("copies_final", 0), "accent", "kpi-final"),       # 採購單裡各書的決定冊數總和
-        ("採購單書數", k.get("cart_books", 0), "", "kpi-cart-books"),
+        ("購物車冊數", k.get("copies_final", 0), "accent", "kpi-final"),       # 購物車裡各書的決定冊數總和
+        ("購物車書數", k.get("cart_books", 0), "", "kpi-cart-books"),
     ]
     out = []
     for lbl, val, cls, el_id in tiles:
@@ -407,8 +407,8 @@ def _rec_row(priority: str, course: str, title: str, btype: str, status_html: st
     展開鈕與「未驗證」標記內都不放任何文字（由 CSS 畫），因為匯出 CSV 是讀每格的 textContent。
     unverified：這本書有書目在驗證階段查無此書。
     採購冊數欄（最右）：決定冊數輸入框＋「加入購物車／移出購物車」按鈕。book_key 為 None（舊格式的建議）的列沒有；
-    留空＝還沒決定（不在採購單），填 0＝這次不買，填大於 0＝加入採購單。系統建議為 0 時不能直接「加入」（沒有東西可加）。
-    in_cart：這本書在採購單裡（決定 > 0）；search：這一列可被搜尋的文字（小寫，這裡負責逸出）。
+    留空＝還沒決定（不在購物車），填 0＝這次不買，填大於 0＝加入購物車。系統建議為 0 時不能直接「加入」（沒有東西可加）。
+    in_cart：這本書在購物車裡（決定 > 0）；search：這一列可被搜尋的文字（小寫，這裡負責逸出）。
     「需求 N」（被上限截斷時）與「建議已從 A 變成 B」都由 CSS 用 data-* 畫，輸入框的值也不是文字節點。"""
     pcolor = _PRIORITY_COLOR.get(priority, _PENDING_COLOR)
     plabel = _PRIORITY_LABEL.get(priority, _PENDING_LABEL)
@@ -614,7 +614,7 @@ def _decided_row(g) -> str:
 
 def _purchase_batch_bars() -> str:
     """採購建議的批次列。每個按鈕都是 POST /purchase/decide-many 的一個 mode；沒有「全部改成 N 本」，
-    一次把上百本改成同一冊數太容易出錯。採購單在頁首的抽屜裡（那裡有自己的移出／清空）。"""
+    一次把上百本改成同一冊數太容易出錯。購物車在頁首的抽屜裡（那裡有自己的移出／清空）。"""
     return (
         '<div class="rbatch">勾選的書：'
         '<button class="abtn" type="button" data-pbatch="suggested">加入購物車（採用系統建議）</button>'
@@ -633,7 +633,7 @@ def _review_panel(review: dict, decided: list | None = None, pending_apply: int 
     """採購建議與人工審核的同一張卡片，兩層導覽：第一層「採購｜審核」（兩件事性質不同：審核是修資料、採購是做決定），
     採購區只有採購建議一張表；審核區有子分頁 配錯｜查無此書｜其他｜審核紀錄 與「套用」橫幅。
     審核有待處理的書或決定紀錄才有第一層（沒有審核可看時只有採購建議，不放第一層）。
-    採購單不是分頁，是頁首左上角的購物車抽屜（見 _render）。每個面板有 data-filters（工具列要顯示哪些篩選）
+    購物車不是分頁，是頁首左上角的購物車抽屜（見 _render）。每個面板有 data-filters（工具列要顯示哪些篩選）
     與 data-export（匯出哪種欄位）。
     沒有 rec_html 時只輸出審核部分（單獨成卡片）。"""
     decided = decided or []
@@ -760,13 +760,13 @@ def _render(data: dict) -> str:
         data["review"], data.get("decided"), data.get("pending_apply", 0),
         rec_html=_purchase_batch_bars() + _rec_table(recs), rec_count=len(recs), toolbar_html=toolbar,
     )
-    cart = data.get("cart") or {}      # 全校的採購單合計（不隨學系篩選），頁首購物車圖示上的數字
+    cart = data.get("cart") or {}      # 全校的購物車合計（不隨學系篩選），頁首購物車圖示上的數字
     # 抽屜的 CSV 要把代碼翻成畫面上同樣的字，標籤只在 Python 這裡有一份
     _plabel_json = json.dumps(_PRIORITY_LABEL, ensure_ascii=False)
     _slabel_json = json.dumps(_STATUS_LABEL, ensure_ascii=False)
     cart_header = (
         '<div class="topbar">'
-        '<button id="cartbtn" class="carttop" type="button" aria-label="採購單" title="採購單" '
+        '<button id="cartbtn" class="carttop" type="button" aria-label="購物車" title="購物車" '
         'aria-expanded="false" aria-controls="cartdrawer">'
         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" '
         'stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/>'
@@ -776,13 +776,13 @@ def _render(data: dict) -> str:
     )
     cart_drawer = (
         '<div id="cartshade" hidden></div>'
-        '<aside id="cartdrawer" class="cartdrawer" role="dialog" aria-label="採購單" hidden>'
-        '<div class="cdhead"><h2>採購單（全校）</h2>'
+        '<aside id="cartdrawer" class="cartdrawer" role="dialog" aria-label="購物車" hidden>'
+        '<div class="cdhead"><h2>購物車（全校）</h2>'
         '<button id="cartclose" class="cdclose" type="button" aria-label="關閉">×</button></div>'
         '<div id="cartlist" class="cdlist"></div>'
         '<div class="cdfoot"><div id="carttotal" class="cdtotal"></div>'
-        '<button id="cartexport" class="runbtn" type="button" style="font-size:13px;padding:6px 14px;">匯出採購單 CSV</button>'
-        '<button id="cartclear" class="abtn abtn-no" type="button">清空採購單</button></div>'
+        '<button id="cartexport" class="runbtn" type="button" style="font-size:13px;padding:6px 14px;">匯出購物車 CSV</button>'
+        '<button id="cartclear" class="abtn abtn-no" type="button">清空購物車</button></div>'
         '</aside>'
     )
     return f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">
@@ -1334,9 +1334,9 @@ if (_reviewCard) {{
   }});
 }}
 
-// ---- 採購單與冊數決定 ----
-// 決定冊數：留空＝還沒決定（不在採購單）、填 0＝這次不買、填大於 0＝加入採購單。
-// 採購單本身在頁首的抽屜裡（整個採購單、全校）；這裡任何一列改變，就地更新該列與 KPI，並重取採購單更新圖示上的數字。
+// ---- 購物車與冊數決定 ----
+// 決定冊數：留空＝還沒決定（不在購物車）、填 0＝這次不買、填大於 0＝加入購物車。
+// 購物車本身在頁首的抽屜裡（整個購物車、全校）；這裡任何一列改變，就地更新該列與 KPI，並重取購物車更新圖示上的數字。
 function _syncCartBtn(tr) {{
   const btn = tr.querySelector('[data-cart]');
   if (!btn) return;
@@ -1419,7 +1419,7 @@ if (_recTable) _recTable.addEventListener('change', function(ev){{
 }});
 
 // 單列「加入購物車／移出購物車」。加入＝輸入框裡有 ≥1 的冊數就用那個數字，沒有才採用伺服器端當下的系統建議；
-// 移出＝清除決定。意圖在按下去那一刻決定；排在前面的儲存若已經把這本書加進採購單（使用者剛輸入的冊數），就不再覆蓋。
+// 移出＝清除決定。意圖在按下去那一刻決定；排在前面的儲存若已經把這本書加進購物車（使用者剛輸入的冊數），就不再覆蓋。
 function _cartToggle(btn) {{
   const tr = btn.closest('tr');
   const adding = tr.dataset.incart !== '1';
@@ -1449,8 +1449,8 @@ function _cartToggle(btn) {{
   }});
 }}
 
-// ---- 採購單抽屜（頁首左上角的購物車圖示）----
-// 顯示整個採購單（全校，不隨學系篩選），資料來自 GET /cart；改冊數、移出、清空都沿用 /purchase/*，
+// ---- 購物車抽屜（頁首左上角的購物車圖示）----
+// 顯示整個購物車（全校，不隨學系篩選），資料來自 GET /cart；改冊數、移出、清空都沿用 /purchase/*，
 // 並把結果同步回採購表上有出現的列。標題與書名一律用 textContent 放進去（不用 innerHTML）。
 const _PLABEL = {_plabel_json};
 const _SLABEL = {_slabel_json};
@@ -1463,7 +1463,7 @@ function _renderCart(d) {{
   if (!items.length) {{
     const p = document.createElement('p');
     p.className = 'empty';
-    p.textContent = '採購單是空的。在採購建議的「採購冊數」填冊數，或按「加入購物車」。';
+    p.textContent = '購物車是空的。在採購建議的「採購冊數」填冊數，或按「加入購物車」。';
     list.appendChild(p);
   }}
   items.forEach(function(it){{
@@ -1556,7 +1556,7 @@ async function _cartRemove(row) {{
 async function _cartClear() {{
   const keys = (_cartData.items || []).map(function(i){{ return i.book_key; }});
   if (!keys.length) return;
-  if (!confirm('確定清空整個採購單（' + keys.length + ' 本、' + _cartData.copies + ' 冊）？清空後這些書回到「尚未決定」。')) return;
+  if (!confirm('確定清空整個購物車（' + keys.length + ' 本、' + _cartData.copies + ' 冊）？清空後這些書回到「尚未決定」。')) return;
   try {{
     for (let i = 0; i < keys.length; i += 200) {{      // 伺服器一次最多收 200 本
       const d = await _postJson('/purchase/decide-many', {{book_keys: keys.slice(i, i + 200), mode: 'clear'}});
@@ -1570,7 +1570,7 @@ async function _cartClear() {{
 
 function _exportCart() {{
   const items = _cartData.items || [];
-  if (!items.length) {{ alert('採購單是空的'); return; }}
+  if (!items.length) {{ alert('購物車是空的'); return; }}
   const lines = [['書名', '採購冊數', '系統建議', '優先級', '館藏狀態'].map(_csvCell).join(',')];
   items.forEach(function(it){{
     lines.push([it.title, it.copies, it.suggested, _PLABEL[it.priority] || it.priority, _SLABEL[it.status] || it.status]
@@ -1898,7 +1898,7 @@ _el('expgo').addEventListener('click', function(){{
     prefix = 'recommendations';
     header = ['優先級','課程','書名','類別','館藏狀態','冊數','需求冊數','決定冊數','最終採購數','理由'];
     // 決定冊數是輸入框、「需求」標記由 CSS 畫，兩者都不在 textContent 裡，所以明確讀 data-need 與輸入框的值；
-    // 最終採購數＝決定冊數，沒決定是 0（沒加入採購單就不算要買）。
+    // 最終採購數＝決定冊數，沒決定是 0（沒加入購物車就不算要買）。
     cellsOf = function(tr) {{
       const numCell = tr.querySelector('td.num');
       const input = tr.querySelector('.dec-in');
@@ -2134,7 +2134,7 @@ _MAX_DECIDED_COPIES = 9999
 
 @app.get("/cart")
 def cart() -> dict:
-    """整個採購單（全校）給頁首購物車抽屜；打開抽屜時才取。"""
+    """整個購物車（全校）給頁首購物車抽屜；打開抽屜時才取。"""
     with SessionLocal() as s:
         items = _load_cart(s)
     return {"ok": True, "items": items, "books": len(items), "copies": sum(i["copies"] for i in items)}
@@ -2143,7 +2143,7 @@ def cart() -> dict:
 @app.post("/purchase/decide")
 def purchase_decide(body: dict = Body(...)):
     """記錄人對一本書採購冊數的決定。copies 為整數 0–9999（0＝這次不買，書仍留在清單）；
-    null／省略＝清除決定（回到「還沒決定」，不在採購單）。決定以 book_key 對應，存在獨立的 purchase_decisions，
+    null／省略＝清除決定（回到「還沒決定」，不在購物車）。決定以 book_key 對應，存在獨立的 purchase_decisions，
     recommendations 被刪掉重建也不會消失。只收 JSON；驗證失敗回 400 且不寫入。"""
     key = body.get("book_key") if isinstance(body, dict) else None
     if not isinstance(key, str) or not key.strip():
@@ -2159,7 +2159,7 @@ def purchase_decide(body: dict = Body(...)):
         if copies is None:             # 清除：對應的建議已不存在也要能清掉
             s.execute(delete(PurchaseDecision).where(PurchaseDecision.book_key == key))
             s.commit()
-            return {"ok": True, "copies": None, "suggested": suggested, "final": 0}     # 沒決定＝不在採購單
+            return {"ok": True, "copies": None, "suggested": suggested, "final": 0}     # 沒決定＝不在購物車
         if suggested is None:
             return JSONResponse({"ok": False, "message": "找不到這本書的採購建議（可能已被重算移除，請重新整理頁面）"},
                                 status_code=404)
@@ -2180,10 +2180,10 @@ _MAX_BATCH = 200
 
 @app.post("/purchase/decide-many")
 def purchase_decide_many(body: dict = Body(...)):
-    """批次決定（採購建議／採購單分頁的批次按鈕）。mode：
-      suggested  決定冊數＝伺服器端「當下」的系統建議（＝加入採購單，記下決定當時的建議）；系統建議為 0 的略過
+    """批次決定（採購建議／購物車分頁的批次按鈕）。mode：
+      suggested  決定冊數＝伺服器端「當下」的系統建議（＝加入購物車，記下決定當時的建議）；系統建議為 0 的略過
       zero       決定冊數＝0（這次不買，明確排除）
-      clear      刪除決定（回到還沒決定、不在採購單；對應的建議已不存在也要能清掉）
+      clear      刪除決定（回到還沒決定、不在購物車；對應的建議已不存在也要能清掉）
     一次最多 200 本。驗證失敗回 400 且不寫入任何東西；找不到建議的 key 略過（clear 除外），不讓整批失敗。
     回傳 results：每個 key 處理後的決定冊數與最終冊數，前端據此就地更新各列。"""
     keys = body.get("book_keys") if isinstance(body, dict) else None

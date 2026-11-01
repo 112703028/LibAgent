@@ -90,7 +90,7 @@ def test_decision_cell_has_no_text_nodes():
 
 
 def test_row_carries_the_final_copies_for_the_kpi_and_export():
-    assert 'data-final="0"' in table(row())                          # 沒決定：不在採購單，最終 0
+    assert 'data-final="0"' in table(row())                          # 沒決定：不在購物車，最終 0
     assert 'data-final="12"' in table(row(decided=12))
     assert 'data-final="0"' in table(row(decided=0))
 
@@ -105,7 +105,7 @@ def test_kpi_has_system_suggestion_and_cart_totals():
     html = dashboard._kpi_tiles({"courses": 1, "citations": 1, "verified": 1, "pending": 0,
                                  "copies": 10, "copies_final": 7, "cart_books": 3})
 
-    assert "系統建議冊數" in html and "採購單冊數" in html and "採購單書數" in html
+    assert "系統建議冊數" in html and "購物車冊數" in html and "購物車書數" in html
     assert "採用冊數" not in html and "建議採購總冊數" not in html
     assert 'id="kpi-final">7<' in html and 'id="kpi-cart-books">3<' in html
 

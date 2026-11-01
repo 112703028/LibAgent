@@ -90,7 +90,7 @@ def test_clearing_removes_the_decision_and_the_book_leaves_the_cart(client, isol
 
     body = post(client, book_key=KEY, **payload).json()
 
-    assert body == {"ok": True, "copies": None, "suggested": 5, "final": 0}      # 沒決定＝不在採購單，最終 0
+    assert body == {"ok": True, "copies": None, "suggested": 5, "final": 0}      # 沒決定＝不在購物車，最終 0
     assert rows(isolated_db) == []
 
 

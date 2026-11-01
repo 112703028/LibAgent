@@ -251,7 +251,7 @@ def test_purchase_list_and_review_are_tabs_of_one_card():
     card = html[html.index('id="review"'):]
     assert card.index('id="rectable"') > 0                               # 採購表在同一張卡片裡
     tabs = re.findall(r'class="rtab[^"]*" data-k="(\w+)"', html)
-    assert tabs == ["recs", "mismatch", "notfound", "other"]             # 採購建議在最前面，沒有決定紀錄就沒有「審核紀錄」；採購單在頁首抽屜
+    assert tabs == ["recs", "mismatch", "notfound", "other"]             # 採購建議在最前面，沒有決定紀錄就沒有「審核紀錄」；購物車在頁首抽屜
 
 
 def test_the_purchase_tab_is_open_by_default_and_review_panels_are_hidden():
