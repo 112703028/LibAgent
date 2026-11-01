@@ -47,10 +47,15 @@ def tabs(html):
     return re.findall(r'<button class="rtab[^"]*" data-k="(\w+)"([^>]*)>([^<]*)</button>', html)
 
 
+def markup(html):
+    """只看標記：去掉 <script>（頁面的 JS 裡也有 data-k="cart"、[data-cart] 這類選擇器字串）。"""
+    return re.sub(r"<script>.*?</script>", "", html, flags=re.S)
+
+
 def panels(html):
     """面板開頭標籤的屬性與內容：{data-k: (標籤字串, 內容)}"""
     out = {}
-    for chunk in html.split('<div class="rpanel"')[1:]:
+    for chunk in markup(html).split('<div class="rpanel"')[1:]:
         head = chunk[:chunk.index(">")]
         out[re.search(r'data-k="(\w+)"', head).group(1)] = (head, chunk)
     return out
@@ -77,7 +82,7 @@ def test_tab_bar_order_and_cart_tab_label():
 def test_cart_tab_shares_the_purchase_panel_it_has_no_panel_of_its_own():
     html = page([rec(decided=12)], reviews())
 
-    assert 'data-k="cart"' in html and html.count('data-k="cart"') == 1        # 只有分頁按鈕
+    assert markup(html).count('data-k="cart"') == 1                              # 只有分頁按鈕
     assert "cart" not in panels(html)
 
 
