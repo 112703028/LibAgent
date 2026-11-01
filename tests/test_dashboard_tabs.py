@@ -20,13 +20,13 @@ def rec(**kw):
     return dashboard.RecRow(**base)
 
 
-def page(recs=None, review=None, decided=None, cart=(0, 0)):
+def page(recs=None, review=None, decided=None, cart=(0, 0), pending_apply=0):
     """cart＝(書數, 冊數)：全校的採購單合計（頁首購物車圖示上的數字），與頁面上這批書（可能被學系篩選）無關。"""
     recs = [rec()] if recs is None else recs
     data = {"kpis": {"courses": 1, "citations": 1, "verified": 1, "pending": 0, "copies": 5,
                      "copies_final": sum(r.final for r in recs), "cart_books": sum(r.in_cart for r in recs)},
             "priority": {"high": 1}, "status": {"missing": 1}, "recs": recs, "pending": [],
-            "review": review or {k: [] for k in KINDS}, "decided": decided or [], "pending_apply": 0,
+            "review": review or {k: [] for k in KINDS}, "decided": decided or [], "pending_apply": pending_apply,
             "cart": {"books": cart[0], "copies": cart[1]}}
     return dashboard._render(data)
 
@@ -111,6 +111,71 @@ def test_tab_bar_is_present_with_the_purchase_list_even_without_review_items():
     assert [t[0] for t in tabs(page())] == ["recs"]
 
 
+# ---------- 兩層導覽：採購｜審核 ----------
+
+def top_buttons(html):
+    return re.findall(r'<button class="toptab[^"]*" data-top="(\w+)"[^>]*>([^<]*)</button>', markup(html))
+
+
+def test_two_level_nav_has_a_buy_and_a_review_button_with_their_counts():
+    html = page([rec()], reviews(), [decided_group()])
+
+    assert top_buttons(html) == [("buy", "採購 1 本"), ("review", "審核 3 組待處理")]
+    assert re.search(r'<button class="toptab active" data-top="buy"', html)          # 預設開在採購
+
+
+def test_the_top_bar_sits_above_the_sub_tabs_and_the_toolbar():
+    html = markup(page([rec()], reviews()))
+
+    assert html.index('class="toplevel"') < html.index('class="filters maintabs"') < html.index('id="toolbar"')
+
+
+def test_without_review_items_there_is_no_top_bar():
+    html = page()
+
+    assert top_buttons(html) == [] and 'class="toplevel"' not in markup(html)
+
+
+def test_sub_tabs_carry_their_group_and_only_the_open_groups_are_visible():
+    html = page([rec()], reviews(), [decided_group()])
+    by_k = {k: attrs for k, attrs, _label in tabs(html)}
+
+    assert 'data-top="buy"' in by_k["recs"] and "hidden" not in by_k["recs"]
+    for k in ("mismatch", "notfound", "other", "decided"):
+        assert 'data-top="review"' in by_k[k] and "hidden" in by_k[k], k
+    assert re.search(r'<div class="filters maintabs"[^>]* hidden', markup(html))     # 採購區只有一個分頁，不顯示子分頁列
+
+
+def test_the_apply_banner_belongs_to_the_review_area_and_the_buy_area_gets_a_pointer():
+    html = markup(page([rec()], reviews(), pending_apply=2))
+
+    banner = re.search(r'<div class="rapply"[^>]*>', html).group(0)
+    assert 'data-top="review"' in banner and "hidden" in banner                       # 採購區看不到「套用」按鈕
+    hint = re.search(r'<div class="applyhint"[^>]*>.*?</div>', html, re.S).group(0)
+    assert 'data-top="buy"' in hint and "hidden" not in hint.split(">")[0]
+    assert "有 2 筆審核決定尚未套用" in hint and 'data-goto-top="review"' in hint
+    assert hint.count("applybtn") == 0                                                  # 提示不是按鈕本身，不能在這裡套用
+
+
+def test_no_pointer_when_nothing_waits_to_be_applied():
+    assert 'class="applyhint"' not in markup(page([rec()], reviews(), pending_apply=0))
+
+
+def test_without_a_top_bar_the_banner_is_always_visible():
+    # 學系篩選時審核紀錄可能是空的，但待套用數是全校的：沒有兩層導覽時橫幅不能被藏起來
+    html = markup(page([rec()], pending_apply=3))
+
+    assert 'class="toplevel"' not in html
+    assert re.search(r'<div class="rapply">', html) and 'class="applyhint"' not in html
+
+
+def test_the_ui_says_purchase_suggestions_not_purchase_list():
+    html = markup(page([rec()], reviews(), [decided_group()], pending_apply=2))
+
+    assert "採購清單" not in html                       # 「採購清單」容易和「採購單（購物車）」搞混
+    assert "以此書名加入採購建議" in html and "套用後，放行的書才會出現在採購建議" in html
+
+
 # ---------- 共用工具列 ----------
 
 def test_one_toolbar_with_search_filters_and_export_between_the_tab_bar_and_the_panels():
@@ -174,7 +239,7 @@ def test_the_review_priority_cell_shows_the_priority_pill_or_why_it_is_not_in_th
     pn = panels(page([rec()], reviews()))
 
     assert dashboard._PRIORITY_LABEL["high"] in pn["notfound"][1]                 # 查無此書：有採購建議的優先級
-    assert "已擋下，不在採購清單" in pn["mismatch"][1]                               # 配錯：被擋下
+    assert "已擋下，不在採購建議" in pn["mismatch"][1]                               # 配錯：被擋下
 
 
 # ---------- 列上的資料屬性 ----------
@@ -278,6 +343,6 @@ def test_the_front_end_is_wired_to_the_cart_batch_and_undo_actions():
     html = page([rec()], reviews(), [decided_group()])
 
     for name in ("_cartToggle", "_purchaseBatch", "_undoBatch", "_selectTab", "_applyRecFilters", "_refreshCart",
-                 "_openCart", "_loadCart", "_renderCart", "_withRow"):
+                 "_openCart", "_loadCart", "_renderCart", "_withRow", "_selectTop", "_syncTop"):
         assert f"function {name}(" in html or f"async function {name}(" in html, name
     assert html.count("addEventListener('click', _onTraceClick)") == 1       # 展開鈕的事件只綁一次

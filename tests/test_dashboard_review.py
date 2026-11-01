@@ -372,7 +372,7 @@ def test_notfound_row_has_a_prefilled_title_box_an_isbn_box_and_two_buttons():
     assert 'class="aisbn"' in html
     assert 'data-act="custom"' in html and 'data-act="none"' in html
     assert 'data-act="original"' not in html and 'data-act="matched"' not in html
-    assert "加入採購清單" in html and "捨棄" in html
+    assert "以此書名加入採購建議" in html and "捨棄" in html
 
 
 def test_other_row_has_two_buttons():

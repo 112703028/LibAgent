@@ -122,7 +122,7 @@ def _confirmed():
 
 
 def _load_cart(s) -> list[dict]:
-    """整個採購單（全校，不分學系）：決定冊數 ≥ 1 且這本書現在還在採購清單裡（與採購表同一個 purchasable() 條件）。
+    """整個採購單（全校，不分學系）：決定冊數 ≥ 1 且這本書現在還在採購建議裡（與採購表同一個 purchasable() 條件）。
     決定以 book_key 對應；對不上任何採購建議的決定（建議後來被重建掉）不列也不算，與採購表一致。
     排序：優先級高的在前，同優先級依書名、再依 book_key（穩定）。"""
     rows = s.execute(
@@ -509,8 +509,8 @@ def _rec_table(recs: list) -> str:
 
 # 審核分頁：(kind, 分頁名稱, 給新手的一句說明)
 _REVIEW_TABS = [
-    ("mismatch", "配錯", "稽核判定「配到的書」與課綱列的不是同一本。這些書<b>不在</b>採購清單裡，要人工確認後才會納入。"),
-    ("notfound", "查無此書", "驗證階段在權威書目查不到這本書，館藏是用書名直接查詢的結果。這些書<b>仍在</b>採購清單裡，請留意。"),
+    ("mismatch", "配錯", "稽核判定「配到的書」與課綱列的不是同一本。這些書<b>不在</b>採購建議裡，要人工確認後才會納入。"),
+    ("notfound", "查無此書", "驗證階段在權威書目查不到這本書，館藏是用書名直接查詢的結果。這些書<b>仍在</b>採購建議裡，請留意。"),
     ("other", "其他", "其他需要人工確認的書。"),
 ]
 _JUDGE_LABEL = {"rule": "字串規則", "llm": "LLM"}
@@ -530,12 +530,12 @@ def _review_reason(g) -> str:
 
 
 def _review_list_status(g) -> str:
-    """這組在採購清單裡的狀況：有建議就顯示優先級與冊數；配錯的被擋下。"""
+    """這組在採購建議裡的狀況：有建議就顯示優先級與冊數；配錯的被擋下。"""
     if g.priority is not None:
         color = _PRIORITY_COLOR.get(g.priority, _PENDING_COLOR)
         label = _PRIORITY_LABEL.get(g.priority, g.priority)
         return f'<span class="pill" style="background:{color}">{html.escape(label)}</span> {g.copies} 冊'
-    return "已擋下，不在採購清單" if g.kind == "mismatch" else "不在採購清單"
+    return "已擋下，不在採購建議" if g.kind == "mismatch" else "不在採購建議"
 
 
 _CHOICE_LABEL = {"matched": "買配對到的書", "original": "買原書", "custom": "輸入書名加入", "none": "都不買／捨棄"}
@@ -560,7 +560,7 @@ def _action_cell(g) -> str:
         body = (
             f'<input class="atitle" type="text" maxlength="500" value="{html.escape(g.title or "")}" aria-label="要採購的書名">'
             '<input class="aisbn" type="text" maxlength="20" placeholder="ISBN（選填）" aria-label="ISBN（選填）">'
-            + _abtn("custom", "加入採購清單") + _abtn("none", "捨棄", negative=True)
+            + _abtn("custom", "以此書名加入採購建議") + _abtn("none", "捨棄", negative=True)
         )
     else:
         body = _abtn("matched", "買這本書") + _abtn("none", "都不買", negative=True)
@@ -644,31 +644,43 @@ def _log_batch_bar() -> str:
 
 def _review_panel(review: dict, decided: list | None = None, pending_apply: int = 0,
                   rec_html: str | None = None, rec_count: int = 0, toolbar_html: str | None = None) -> str:
-    """採購建議與人工審核的同一張卡片。分頁（有 rec_html 時）：採購建議｜配錯｜查無此書｜其他｜審核紀錄。
+    """採購建議與人工審核的同一張卡片，兩層導覽：第一層「採購｜審核」（兩件事性質不同：審核是修資料、採購是做決定），
+    採購區只有採購建議一張表；審核區有子分頁 配錯｜查無此書｜其他｜審核紀錄 與「套用」橫幅。
+    審核有待處理的書或決定紀錄才有第一層（沒有審核可看時只有採購建議，不放第一層）。
     採購單不是分頁，是頁首左上角的購物車抽屜（見 _render）。每個面板有 data-filters（工具列要顯示哪些篩選）
     與 data-export（匯出哪種欄位）。
     沒有 rec_html 時只輸出審核部分（單獨成卡片）。"""
     decided = decided or []
     total = sum(len(review.get(k, [])) for k, _, _ in _REVIEW_TABS)
     has_review = total > 0 or bool(decided)
-    banner = (
-        f'<div class="rapply"><span>{pending_apply} 筆決定待套用</span>'
-        '<button id="applybtn" class="runbtn" type="button" style="font-size:13px;padding:6px 14px;">套用並重算採購建議</button>'
-        '<span class="rdim">套用後，放行的書才會出現在採購清單</span></div>'
-        if pending_apply > 0 else ""
-    )
+
+    def banner_for(top_attr: str) -> str:
+        return (
+            f'<div class="rapply"{top_attr}><span>{pending_apply} 筆決定待套用</span>'
+            '<button id="applybtn" class="runbtn" type="button" style="font-size:13px;padding:6px 14px;">套用並重算採購建議</button>'
+            '<span class="rdim">套用後，放行的書才會出現在採購建議</span></div>'
+            if pending_apply > 0 else ""
+        )
+
     standalone_head = '<div class="cardhead"><h2>人工審核</h2></div>'
     if rec_html is None and not has_review:
-        return f'<div class="card" id="review">{standalone_head}{banner}<p class="empty">目前沒有待審書目。</p></div>'
+        return f'<div class="card" id="review">{standalone_head}{banner_for("")}<p class="empty">目前沒有待審書目。</p></div>'
 
     # 待審分頁預設開在組數最多的（並列取排在前面的）；待審都處理完了才開「審核紀錄」
     review_open = ""
     if has_review:
         review_open = "decided" if total == 0 else max((k for k, _, _ in _REVIEW_TABS), key=lambda k: len(review.get(k, [])))
     opening = "recs" if rec_html is not None else review_open
+    has_top = rec_html is not None and has_review          # 兩層導覽：採購與審核都有東西才需要第一層
+    top_open = "buy" if opening == "recs" else "review"    # 預設開在哪一層（有採購建議時一定是採購）
 
-    def tab(kind: str, label: str, extra: str = "") -> str:
-        return f'<button class="rtab{" active" if kind == opening else ""}" data-k="{kind}"{extra}>{label}</button>'
+    def top_attrs(group: str) -> str:
+        """屬於某一層的元素：標上 data-top，不在預設那一層的先隱藏（沒有 JS 也是對的）。沒有第一層時什麼都不標。"""
+        return f' data-top="{group}"' + ("" if group == top_open else " hidden") if has_top else ""
+
+    def tab(kind: str, label: str) -> str:
+        return (f'<button class="rtab{" active" if kind == opening else ""}" data-k="{kind}"'
+                f'{top_attrs("buy" if kind == "recs" else "review")}>{label}</button>')
 
     def panel(kind: str, inner: str, filters: str, export: str, extra: str = "") -> str:
         hidden = "" if kind == opening else " hidden"
@@ -698,16 +710,31 @@ def _review_panel(review: dict, decided: list | None = None, pending_apply: int 
             tabs.append(tab("decided", f"審核紀錄 {len(decided)} 組"))
             panels.append(panel("decided", (
                 '<p class="rnote">做過的審核決定。按「撤銷」會改回待審；'
-                '放行的書要按上方「套用並重算採購建議」才會反映到採購清單。</p>'
+                '放行的書要按上方「套用並重算採購建議」才會反映到採購建議。</p>'
                 + _log_batch_bar()
                 + '<table class="rtbl"><thead><tr><th class="chk"><input type="checkbox" class="rchkall" title="全選/全不選"></th>'
                 '<th>用到的課</th><th>原書（課綱列的）</th><th>決定</th><th>採購書名</th><th>狀態</th><th>處理</th></tr></thead>'
                 f'<tbody>{"".join(_decided_row(g) for g in decided)}</tbody></table>'), "", "log"))
-    # 有採購建議時一定有分頁列（至少「採購建議」）；單獨的審核卡片只在有審核項目時才有
-    bar = f'<div class="filters maintabs">{"".join(tabs)}</div>' if (rec_html is not None or has_review) else ""
+    # 有採購建議時一定有分頁列（至少「採購建議」）；單獨的審核卡片只在有審核項目時才有。
+    # 有第一層時，採購區只有一個分頁，子分頁列只在審核區顯示。
+    bar_hidden = " hidden" if has_top and top_open == "buy" else ""
+    bar = (f'<div class="filters maintabs"{bar_hidden}>{"".join(tabs)}</div>'
+           if (rec_html is not None or has_review) else "")
+    toplevel = ""
+    hint = ""
+    if has_top:
+        def toptab(group: str, label: str) -> str:
+            return f'<button class="toptab{" active" if group == top_open else ""}" data-top="{group}" type="button">{label}</button>'
+
+        toplevel = ('<div class="toplevel">' + toptab("buy", f"採購 {rec_count} 本")
+                    + toptab("review", f"審核 {total} 組待處理") + '</div>')
+        if pending_apply > 0:      # 採購區：提醒有決定還沒套用（套用本身只在審核區）
+            hint = (f'<div class="applyhint" data-top="buy"{"" if top_open == "buy" else " hidden"}>'
+                    f'<span>有 {pending_apply} 筆審核決定尚未套用，放行的書還沒出現在這裡</span>'
+                    '<button class="abtn" type="button" data-goto-top="review">前往審核</button></div>')
     head = standalone_head if rec_html is None else ""
-    return (f'<div class="card" id="review" data-review-open="{review_open}">{head}{banner}{bar}'
-            f'{toolbar_html or ""}{"".join(panels)}</div>')
+    return (f'<div class="card" id="review" data-review-open="{review_open}">{head}{toplevel}'
+            f'{banner_for(top_attrs("review"))}{hint}{bar}{toolbar_html or ""}{"".join(panels)}</div>')
 
 
 def _render(data: dict) -> str:
@@ -890,6 +917,15 @@ td.dec {{ min-width:100px; }}
 td.dec[data-stale]::after {{ content:"建議已從 " attr(data-stale) " 變成 " attr(data-now); display:block; font-size:11px; color:#a05f00; }}
 .maintabs {{ margin-bottom:14px; padding-bottom:10px; border-bottom:1px solid var(--gridline); }}
 .tabspacer {{ flex:1; }}
+.toplevel {{ display:flex; gap:4px; margin:0 0 14px; border-bottom:2px solid var(--gridline); }}
+.toptab {{ font:inherit; font-size:15px; font-weight:600; padding:9px 20px; margin-bottom:-2px; border:none;
+  border-bottom:3px solid transparent; background:none; color:var(--text-secondary); cursor:pointer; }}
+.toptab:hover {{ color:var(--text-primary); }}
+.toptab.active {{ color:var(--text-primary); border-bottom-color:#1f6feb; }}
+.applyhint {{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin:0 0 12px; padding:8px 12px;
+  border-radius:8px; border:1px solid #e0900a; background:rgba(224,144,10,.10); font-size:13px; }}
+.applyhint .abtn {{ margin:0; }}
+.maintabs[hidden], .rtab[hidden], .rapply[hidden], .applyhint[hidden] {{ display:none; }}
 .ract {{ min-width:230px; }}
 .abtn {{ font:inherit; font-size:12px; padding:3px 10px; margin:0 4px 4px 0; border-radius:6px; cursor:pointer;
   border:1px solid var(--border); background:var(--surface); color:var(--text-primary); }}
@@ -1075,7 +1111,32 @@ function _resetToolbar() {{
   document.querySelectorAll('.rowchk, .rchk, .rchkall, #rowchkall').forEach(function(c){{ c.checked = false; }});
 }}
 
+// 第一層（採購｜審核）：屬於某一層的元素（子分頁按鈕、套用橫幅、待套用提示）只在那一層顯示；
+// 採購區只有一個分頁，所以子分頁列只在審核區顯示。任何分頁被選到（含重新整理後還原、KPI 連結）都會同步第一層。
+let _lastReview = '';
+function _syncTop(top) {{
+  document.querySelectorAll('.toptab').forEach(function(b){{ b.classList.toggle('active', b.dataset.top === top); }});
+  document.querySelectorAll('#review [data-top]').forEach(function(el){{
+    if (!el.classList.contains('toptab')) el.hidden = el.dataset.top !== top;
+  }});
+  const bar = document.querySelector('.maintabs');
+  if (bar && document.querySelector('.toptab')) bar.hidden = (top === 'buy');
+}}
+
+// 按第一層：採購＝採購建議；審核＝上次開的審核分頁（沒有就開待審最多的）
+function _selectTop(top) {{
+  const card = document.getElementById('review');
+  if (!card) return;
+  const k = top === 'buy' ? 'recs' : (_lastReview || card.dataset.reviewOpen);
+  const b = card.querySelector('.rtab[data-k="' + k + '"]') || card.querySelector('.rtab[data-top="' + top + '"]');
+  if (b) _selectTab(b);
+}}
+
 function _selectTab(btn) {{
+  if (btn.dataset.top) {{
+    _syncTop(btn.dataset.top);
+    if (btn.dataset.top === 'review') _lastReview = btn.dataset.k;
+  }}
   document.querySelectorAll('.rtab').forEach(function(x){{ x.classList.toggle('active', x === btn); }});
   const key = btn.dataset.k;
   document.querySelectorAll('.rpanel').forEach(function(p){{ p.hidden = p.dataset.k !== key; }});
@@ -1273,6 +1334,10 @@ const _reviewCard = document.getElementById('review');
 if (_reviewCard) {{
   _reviewCard.addEventListener('click', function(ev){{
     const t = ev.target;
+    const topb = t.closest('.toptab');
+    if (topb) return _selectTop(topb.dataset.top);
+    const goto = t.closest('[data-goto-top]');
+    if (goto) return _selectTop(goto.dataset.gotoTop);
     const act = t.closest('[data-act]');
     if (act) return _decideRow(act);
     const batch = t.closest('[data-batch]');
