@@ -252,3 +252,20 @@ def test_untrusted_text_is_escaped_everywhere_in_the_new_cells():
 def dataclass_replace_title(evil):
     import dataclasses
     return dataclasses.replace(decided_group(), title=evil, buy_title=evil)
+
+
+# ---------- 前端依賴的結構 ----------
+
+def test_review_and_log_title_cells_wrap_the_title_so_the_export_can_leave_the_authors_out():
+    pn = panels(page([rec()], reviews(), [decided_group()]))
+
+    assert '<span class="bt">TitleX</span>' in pn["mismatch"][1] and '<span class="bm">MatchedY</span>' in pn["mismatch"][1]
+    assert '<span class="bt">DONE</span>' in pn["decided"][1]
+
+
+def test_the_front_end_is_wired_to_the_cart_batch_and_undo_actions():
+    html = page([rec()], reviews(), [decided_group()])
+
+    for name in ("_cartToggle", "_purchaseBatch", "_undoBatch", "_selectTab", "_applyRecFilters", "_refreshCart"):
+        assert f"function {name}(" in html or f"async function {name}(" in html, name
+    assert html.count("addEventListener('click', _onTraceClick)") == 1       # 展開鈕的事件只綁一次
