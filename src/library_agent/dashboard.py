@@ -406,7 +406,7 @@ def _rec_row(priority: str, course: str, title: str, btype: str, status_html: st
     前端用「包含」比對）。rec_id：採購建議的 id，有值才有展開鈕（取 GET /trace/{rec_id}）。
     展開鈕與「未驗證」標記內都不放任何文字（由 CSS 畫），因為匯出 CSV 是讀每格的 textContent。
     unverified：這本書有書目在驗證階段查無此書。
-    處理欄（最右）：決定冊數輸入框＋「加入採購單／移出採購單」按鈕。book_key 為 None（舊格式的建議）的列沒有；
+    採購冊數欄（最右）：決定冊數輸入框＋「加入購物車／移出購物車」按鈕。book_key 為 None（舊格式的建議）的列沒有；
     留空＝還沒決定（不在採購單），填 0＝這次不買，填大於 0＝加入採購單。系統建議為 0 時不能直接「加入」（沒有東西可加）。
     in_cart：這本書在採購單裡（決定 > 0）；search：這一列可被搜尋的文字（小寫，這裡負責逸出）。
     「需求 N」（被上限截斷時）與「建議已從 A 變成 B」都由 CSS 用 data-* 畫，輸入框的值也不是文字節點。"""
@@ -424,7 +424,7 @@ def _rec_row(priority: str, course: str, title: str, btype: str, status_html: st
         saved = "" if decided is None else str(decided)
         stale = f' data-stale="{stale_from}" data-now="{html.escape(copies_html)}"' if stale_from is not None else ""
         cart_attr = ' disabled title="系統建議為 0，請直接填冊數"' if (not in_cart and suggested <= 0) else ""
-        cart_label = "移出採購單" if in_cart else "加入採購單"
+        cart_label = "移出購物車" if in_cart else "加入購物車"
         dec_cell = (
             f'<td class="dec"{stale}><input class="dec-in{" has" if decided is not None else ""}" type="number" '
             f'min="0" max="9999" step="1" data-key="{html.escape(book_key)}" data-saved="{saved}" '
@@ -617,7 +617,7 @@ def _purchase_batch_bars() -> str:
     一次把上百本改成同一冊數太容易出錯。採購單在頁首的抽屜裡（那裡有自己的移出／清空）。"""
     return (
         '<div class="rbatch">勾選的書：'
-        '<button class="abtn" type="button" data-pbatch="suggested">加入採購單（採用系統建議）</button>'
+        '<button class="abtn" type="button" data-pbatch="suggested">加入購物車（採用系統建議）</button>'
         '<button class="abtn abtn-no" type="button" data-pbatch="zero">設為不買</button>'
         '<button class="abtn" type="button" data-pbatch="clear">清除決定</button></div>'
     )
@@ -869,7 +869,7 @@ a.kpi {{ display:block; text-decoration:none; color:inherit; }}
 .tb-prio, .tb-cat {{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }}
 .tb-prio[hidden], .tb-cat[hidden], .exp-prio[hidden] {{ display:none; }}
 .tb-export {{ margin-left:auto; }}
-.cartbtn {{ display:block; margin:4px 0 0; }}
+.cartbtn {{ display:block; width:100%; margin:4px 0 0; white-space:nowrap; text-align:center; }}
 .topbar {{ display:flex; align-items:center; gap:14px; margin:0 0 4px; }}
 .topbar h1 {{ margin:0; }}
 .carttop {{ position:relative; display:inline-flex; align-items:center; justify-content:center; width:42px; height:42px;
@@ -896,8 +896,8 @@ a.kpi {{ display:block; text-decoration:none; color:inherit; }}
 .cdfoot {{ padding:12px 16px; border-top:1px solid var(--gridline); display:flex; align-items:center; gap:10px; flex-wrap:wrap; }}
 .cdtotal {{ flex:1 1 100%; font-size:14px; font-weight:700; }}
 td.num.cut::after {{ content:"（需求 " attr(data-need) "）"; font-weight:400; font-size:11px; color:#a05f00; white-space:nowrap; }}
-td.dec {{ min-width:100px; }}
-.dec-in {{ width:84px; font:inherit; font-size:12.5px; padding:3px 6px; border:1px solid var(--border); border-radius:6px; }}
+td.dec {{ width:132px; min-width:132px; }}
+.dec-in {{ display:block; width:100%; box-sizing:border-box; font:inherit; font-size:12.5px; padding:3px 6px; border:1px solid var(--border); border-radius:6px; }}
 .dec-in.has {{ border-color:#1f6feb; font-weight:700; }}
 td.dec[data-stale]::after {{ content:"建議已從 " attr(data-stale) " 變成 " attr(data-now); display:block; font-size:11px; color:#a05f00; }}
 .maintabs {{ margin-bottom:14px; padding-bottom:10px; border-bottom:1px solid var(--gridline); }}
@@ -930,7 +930,8 @@ table {{ border-collapse:collapse; width:100%; font-size:13px; }}
 th,td {{ border-bottom:1px solid var(--gridline); padding:8px 10px; text-align:left; vertical-align:top; }}
 th {{ color:var(--text-secondary); font-weight:600; white-space:nowrap; }}
 td.num {{ text-align:right; font-variant-numeric:tabular-nums; font-weight:600; }}
-td.rationale {{ color:var(--text-secondary); font-size:12px; max-width:340px; }}
+td.rationale {{ color:var(--text-secondary); font-size:12px; min-width:190px; max-width:340px; }}
+#rectable td:nth-child(3) {{ min-width:170px; }}
 .pill {{ display:inline-block; padding:1px 9px; border-radius:99px; font-size:11.5px; font-weight:600; color:#fff; white-space:nowrap; }}
 .tag {{ display:inline-block; padding:1px 7px; border-radius:5px; font-size:11.5px; border:1px solid var(--border); color:var(--text-secondary); white-space:nowrap; }}
 .tag-ai {{ border-color:#e0900a; color:#fff; background:#e0900a; }}
@@ -1341,7 +1342,7 @@ function _syncCartBtn(tr) {{
   if (!btn) return;
   const inCart = tr.dataset.incart === '1';
   const sys = Number(tr.querySelector('td.num').textContent) || 0;
-  btn.textContent = inCart ? '移出採購單' : '加入採購單';
+  btn.textContent = inCart ? '移出購物車' : '加入購物車';
   btn.disabled = !inCart && sys <= 0;
   btn.title = btn.disabled ? '系統建議為 0，請直接填冊數' : '';
 }}
@@ -1417,7 +1418,7 @@ if (_recTable) _recTable.addEventListener('change', function(ev){{
   }});
 }});
 
-// 單列「加入採購單／移出採購單」。加入＝輸入框裡有 ≥1 的冊數就用那個數字，沒有才採用伺服器端當下的系統建議；
+// 單列「加入購物車／移出購物車」。加入＝輸入框裡有 ≥1 的冊數就用那個數字，沒有才採用伺服器端當下的系統建議；
 // 移出＝清除決定。意圖在按下去那一刻決定；排在前面的儲存若已經把這本書加進採購單（使用者剛輸入的冊數），就不再覆蓋。
 function _cartToggle(btn) {{
   const tr = btn.closest('tr');
@@ -1462,7 +1463,7 @@ function _renderCart(d) {{
   if (!items.length) {{
     const p = document.createElement('p');
     p.className = 'empty';
-    p.textContent = '採購單是空的。在採購建議的「採購冊數」填冊數，或按「加入採購單」。';
+    p.textContent = '採購單是空的。在採購建議的「採購冊數」填冊數，或按「加入購物車」。';
     list.appendChild(p);
   }}
   items.forEach(function(it){{

@@ -280,8 +280,8 @@ def test_row_button_says_add_or_remove_by_state():
     undecided = panels(page([rec()]))["recs"][1]
     incart = panels(page([rec(decided=3)]))["recs"][1]
 
-    assert re.search(r'<button class="abtn cartbtn"[^>]*data-cart[^>]*>加入採購單</button>', undecided)
-    assert re.search(r'<button class="abtn cartbtn"[^>]*data-cart[^>]*>移出採購單</button>', incart)
+    assert re.search(r'<button class="abtn cartbtn"[^>]*data-cart[^>]*>加入購物車</button>', undecided)
+    assert re.search(r'<button class="abtn cartbtn"[^>]*data-cart[^>]*>移出購物車</button>', incart)
 
 
 def test_add_button_is_disabled_when_the_suggestion_is_zero_but_remove_never_is():
@@ -296,6 +296,16 @@ def test_legacy_row_has_no_cart_button():
     assert "data-cart" not in panels(page([rec(book_key=None)]))["recs"][1]
 
 
+def test_the_cart_column_is_wide_enough_that_the_button_never_wraps_and_input_and_button_line_up():
+    css = re.search(r"<style>(.*?)</style>", page(), re.S).group(1)
+
+    btn = re.search(r"\.cartbtn \{([^}]*)\}", css).group(1)
+    assert "white-space:nowrap" in btn and "width:100%" in btn                      # 「移出購物車」不能折成兩行
+    inp = re.search(r"\.dec-in \{([^}]*)\}", css).group(1)
+    assert "width:100%" in inp and "box-sizing:border-box" in inp                  # 輸入框與按鈕同寬
+    assert re.search(r"td\.dec \{[^}]*min-width:1[3-9]\d+px", css)                  # 採購冊數欄有固定寬度
+
+
 # ---------- 批次列 ----------
 
 def test_purchase_and_log_panels_have_a_batch_bar_and_pending_panels_do_not():
@@ -305,7 +315,7 @@ def test_purchase_and_log_panels_have_a_batch_bar_and_pending_panels_do_not():
 
     assert len(bars) == 1                                                     # 採購單移到抽屜，只剩一條批次列
     assert [m for m in re.findall(r'data-pbatch="(\w+)"', bars[0])] == ["suggested", "zero", "clear"]
-    assert "加入採購單（採用系統建議）" in bars[0] and "設為不買" in bars[0] and "清除決定" in bars[0]
+    assert "加入購物車（採用系統建議）" in bars[0] and "設為不買" in bars[0] and "清除決定" in bars[0]
     for kind in ("mismatch", "notfound", "other"):
         assert "data-batch" not in pn[kind][1] and 'class="rbatch"' not in pn[kind][1], kind     # 待審分頁沒有批次列
     assert 'data-ubatch="undo"' in pn["decided"][1] and "撤銷所選" in pn["decided"][1]

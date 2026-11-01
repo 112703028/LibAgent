@@ -86,7 +86,7 @@ def test_decision_cell_has_no_text_nodes():
     dec = cell(table(row(decided=12, stale_from=3)), "dec")
 
     # 處理欄只有按鈕的文字；「需求」「建議已從 A 變成 B」的提示由 CSS 畫，輸入框的值也不是文字節點
-    assert re.sub(r"<[^>]+>", "", dec) == "移出採購單"
+    assert re.sub(r"<[^>]+>", "", dec) == "移出購物車"
 
 
 def test_row_carries_the_final_copies_for_the_kpi_and_export():
