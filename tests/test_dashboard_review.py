@@ -226,6 +226,14 @@ def test_pending_is_no_longer_a_priority_filter_and_has_no_separate_link():
     assert html.count('id="review"') == 1
 
 
+def test_the_trace_click_handler_is_attached_exactly_once():
+    # 採購表在審核卡片（#review）裡面：展開鈕的事件若同時綁在卡片與表格上，一次點擊會觸發兩次（開了又立刻關），
+    # 採購建議那邊就看不到決策過程。這個測試只釘住「只綁一次」；行為本身由 jsdom 驗證。
+    html = _page()
+
+    assert html.count("addEventListener('click', _onTraceClick)") == 1
+
+
 def _page_with_reviews():
     review = {k: [] for k in KINDS}
     review["mismatch"] = [grp("mismatch"), grp("mismatch", "T2", vb_ids=(2,))]

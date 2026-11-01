@@ -151,10 +151,13 @@ def test_kpi_copies_final_uses_decisions_and_copies_stays_the_systems_number(wor
     assert after["copies_final"] == before["copies_final"] + (12 - 5) + (0 - 2)
 
 
-def test_without_decisions_the_adopted_total_equals_the_systems_total(world):
-    kpis = dashboard._load_data()["kpis"]
+def test_adopted_total_is_the_sum_of_the_final_copies_of_the_listed_recommendations(world):
+    # 與真實資料庫裡有沒有別人填的決定無關：採用冊數永遠等於列出的每本書的最終冊數加總
+    decide(BIG, 12, suggested_at=5)
 
-    assert kpis["copies_final"] == kpis["copies"]
+    data = dashboard._load_data()
+
+    assert data["kpis"]["copies_final"] == sum(r.final for r in data["recs"])
 
 
 # ---------- 報表與匯出 ----------

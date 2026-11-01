@@ -981,10 +981,9 @@ function _onTraceClick(ev) {{
   row.hidden = !opening;
   btn.setAttribute('aria-expanded', opening ? 'true' : 'false');
 }}
-['rectable', 'review'].forEach(function(id){{
-  const el = document.getElementById(id);
-  if (el) el.addEventListener('click', _onTraceClick);
-}});
+// 採購表在審核卡片（#review）裡面，所以只在卡片上綁一次：兩邊都綁的話，一次點擊會觸發兩次（開了又立刻關）。
+const _traceHost = document.getElementById('review');
+if (_traceHost) _traceHost.addEventListener('click', _onTraceClick);
 
 // 人工審核區塊的分頁切換：只顯示被點的分頁的面板
 document.querySelectorAll('.rtab').forEach(function(b){{
