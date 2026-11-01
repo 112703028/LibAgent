@@ -28,7 +28,7 @@ def cell(html, cls):
 def test_the_decision_sits_in_the_far_right_actions_column_after_the_copies_and_rationale():
     html = table(row())
 
-    assert html.index("<th>冊數</th>") < html.index("<th>理由</th>") < html.index("<th>處理</th>")
+    assert html.index("<th>系統建議</th>") < html.index("<th>理由</th>") < html.index("<th>採購冊數</th>")
 
 
 def test_rec_row_shows_the_suggestion_the_need_marker_and_a_decision_box():

@@ -1,8 +1,8 @@
-"""各分頁統一的版面：分頁列（含採購單）、共用工具列、欄位骨架、批次列、列上的資料屬性。
+"""各分頁統一的版面：分頁列、共用工具列、欄位骨架、批次列、列上的資料屬性、頁首的採購單（購物車）抽屜。
 
-統一的骨架：每張表第一格是勾選，其次「優先級｜課程｜▸ 書名｜…」，最右一欄是「處理」；
+統一的骨架：每張表第一格是勾選，其次「優先級｜課程｜▸ 書名｜…」，最右一欄是最後的動作（採購建議是「採購冊數」，審核是「處理」）；
 每個面板頂端有同一種批次列；工具列（搜尋、篩選、匯出）只有一條，對目前開著的分頁生效。
-採購單不是另一張表，而是採購建議那張表的檢視（只顯示 data-incart 的列），所以只有一個分頁按鈕、沒有自己的面板。
+採購單不是分頁：它是頁首左上角的購物車圖示，點開是整個採購單（全校、不隨學系篩選）的抽屜。
 """
 import re
 
@@ -20,12 +20,14 @@ def rec(**kw):
     return dashboard.RecRow(**base)
 
 
-def page(recs=None, review=None, decided=None):
+def page(recs=None, review=None, decided=None, cart=(0, 0)):
+    """cart＝(書數, 冊數)：全校的採購單合計（頁首購物車圖示上的數字），與頁面上這批書（可能被學系篩選）無關。"""
     recs = [rec()] if recs is None else recs
     data = {"kpis": {"courses": 1, "citations": 1, "verified": 1, "pending": 0, "copies": 5,
                      "copies_final": sum(r.final for r in recs), "cart_books": sum(r.in_cart for r in recs)},
             "priority": {"high": 1}, "status": {"missing": 1}, "recs": recs, "pending": [],
-            "review": review or {k: [] for k in KINDS}, "decided": decided or [], "pending_apply": 0}
+            "review": review or {k: [] for k in KINDS}, "decided": decided or [], "pending_apply": 0,
+            "cart": {"books": cart[0], "copies": cart[1]}}
     return dashboard._render(data)
 
 
@@ -71,25 +73,31 @@ def table_of(panel_chunk):
 
 # ---------- 分頁列 ----------
 
-def test_tab_bar_order_and_cart_tab_label():
+def test_tab_bar_order_has_no_cart_tab():
     html = page([rec(decided=12)], reviews(), [decided_group()])
 
-    assert [t[0] for t in tabs(html)] == ["recs", "cart", "mismatch", "notfound", "other", "decided"]
-    cart = next(t for t in tabs(html) if t[0] == "cart")
-    assert cart[2] == "採購單 1 本·12 冊" and 'data-panel="recs"' in cart[1]
+    assert [t[0] for t in tabs(html)] == ["recs", "mismatch", "notfound", "other", "decided"]
+    assert 'data-k="cart"' not in markup(html) and "data-panel=" not in markup(html)
+    assert "rbatch-cart" not in markup(html) and 'data-view=' not in markup(html)
 
 
-def test_cart_tab_shares_the_purchase_panel_it_has_no_panel_of_its_own():
-    html = page([rec(decided=12)], reviews())
+def test_the_cart_is_a_header_button_with_a_school_wide_count_and_a_hidden_drawer():
+    html = markup(page([rec(decided=12)], reviews(), cart=(3, 40)))
 
-    assert markup(html).count('data-k="cart"') == 1                              # 只有分頁按鈕
-    assert "cart" not in panels(html)
+    btn = re.search(r'<button[^>]*id="cartbtn"[^>]*>(.*?)</button>', html, re.S)
+    assert btn and 'aria-label="採購單"' in btn.group(0)
+    assert re.search(r'id="cartcount"[^>]*>3<', btn.group(0))                    # 全校 3 本，不是頁面上（可能被學系篩選）的書數
+    assert html.index('id="cartbtn"') < html.index('class="card"') < html.index('id="review"')   # 在頁首，卡片之前
+    drawer = re.search(r'<aside[^>]*id="cartdrawer"[^>]*>', html).group(0)
+    assert "hidden" in drawer
+    for part in ('id="cartlist"', 'id="carttotal"', 'id="cartexport"', 'id="cartclear"', 'id="cartclose"'):
+        assert part in html, part
 
 
-def test_cart_tab_label_when_nothing_is_in_the_cart():
-    html = page([rec(), rec(decided=0, book_key="title:b", rec_id=10, title="B")])
+def test_the_cart_button_shows_zero_when_nothing_is_in_the_cart():
+    html = markup(page([rec()]))
 
-    assert next(t for t in tabs(html) if t[0] == "cart")[2] == "採購單 0 本·0 冊"      # 0＝明確排除，不算
+    assert re.search(r'id="cartcount"[^>]*>0<', html)
 
 
 def test_review_log_tab_is_named_review_log():
@@ -99,8 +107,8 @@ def test_review_log_tab_is_named_review_log():
     assert label == "審核紀錄 1 組" and "已決定" not in label
 
 
-def test_tab_bar_is_present_with_the_purchase_list_and_cart_even_without_review_items():
-    assert [t[0] for t in tabs(page())] == ["recs", "cart"]
+def test_tab_bar_is_present_with_the_purchase_list_even_without_review_items():
+    assert [t[0] for t in tabs(page())] == ["recs"]
 
 
 # ---------- 共用工具列 ----------
@@ -143,7 +151,7 @@ def test_the_pending_csv_link_is_gone_but_the_endpoint_remains():
 def test_purchase_table_keeps_its_column_order_with_the_decision_at_the_far_right():
     table = table_of(panels(page())["recs"][1])
 
-    assert headers(table) == ["", "優先級", "課程", "書名", "類別", "館藏狀態", "冊數", "理由", "處理"]
+    assert headers(table) == ["", "優先級", "課程", "書名", "類別", "館藏狀態", "系統建議", "理由", "採購冊數"]
 
 
 def test_review_tables_start_with_checkbox_priority_course_title_and_end_with_actions():
@@ -228,13 +236,11 @@ def test_legacy_row_has_no_cart_button():
 def test_every_panel_has_a_batch_bar_with_the_buttons_that_fit_it():
     pn = panels(page([rec()], reviews(), [decided_group()]))
     recs_chunk = pn["recs"][1]
-    all_bar = re.search(r'<div class="rbatch rbatch-all">.*?</div>', recs_chunk, re.S).group(0)
-    cart_bar = re.search(r'<div class="rbatch rbatch-cart">.*?</div>', recs_chunk, re.S).group(0)
+    bars = re.findall(r'<div class="rbatch[^"]*">.*?</div>', recs_chunk, re.S)
 
-    assert [m for m in re.findall(r'data-pbatch="(\w+)"', all_bar)] == ["suggested", "zero", "clear"]
-    assert "加入採購單（採用系統建議）" in all_bar and "設為不買" in all_bar and "清除決定" in all_bar
-    assert [m for m in re.findall(r'data-pbatch="(\w+)"', cart_bar)] == ["clear", "zero"]
-    assert "移出採購單" in cart_bar and "設為不買" in cart_bar
+    assert len(bars) == 1                                                     # 採購單移到抽屜，只剩一條批次列
+    assert [m for m in re.findall(r'data-pbatch="(\w+)"', bars[0])] == ["suggested", "zero", "clear"]
+    assert "加入採購單（採用系統建議）" in bars[0] and "設為不買" in bars[0] and "清除決定" in bars[0]
     assert 'data-batch="matched"' in pn["mismatch"][1] and 'data-batch="none"' in pn["notfound"][1]
     assert 'data-ubatch="undo"' in pn["decided"][1] and "撤銷所選" in pn["decided"][1]
 
@@ -271,6 +277,7 @@ def test_review_and_log_title_cells_wrap_the_title_so_the_export_can_leave_the_a
 def test_the_front_end_is_wired_to_the_cart_batch_and_undo_actions():
     html = page([rec()], reviews(), [decided_group()])
 
-    for name in ("_cartToggle", "_purchaseBatch", "_undoBatch", "_selectTab", "_applyRecFilters", "_refreshCart"):
+    for name in ("_cartToggle", "_purchaseBatch", "_undoBatch", "_selectTab", "_applyRecFilters", "_refreshCart",
+                 "_openCart", "_loadCart", "_renderCart", "_withRow"):
         assert f"function {name}(" in html or f"async function {name}(" in html, name
     assert html.count("addEventListener('click', _onTraceClick)") == 1       # 展開鈕的事件只綁一次

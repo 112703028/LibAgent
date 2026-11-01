@@ -9,6 +9,7 @@ FastAPI 服務，讀既有 DB 呈現缺口分析：KPI 概覽、採購優先級�
 import csv
 import html
 import io
+import json
 import threading
 import time
 import traceback
@@ -118,6 +119,26 @@ _KEY_RANK = {"required": 0, "ai": 1, "optional": 2}
 def _confirmed():
     """這個書目有人（或驗證器）確認過：驗證階段查到了，或人工核准了。「未驗證」標記只給兩者皆非的書。"""
     return case((or_(VerifiedBook.verified.is_(True), VerifiedBook.review_status == "approved"), True), else_=False)
+
+
+def _load_cart(s) -> list[dict]:
+    """整個採購單（全校，不分學系）：決定冊數 ≥ 1 且這本書現在還在採購清單裡（與採購表同一個 purchasable() 條件）。
+    決定以 book_key 對應；對不上任何採購建議的決定（建議後來被重建掉）不列也不算，與採購表一致。
+    排序：優先級高的在前，同優先級依書名、再依 book_key（穩定）。"""
+    rows = s.execute(
+        select(PurchaseDecision.book_key, VerifiedBook.buy_title, PurchaseDecision.copies,
+               Recommendation.suggested_copies, Recommendation.priority, HoldingCheck.status)
+        .join(Recommendation, Recommendation.book_key == PurchaseDecision.book_key)
+        .join(HoldingCheck, HoldingCheck.id == Recommendation.holding_id)
+        .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id)
+        .join(Citation, Citation.id == VerifiedBook.citation_id)
+        .where(PurchaseDecision.copies > 0, purchasable(), _not_superseded())
+    ).all()
+    items = [{"book_key": key, "title": title or "", "copies": copies, "suggested": suggested,
+              "priority": priority, "status": status}
+             for key, title, copies, suggested, priority, status in rows]
+    items.sort(key=lambda i: (_PRIORITY_RANK.get(i["priority"], 9), i["title"], i["book_key"]))
+    return items
 
 
 def _load_data(departments: list[str] | None = None) -> dict:
@@ -323,6 +344,7 @@ def _load_data(departments: list[str] | None = None) -> dict:
         pending_items = review_items(VerifiedBook.review_status == "pending")
         decided_items = review_items(VerifiedBook.review_choice.is_not(None))     # 「已決定」分頁（可撤銷）
         pending_apply = len(pending_apply_ids(s))      # 全校的待套用數：套用永遠處理全部
+        cart_items = _load_cart(s)                      # 全校的採購單（頁首購物車圖示的數字），不隨學系篩選
 
     from library_agent.config import get_settings
 
@@ -334,7 +356,8 @@ def _load_data(departments: list[str] | None = None) -> dict:
     kpis["copies_final"] = sum(r.final for r in recs)      # 採購單冊數：各書的決定冊數總和（kpis["copies"] 是系統建議）
     kpis["cart_books"] = sum(r.in_cart for r in recs)      # 採購單書數
     return {"kpis": kpis, "priority": prio, "status": status, "recs": recs, "pending": pending,
-            "review": review, "decided": decided, "pending_apply": pending_apply}
+            "review": review, "decided": decided, "pending_apply": pending_apply,
+            "cart": {"books": len(cart_items), "copies": sum(i["copies"] for i in cart_items)}}
 
 
 # ---------- 呈現 ----------
@@ -479,7 +502,7 @@ def _rec_table(recs: list) -> str:
         '<table id="rectable"><thead><tr>'
         '<th class="chk"><input type="checkbox" id="rowchkall" title="全選/全不選"></th>'
         '<th>優先級</th><th>課程</th><th>書名</th><th>類別</th>'
-        '<th>館藏狀態</th><th>冊數</th><th>理由</th><th>處理</th></tr></thead>'
+        '<th>館藏狀態</th><th>系統建議</th><th>理由</th><th>採購冊數</th></tr></thead>'
         f'<tbody>{"".join(body)}</tbody></table>'
     )
 
@@ -604,16 +627,13 @@ def _batch_bar(kind: str) -> str:
 
 
 def _purchase_batch_bars() -> str:
-    """採購建議與採購單共用同一個面板，各有一條批次列，由面板的 data-view 決定顯示哪一條（見 CSS）。
-    每個按鈕都是 POST /purchase/decide-many 的一個 mode；沒有「全部改成 N 本」，一次把上百本改成同一冊數太容易出錯。"""
+    """採購建議的批次列。每個按鈕都是 POST /purchase/decide-many 的一個 mode；沒有「全部改成 N 本」，
+    一次把上百本改成同一冊數太容易出錯。採購單在頁首的抽屜裡（那裡有自己的移出／清空）。"""
     return (
-        '<div class="rbatch rbatch-all">勾選的書：'
+        '<div class="rbatch">勾選的書：'
         '<button class="abtn" type="button" data-pbatch="suggested">加入採購單（採用系統建議）</button>'
         '<button class="abtn abtn-no" type="button" data-pbatch="zero">設為不買</button>'
         '<button class="abtn" type="button" data-pbatch="clear">清除決定</button></div>'
-        '<div class="rbatch rbatch-cart">勾選的書：'
-        '<button class="abtn" type="button" data-pbatch="clear">移出採購單</button>'
-        '<button class="abtn abtn-no" type="button" data-pbatch="zero">設為不買</button></div>'
     )
 
 
@@ -623,11 +643,10 @@ def _log_batch_bar() -> str:
 
 
 def _review_panel(review: dict, decided: list | None = None, pending_apply: int = 0,
-                  rec_html: str | None = None, rec_count: int = 0, toolbar_html: str | None = None,
-                  cart_books: int = 0, cart_copies: int = 0) -> str:
-    """採購建議與人工審核的同一張卡片。分頁（有 rec_html 時）：採購建議｜採購單｜配錯｜查無此書｜其他｜審核紀錄。
-    「採購單」不是另一張表：它與採購建議共用同一個面板（只是只顯示 data-incart 的列），所以沒有自己的面板，
-    改冊數、加入、移出時兩邊自然同步。每個面板有 data-filters（工具列要顯示哪些篩選）與 data-export（匯出哪種欄位）。
+                  rec_html: str | None = None, rec_count: int = 0, toolbar_html: str | None = None) -> str:
+    """採購建議與人工審核的同一張卡片。分頁（有 rec_html 時）：採購建議｜配錯｜查無此書｜其他｜審核紀錄。
+    採購單不是分頁，是頁首左上角的購物車抽屜（見 _render）。每個面板有 data-filters（工具列要顯示哪些篩選）
+    與 data-export（匯出哪種欄位）。
     沒有 rec_html 時只輸出審核部分（單獨成卡片）。"""
     decided = decided or []
     total = sum(len(review.get(k, [])) for k, _, _ in _REVIEW_TABS)
@@ -659,8 +678,7 @@ def _review_panel(review: dict, decided: list | None = None, pending_apply: int 
     tabs, panels = [], []
     if rec_html is not None:
         tabs.append(tab("recs", f"採購建議 {rec_count} 本"))
-        tabs.append(tab("cart", f"採購單 {cart_books} 本·{cart_copies} 冊", ' data-panel="recs"'))
-        panels.append(panel("recs", rec_html, "prio cat", "recs", ' data-view="all"'))
+        panels.append(panel("recs", rec_html, "prio cat", "recs"))
     if has_review:
         for kind, label, note in _REVIEW_TABS:
             groups = review.get(kind, [])
@@ -685,7 +703,7 @@ def _review_panel(review: dict, decided: list | None = None, pending_apply: int 
                 + '<table class="rtbl"><thead><tr><th class="chk"><input type="checkbox" class="rchkall" title="全選/全不選"></th>'
                 '<th>用到的課</th><th>原書（課綱列的）</th><th>決定</th><th>採購書名</th><th>狀態</th><th>處理</th></tr></thead>'
                 f'<tbody>{"".join(_decided_row(g) for g in decided)}</tbody></table>'), "", "log"))
-    # 有採購建議時一定有分頁列（至少「採購建議」與「採購單」）；單獨的審核卡片只在有審核項目時才有
+    # 有採購建議時一定有分頁列（至少「採購建議」）；單獨的審核卡片只在有審核項目時才有
     bar = f'<div class="filters maintabs">{"".join(tabs)}</div>' if (rec_html is not None or has_review) else ""
     head = standalone_head if rec_html is None else ""
     return (f'<div class="card" id="review" data-review-open="{review_open}">{head}{banner}{bar}'
@@ -706,7 +724,7 @@ def _render(data: dict) -> str:
     filter_btns = '<button class="fbtn active" data-f="all">全部</button>' + "".join(
         f'<button class="fbtn" data-f="{k}">{html.escape(n)}</button>' for k, n, _ in _PRIORITY_META
     )
-    # 採購建議、採購單與人工審核是同一張卡片的分頁；採購建議是第一個、預設開啟的分頁。
+    # 採購建議與人工審核是同一張卡片的分頁；採購建議是第一個、預設開啟的分頁。
     # 工具列（搜尋、篩選、匯出）只有一條，對目前開著的分頁生效；篩選與匯出的欄位由面板的 data-filters／data-export 決定。
     toolbar = (
         '<div class="toolbar" id="toolbar">'
@@ -729,7 +747,31 @@ def _render(data: dict) -> str:
     main_card = _review_panel(
         data["review"], data.get("decided"), data.get("pending_apply", 0),
         rec_html=_purchase_batch_bars() + _rec_table(recs), rec_count=len(recs), toolbar_html=toolbar,
-        cart_books=sum(r.in_cart for r in recs), cart_copies=sum(r.final for r in recs),
+    )
+    cart = data.get("cart") or {}      # 全校的採購單合計（不隨學系篩選），頁首購物車圖示上的數字
+    # 抽屜的 CSV 要把代碼翻成畫面上同樣的字，標籤只在 Python 這裡有一份
+    _plabel_json = json.dumps(_PRIORITY_LABEL, ensure_ascii=False)
+    _slabel_json = json.dumps(_STATUS_LABEL, ensure_ascii=False)
+    cart_header = (
+        '<div class="topbar">'
+        '<button id="cartbtn" class="carttop" type="button" aria-label="採購單" title="採購單" '
+        'aria-expanded="false" aria-controls="cartdrawer">'
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" '
+        'stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/>'
+        '<path d="M2 3h3l2.7 12.4a1 1 0 0 0 1 .8h8.9a1 1 0 0 0 1-.8L20.5 7H6"/></svg>'
+        f'<span id="cartcount" class="cartcount{" zero" if not cart.get("books") else ""}">{int(cart.get("books") or 0)}</span>'
+        '</button><h1>圖書館採購決策儀表板</h1></div>'
+    )
+    cart_drawer = (
+        '<div id="cartshade" hidden></div>'
+        '<aside id="cartdrawer" class="cartdrawer" role="dialog" aria-label="採購單" hidden>'
+        '<div class="cdhead"><h2>採購單（全校）</h2>'
+        '<button id="cartclose" class="cdclose" type="button" aria-label="關閉">×</button></div>'
+        '<div id="cartlist" class="cdlist"></div>'
+        '<div class="cdfoot"><div id="carttotal" class="cdtotal"></div>'
+        '<button id="cartexport" class="runbtn" type="button" style="font-size:13px;padding:6px 14px;">匯出採購單 CSV</button>'
+        '<button id="cartclear" class="abtn abtn-no" type="button">清空採購單</button></div>'
+        '</aside>'
     )
     return f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -816,9 +858,31 @@ a.kpi {{ display:block; text-decoration:none; color:inherit; }}
 .tb-prio[hidden], .tb-cat[hidden], .exp-prio[hidden] {{ display:none; }}
 .tb-export {{ margin-left:auto; }}
 .cartbtn {{ display:block; margin:4px 0 0; }}
-.rbatch-cart {{ display:none; }}
-.rpanel[data-view="cart"] .rbatch-all {{ display:none; }}
-.rpanel[data-view="cart"] .rbatch-cart {{ display:block; }}
+.topbar {{ display:flex; align-items:center; gap:14px; margin:0 0 4px; }}
+.topbar h1 {{ margin:0; }}
+.carttop {{ position:relative; display:inline-flex; align-items:center; justify-content:center; width:42px; height:42px;
+  padding:0; border:1px solid var(--border); border-radius:10px; background:var(--surface); color:var(--text-primary); cursor:pointer; }}
+.carttop:hover {{ border-color:var(--text-secondary); }}
+.carttop svg {{ width:22px; height:22px; }}
+.cartcount {{ position:absolute; top:-7px; right:-7px; min-width:20px; height:20px; padding:0 5px; border-radius:10px;
+  background:#1f6feb; color:#fff; font-size:12px; font-weight:700; line-height:20px; text-align:center; }}
+.cartcount.zero {{ background:var(--muted); }}
+#cartshade {{ position:fixed; inset:0; background:rgba(0,0,0,.28); z-index:40; }}
+.cartdrawer {{ position:fixed; top:0; left:0; bottom:0; width:min(460px,100vw); background:var(--surface);
+  border-right:1px solid var(--border); box-shadow:2px 0 16px rgba(0,0,0,.18); z-index:50; display:flex; flex-direction:column; }}
+.cartdrawer[hidden], #cartshade[hidden] {{ display:none; }}
+.cdhead {{ display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid var(--gridline); }}
+.cdhead h2 {{ margin:0; font-size:17px; }}
+.cdclose {{ font:inherit; font-size:24px; line-height:1; border:none; background:none; cursor:pointer; color:var(--text-secondary); }}
+.cdlist {{ flex:1; overflow-y:auto; padding:4px 16px; }}
+.ci {{ display:grid; grid-template-columns:1fr auto auto; gap:4px 10px; align-items:center; padding:10px 0; border-bottom:1px solid var(--gridline); }}
+.ci-title {{ font-size:13.5px; font-weight:600; overflow-wrap:anywhere; }}
+.ci-sub {{ grid-column:1; font-size:11.5px; color:var(--text-secondary); }}
+.ci-in {{ width:72px; font:inherit; font-size:13px; font-weight:700; padding:4px 6px; border:1px solid #1f6feb; border-radius:6px; }}
+.ci .abtn {{ margin:0; }}
+.ci .aerr {{ grid-column:1 / -1; }}
+.cdfoot {{ padding:12px 16px; border-top:1px solid var(--gridline); display:flex; align-items:center; gap:10px; flex-wrap:wrap; }}
+.cdtotal {{ flex:1 1 100%; font-size:14px; font-weight:700; }}
 td.num.cut::after {{ content:"（需求 " attr(data-need) "）"; font-weight:400; font-size:11px; color:#a05f00; white-space:nowrap; }}
 td.dec {{ min-width:100px; }}
 .dec-in {{ width:84px; font:inherit; font-size:12.5px; padding:3px 6px; border:1px solid var(--border); border-radius:6px; }}
@@ -886,7 +950,7 @@ th.chk, td.chk {{ width:28px; text-align:center; padding-left:6px; padding-right
 .exp-sec:first-child {{ border-top:none; margin-top:0; padding-top:0; }}
 #exppanel {{ right:0; left:auto; }}
 </style></head><body><div class="wrap">
-<h1>圖書館採購決策儀表板</h1>
+{cart_header}
 <div class="sub">缺口分析 · 資料來自當下資料庫</div>
 
 <div class="card runbar">
@@ -925,6 +989,7 @@ th.chk, td.chk {{ width:28px; text-align:center; padding-left:6px; padding-right
   {main_card}
 </div>
 </div>
+{cart_drawer}
 <script>
 // ---- 執行紀錄：把後端複製的終端文字接在文字框後面 ----
 let _logEpoch = null, _logCursor = 0, _logLines = [];
@@ -961,21 +1026,20 @@ async function _pollLog() {{
 }}
 
 // ---- 分頁、共用工具列與篩選 ----
-// 搜尋、優先級／類別篩選、全選、匯出都對「目前開著的分頁」的表生效；採購單是採購建議那張表的檢視。
+// 搜尋、優先級／類別篩選、全選、匯出都對「目前開著的分頁」的表生效。
 function _activeTab() {{ return document.querySelector('.rtab.active'); }}
 function _activeKey() {{ const t = _activeTab(); return t ? t.dataset.k : 'recs'; }}
 function _activePanel() {{
   const t = _activeTab();
-  return t ? document.querySelector('.rpanel[data-k="' + (t.dataset.panel || t.dataset.k) + '"]') : null;
+  return t ? document.querySelector('.rpanel[data-k="' + t.dataset.k + '"]') : null;
 }}
 
 // 套用目前分頁的篩選：優先級按鈕與類別按鈕取交集；搜尋框有字時只看搜尋（無視兩組按鈕，維持原行為）。
-// 搜尋比對列上的 data-search（伺服器組好的小寫文字，不依欄位位置）。採購單檢視只顯示 data-incart 的列。
+// 搜尋比對列上的 data-search（伺服器組好的小寫文字，不依欄位位置）。
 function _applyRecFilters() {{
   const panel = _activePanel();
   const table = panel ? panel.querySelector('table') : null;
   if (!table) return;
-  const cartOnly = panel.dataset.view === 'cart';
   const kw = (document.getElementById('recsearch').value || '').trim().toLowerCase();
   const pa = document.querySelector('#toolbar .fbtn.active');
   const ca = document.querySelector('#toolbar .cbtn.active');
@@ -989,7 +1053,6 @@ function _applyRecFilters() {{
       const types = (tr.dataset.btypes || '').split(' ');
       show = (f === 'all' || tr.dataset.priority === f) && (c === 'all' || types.includes(c));
     }}
-    if (cartOnly && tr.dataset.incart !== '1') show = false;
     tr.style.display = show ? '' : 'none';
     // 展開的追溯列不是資料列：顯示與否完全跟隨上一列（收合與否另由 hidden 屬性管）
     const nx = tr.nextElementSibling;
@@ -1014,10 +1077,8 @@ function _resetToolbar() {{
 
 function _selectTab(btn) {{
   document.querySelectorAll('.rtab').forEach(function(x){{ x.classList.toggle('active', x === btn); }});
-  const key = btn.dataset.panel || btn.dataset.k;
+  const key = btn.dataset.k;
   document.querySelectorAll('.rpanel').forEach(function(p){{ p.hidden = p.dataset.k !== key; }});
-  const recs = document.querySelector('.rpanel[data-k="recs"]');
-  if (recs) recs.dataset.view = (btn.dataset.k === 'cart') ? 'cart' : 'all';
   _resetToolbar();
   _applyRecFilters();
 }}
@@ -1080,7 +1141,7 @@ function _onTraceClick(ev) {{
 const _traceHost = document.getElementById('review');
 if (_traceHost) _traceHost.addEventListener('click', _onTraceClick);
 
-// 分頁切換（含「採購單」：與採購建議共用面板，只是只顯示採購單裡的列）
+// 分頁切換
 document.querySelectorAll('.rtab').forEach(function(b){{
   b.addEventListener('click', function(){{ _selectTab(b); }});
 }});
@@ -1237,8 +1298,18 @@ if (_reviewCard) {{
 }}
 
 // ---- 採購單與冊數決定 ----
-// 決定冊數：留空＝還沒決定（不在採購單）、填 0＝這次不買、填大於 0＝加入採購單。採購單是採購建議這張表的檢視，
-// 所以任何一列改變，就地更新該列、頁籤上的「N 本·M 冊」與 KPI，並重新套用篩選（移出的列隨即從採購單檢視消失）。
+// 決定冊數：留空＝還沒決定（不在採購單）、填 0＝這次不買、填大於 0＝加入採購單。
+// 採購單本身在頁首的抽屜裡（整個採購單、全校）；這裡任何一列改變，就地更新該列與 KPI，並重取採購單更新圖示上的數字。
+function _syncCartBtn(tr) {{
+  const btn = tr.querySelector('[data-cart]');
+  if (!btn) return;
+  const inCart = tr.dataset.incart === '1';
+  const sys = Number(tr.querySelector('td.num').textContent) || 0;
+  btn.textContent = inCart ? '移出採購單' : '加入採購單';
+  btn.disabled = !inCart && sys <= 0;
+  btn.title = btn.disabled ? '系統建議為 0，請直接填冊數' : '';
+}}
+
 function _setRowState(tr, copies, final) {{
   const input = tr.querySelector('.dec-in');
   const saved = copies === null ? '' : String(copies);
@@ -1248,14 +1319,25 @@ function _setRowState(tr, copies, final) {{
   tr.dataset.final = final;
   if (copies !== null && copies > 0) tr.dataset.incart = '1'; else delete tr.dataset.incart;
   input.closest('td').removeAttribute('data-stale');
-  const btn = tr.querySelector('[data-cart]');
-  if (btn) {{
-    const inCart = tr.dataset.incart === '1';
-    const sys = Number(tr.querySelector('td.num').textContent) || 0;
-    btn.textContent = inCart ? '移出採購單' : '加入採購單';
-    btn.disabled = !inCart && sys <= 0;
-    btn.title = btn.disabled ? '系統建議為 0，請直接填冊數' : '';
-  }}
+  _syncCartBtn(tr);
+}}
+
+// 同一列的動作排隊，一次只跑一個：輸入冊數會在按鈕被按下的瞬間先觸發 change（輸入框失焦），緊接著才是 click，
+// 兩個請求若同時在飛，後到的會蓋掉先到的，畫面也會被先回來的那個回應改寫。排隊後，後面的動作看到的是前面存好的結果。
+function _withRow(tr, fn) {{
+  const input = tr.querySelector('.dec-in'), btn = tr.querySelector('[data-cart]');
+  tr._busy = (tr._busy || 0) + 1;
+  if (input) input.disabled = true;
+  if (btn) btn.disabled = true;
+  const run = (tr._chain || Promise.resolve()).then(fn);
+  tr._chain = run.catch(function(){{}}).then(function(){{
+    tr._busy -= 1;
+    if (!tr._busy) {{
+      if (input) input.disabled = false;
+      _syncCartBtn(tr);
+    }}
+  }});
+  return run;
 }}
 
 function _refreshCart() {{
@@ -1267,9 +1349,8 @@ function _refreshCart() {{
   const set = function(id, v){{ const el = document.getElementById(id); if (el) el.textContent = v; }};
   set('kpi-final', copies);
   set('kpi-cart-books', books);
-  const tab = document.querySelector('.rtab[data-k="cart"]');
-  if (tab) tab.textContent = '採購單 ' + books + ' 本·' + copies + ' 冊';
   _applyRecFilters();
+  _loadCart();
 }}
 
 function _applyResults(results) {{
@@ -1280,45 +1361,209 @@ function _applyResults(results) {{
 }}
 
 const _recTable = document.getElementById('rectable');
-if (_recTable) _recTable.addEventListener('change', async function(ev){{
+if (_recTable) _recTable.addEventListener('change', function(ev){{
   const input = ev.target.closest('.dec-in');
   if (!input) return;
-  const tr = input.closest('tr'), err = input.closest('td').querySelector('.aerr');
-  const raw = input.value.trim();
-  input.disabled = true;
-  try {{
-    const d = await _postJson('/purchase/decide', {{book_key: input.dataset.key, copies: raw === '' ? null : Number(raw)}});
-    _setRowState(tr, d.copies, d.final);
-    err.hidden = true;
-    _refreshCart();
-  }} catch (e) {{
-    input.value = input.dataset.saved || '';
-    err.textContent = e.message;
-    err.hidden = false;
-  }}
-  input.disabled = false;
+  const tr = input.closest('tr');
+  const raw = input.value.trim();          // 在排隊前就讀：之後輸入框會被停用
+  return _withRow(tr, async function(){{
+    const err = tr.querySelector('.aerr');
+    try {{
+      const d = await _postJson('/purchase/decide', {{book_key: input.dataset.key, copies: raw === '' ? null : Number(raw)}});
+      _setRowState(tr, d.copies, d.final);
+      err.hidden = true;
+      _refreshCart();
+    }} catch (e) {{
+      input.value = input.dataset.saved || '';
+      err.textContent = e.message;
+      err.hidden = false;
+    }}
+  }});
 }});
 
-// 單列「加入採購單／移出採購單」：加入＝以伺服器端當下的系統建議為決定冊數；移出＝清除決定
-async function _cartToggle(btn) {{
+// 單列「加入採購單／移出採購單」。加入＝輸入框裡有 ≥1 的冊數就用那個數字，沒有才採用伺服器端當下的系統建議；
+// 移出＝清除決定。意圖在按下去那一刻決定；排在前面的儲存若已經把這本書加進採購單（使用者剛輸入的冊數），就不再覆蓋。
+function _cartToggle(btn) {{
   const tr = btn.closest('tr');
-  const input = tr.querySelector('.dec-in'), err = tr.querySelector('.aerr');
-  const inCart = tr.dataset.incart === '1';
-  btn.disabled = true;
-  try {{
-    const d = await _postJson('/purchase/decide-many', {{book_keys: [input.dataset.key], mode: inCart ? 'clear' : 'suggested'}});
-    if (!inCart && d.skipped.length) throw new Error('系統建議為 0，請直接填冊數');
-    _applyResults(d.results);
-    err.hidden = true;
-    _refreshCart();
-  }} catch (e) {{
-    err.textContent = e.message;
-    err.hidden = false;
-    btn.disabled = false;
-  }}
+  const adding = tr.dataset.incart !== '1';
+  return _withRow(tr, async function(){{
+    const input = tr.querySelector('.dec-in'), err = tr.querySelector('.aerr');
+    try {{
+      if (!adding) {{
+        const d = await _postJson('/purchase/decide-many', {{book_keys: [input.dataset.key], mode: 'clear'}});
+        _applyResults(d.results);
+      }} else if (tr.dataset.incart !== '1') {{
+        const typed = Number(input.value);
+        if (typed >= 1) {{
+          const d = await _postJson('/purchase/decide', {{book_key: input.dataset.key, copies: typed}});
+          _setRowState(tr, d.copies, d.final);
+        }} else {{
+          const d = await _postJson('/purchase/decide-many', {{book_keys: [input.dataset.key], mode: 'suggested'}});
+          if (d.skipped.length) throw new Error('系統建議為 0，請直接填冊數');
+          _applyResults(d.results);
+        }}
+      }}
+      err.hidden = true;
+      _refreshCart();
+    }} catch (e) {{
+      err.textContent = e.message;
+      err.hidden = false;
+    }}
+  }});
 }}
 
-// 採購建議／採購單的批次：勾選（只算看得見的列）→ 確認視窗 → 依 200 一批呼叫 /purchase/decide-many → 就地更新
+// ---- 採購單抽屜（頁首左上角的購物車圖示）----
+// 顯示整個採購單（全校，不隨學系篩選），資料來自 GET /cart；改冊數、移出、清空都沿用 /purchase/*，
+// 並把結果同步回採購表上有出現的列。標題與書名一律用 textContent 放進去（不用 innerHTML）。
+const _PLABEL = {_plabel_json};
+const _SLABEL = {_slabel_json};
+let _cartData = {{items: [], books: 0, copies: 0}};
+
+function _renderCart(d) {{
+  const list = document.getElementById('cartlist');
+  const items = d.items || [];
+  list.textContent = '';
+  if (!items.length) {{
+    const p = document.createElement('p');
+    p.className = 'empty';
+    p.textContent = '採購單是空的。在採購建議的「採購冊數」填冊數，或按「加入採購單」。';
+    list.appendChild(p);
+  }}
+  items.forEach(function(it){{
+    const row = document.createElement('div');
+    row.className = 'ci';
+    row.dataset.key = it.book_key;
+    const title = document.createElement('div');
+    title.className = 'ci-title';
+    title.textContent = it.title;
+    const input = document.createElement('input');
+    input.className = 'ci-in';
+    input.type = 'number'; input.min = '0'; input.max = '9999'; input.step = '1';
+    input.value = String(it.copies);
+    input.dataset.saved = String(it.copies);
+    input.setAttribute('aria-label', '採購冊數');
+    const rm = document.createElement('button');
+    rm.className = 'abtn'; rm.type = 'button'; rm.dataset.cartRemove = '1';
+    rm.textContent = '移出';
+    const sub = document.createElement('div');
+    sub.className = 'ci-sub';
+    sub.textContent = (_PLABEL[it.priority] || it.priority) + '・' + (_SLABEL[it.status] || it.status) + '・系統建議 ' + it.suggested + ' 冊';
+    const err = document.createElement('div');
+    err.className = 'aerr'; err.hidden = true;
+    row.append(title, input, rm, sub, err);
+    list.appendChild(row);
+  }});
+  document.getElementById('carttotal').textContent = (d.books || 0) + ' 本 · ' + (d.copies || 0) + ' 冊';
+  document.getElementById('cartexport').disabled = !items.length;
+  document.getElementById('cartclear').disabled = !items.length;
+}}
+
+async function _loadCart() {{
+  try {{
+    const r = await fetch('/cart');
+    const d = await r.json();
+    if (!r.ok || !d || d.ok === false || !Array.isArray(d.items)) return;
+    _cartData = d;
+    const badge = document.getElementById('cartcount');
+    if (badge) {{ badge.textContent = d.books; badge.classList.toggle('zero', !d.books); }}
+    if (!document.getElementById('cartdrawer').hidden) _renderCart(d);
+  }} catch (e) {{}}
+}}
+
+function _openCart() {{
+  document.getElementById('cartshade').hidden = false;
+  document.getElementById('cartdrawer').hidden = false;
+  document.getElementById('cartbtn').setAttribute('aria-expanded', 'true');
+  _renderCart(_cartData);
+  _loadCart();
+  document.getElementById('cartclose').focus();
+}}
+
+function _closeCart() {{
+  document.getElementById('cartshade').hidden = true;
+  document.getElementById('cartdrawer').hidden = true;
+  document.getElementById('cartbtn').setAttribute('aria-expanded', 'false');
+  document.getElementById('cartbtn').focus();
+}}
+
+// 抽屜裡的變更：同一本書排隊（與採購表同一個道理），完成後同步採購表、KPI 與圖示
+let _cartChain = Promise.resolve();
+function _cartAct(row, fn) {{
+  const els = row.querySelectorAll('input, button');
+  els.forEach(function(e){{ e.disabled = true; }});
+  const run = _cartChain.then(fn);
+  _cartChain = run.catch(function(){{}});
+  return run.catch(function(e){{
+    const box = row.querySelector('.aerr');
+    if (box) {{ box.textContent = e.message; box.hidden = false; }}
+    els.forEach(function(x){{ x.disabled = false; }});
+    const input = row.querySelector('.ci-in');
+    if (input) input.value = input.dataset.saved || '';
+  }});
+}}
+
+async function _cartSetCopies(row, input) {{
+  const raw = input.value.trim();
+  const d = await _postJson('/purchase/decide', {{book_key: row.dataset.key, copies: raw === '' ? null : Number(raw)}});
+  const r = {{}}; r[row.dataset.key] = {{copies: d.copies, final: d.final}};
+  _applyResults(r);
+  _refreshCart();
+}}
+
+async function _cartRemove(row) {{
+  const d = await _postJson('/purchase/decide-many', {{book_keys: [row.dataset.key], mode: 'clear'}});
+  _applyResults(d.results);
+  _refreshCart();
+}}
+
+async function _cartClear() {{
+  const keys = (_cartData.items || []).map(function(i){{ return i.book_key; }});
+  if (!keys.length) return;
+  if (!confirm('確定清空整個採購單（' + keys.length + ' 本、' + _cartData.copies + ' 冊）？清空後這些書回到「尚未決定」。')) return;
+  try {{
+    for (let i = 0; i < keys.length; i += 200) {{      // 伺服器一次最多收 200 本
+      const d = await _postJson('/purchase/decide-many', {{book_keys: keys.slice(i, i + 200), mode: 'clear'}});
+      _applyResults(d.results);
+    }}
+  }} catch (e) {{
+    alert(e.message);
+  }}
+  _refreshCart();
+}}
+
+function _exportCart() {{
+  const items = _cartData.items || [];
+  if (!items.length) {{ alert('採購單是空的'); return; }}
+  const lines = [['書名', '採購冊數', '系統建議', '優先級', '館藏狀態'].map(_csvCell).join(',')];
+  items.forEach(function(it){{
+    lines.push([it.title, it.copies, it.suggested, _PLABEL[it.priority] || it.priority, _SLABEL[it.status] || it.status]
+      .map(_csvCell).join(','));
+  }});
+  _downloadCsv(lines, 'cart');
+}}
+
+document.getElementById('cartbtn').addEventListener('click', _openCart);
+document.getElementById('cartclose').addEventListener('click', _closeCart);
+document.getElementById('cartshade').addEventListener('click', _closeCart);
+document.addEventListener('keydown', function(ev){{
+  if (ev.key === 'Escape' && !document.getElementById('cartdrawer').hidden) _closeCart();
+}});
+document.getElementById('cartexport').addEventListener('click', _exportCart);
+document.getElementById('cartclear').addEventListener('click', _cartClear);
+document.getElementById('cartlist').addEventListener('change', function(ev){{
+  const input = ev.target.closest('.ci-in');
+  if (!input) return;
+  const row = input.closest('.ci');
+  return _cartAct(row, function(){{ return _cartSetCopies(row, input); }});
+}});
+document.getElementById('cartlist').addEventListener('click', function(ev){{
+  const rm = ev.target.closest('[data-cart-remove]');
+  if (!rm) return;
+  const row = rm.closest('.ci');
+  return _cartAct(row, function(){{ return _cartRemove(row); }});
+}});
+
+// 採購建議的批次：勾選（只算看得見的列）→ 確認視窗 → 依 200 一批呼叫 /purchase/decide-many → 就地更新
 async function _purchaseBatch(btn) {{
   const panel = btn.closest('.rpanel');
   const rows = _visibleChecked(panel, '.rowchk').filter(function(tr){{ return tr.querySelector('.dec-in'); }});
@@ -1592,6 +1837,16 @@ function _csvCell(s) {{
   return /[",\\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }}
 
+function _downloadCsv(lines, prefix) {{
+  const blob = new Blob(['\\ufeff' + lines.join('\\r\\n')], {{type:'text/csv;charset=utf-8'}});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().slice(0,10).replace(/-/g,'');
+  a.href = url; a.download = prefix + '_' + stamp + '.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}}
+
 _el('expgo').addEventListener('click', function(){{
   const panel = _activePanel();
   const table = panel ? panel.querySelector('table') : null;
@@ -1603,7 +1858,7 @@ _el('expgo').addEventListener('click', function(){{
     .filter(c => c.checked).map(c => c.value));
   let header, cellsOf, prefix;
   if (kind === 'recs') {{
-    prefix = key === 'cart' ? 'cart' : 'recommendations';
+    prefix = 'recommendations';
     header = ['優先級','課程','書名','類別','館藏狀態','冊數','需求冊數','決定冊數','最終採購數','理由'];
     // 決定冊數是輸入框、「需求」標記由 CSS 畫，兩者都不在 textContent 裡，所以明確讀 data-need 與輸入框的值；
     // 最終採購數＝決定冊數，沒決定是 0（沒加入採購單就不算要買）。
@@ -1635,7 +1890,6 @@ _el('expgo').addEventListener('click', function(){{
   const lines = [header.map(_csvCell).join(',')];
   let n = 0;
   table.querySelectorAll('tbody tr:not(.trace-row)').forEach(function(tr){{
-    if (kind === 'recs' && key === 'cart' && tr.dataset.incart !== '1') return;     // 採購單：只匯出加入的書
     if (onlyChecked) {{
       const c = tr.querySelector('.rowchk, .rchk');
       if (!c || !c.checked) return;
@@ -1646,13 +1900,7 @@ _el('expgo').addEventListener('click', function(){{
     n++;
   }});
   if (n === 0) {{ alert('沒有符合條件的資料可匯出'); return; }}
-  const blob = new Blob(['\\ufeff' + lines.join('\\r\\n')], {{type:'text/csv;charset=utf-8'}});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  const stamp = new Date().toISOString().slice(0,10).replace(/-/g,'');
-  a.href = url; a.download = prefix + '_' + stamp + '.csv';
-  a.click();
-  URL.revokeObjectURL(url);
+  _downloadCsv(lines, prefix);
   _el('exppanel').hidden = true;
 }});
 
@@ -1845,6 +2093,14 @@ def review_undo(body: dict = Body(...)):
 
 
 _MAX_DECIDED_COPIES = 9999
+
+
+@app.get("/cart")
+def cart() -> dict:
+    """整個採購單（全校）給頁首購物車抽屜；打開抽屜時才取。"""
+    with SessionLocal() as s:
+        items = _load_cart(s)
+    return {"ok": True, "items": items, "books": len(items), "copies": sum(i["copies"] for i in items)}
 
 
 @app.post("/purchase/decide")

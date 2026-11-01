@@ -251,7 +251,7 @@ def test_purchase_list_and_review_are_tabs_of_one_card():
     card = html[html.index('id="review"'):]
     assert card.index('id="rectable"') > 0                               # 採購表在同一張卡片裡
     tabs = re.findall(r'class="rtab[^"]*" data-k="(\w+)"', html)
-    assert tabs == ["recs", "cart", "mismatch", "notfound", "other"]     # 採購建議、採購單在最前面，沒有決定紀錄就沒有「審核紀錄」
+    assert tabs == ["recs", "mismatch", "notfound", "other"]             # 採購建議在最前面，沒有決定紀錄就沒有「審核紀錄」；採購單在頁首抽屜
 
 
 def test_the_purchase_tab_is_open_by_default_and_review_panels_are_hidden():
@@ -273,10 +273,10 @@ def test_kpi_pending_link_opens_the_biggest_review_tab():
     assert 'data-review-open="mismatch"' in html                         # 配錯有 2 組，最多
 
 
-def test_without_any_review_items_the_tab_bar_has_only_the_purchase_list_and_the_cart():
+def test_without_any_review_items_the_tab_bar_has_only_the_purchase_list():
     html = _page()
 
-    assert re.findall(r'class="rtab[^"]*" data-k="(.+?)"', html) == ["recs", "cart"]
+    assert re.findall(r'class="rtab[^"]*" data-k="(.+?)"', html) == ["recs"]
     assert 'id="rectable"' in html and 'id="review"' in html
 
 
