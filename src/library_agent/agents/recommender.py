@@ -1,14 +1,15 @@
 import json
-import math
 from collections import defaultdict
 from dataclasses import dataclass
 
 from openai import OpenAI
 from sqlalchemy import delete, select, update
 
+from library_agent.agents.match_auditor import _norm
 from library_agent.book_identity import assign_book_keys, llm_judge
 from library_agent.config import get_settings
 from library_agent.db.filters import purchasable
+from library_agent.demand import uncapped_copies
 from library_agent.db.models import (
     Citation,
     Course,
@@ -49,9 +50,7 @@ def _decide(
     """
     if status == HoldingStatus.OWNED_EBOOK:
         return PurchasePriority.SKIP, 0
-    per = max(_settings.students_per_copy, 1)
-    need = math.ceil(enrolled / per) if enrolled > 0 else 1
-    suggested = min(max(need - current_copies, 0), _settings.max_purchase_copies)
+    suggested = min(uncapped_copies(status, enrolled, current_copies), _settings.max_purchase_copies)   # 需求算式見 demand.py
     if suggested == 0:  # 現有實體館藏已足夠
         return PurchasePriority.SKIP, 0
     if current_copies <= 0:  # 完全沒有實體（missing / 只有書目記錄）
@@ -204,10 +203,21 @@ def _course_lines(group: list[Member]) -> list[tuple[str, int, bool]]:
 
 
 def recommender_node(_state: AgentState) -> AgentState:
+    """pipeline 的節點：全校重算。限縮版見 recommend(only_citation_ids)。"""
+    return recommend()
+
+
+def recommend(only_citation_ids: set[int] | None = None) -> AgentState:
     """一本書一筆採購建議：同一本書被多門課用到時合併（人數各課加總、館藏只扣一次、取最嚴格的類別）。
 
     注意：這裡**不看** state 的 course_ids。合併後的人數是「各課加總」，只算被選中的課會得到錯誤的合計，
-    也會把別的課的建議當成「不再存在」而刪掉。所以每次都算全校；成本由「簽章沒變就不重打 LLM」控制。
+    也會把別的課的建議當成「不再存在」而刪掉。所以 pipeline 每次都算全校；成本由「簽章沒變就不重打 LLM」控制。
+
+    only_citation_ids（套用審核結果用）：只重算「包含這些書目」的書，其餘一律不動：
+      - 受影響的書＝這些書目現在所屬的書，加上它們原本所屬的建議（同書認定可能因採購書名而改變，
+        原來那一組要拿掉這幾筆重算；若整組不再有成員就刪掉）
+      - 同書判斷（LLM）只問「與這些書同書名」的群，不重問無關的
+      - 不做全校的清理（不再存在的建議、舊格式列）：那是全校重算的工作
     """
     errors: list[str] = []
 
@@ -226,7 +236,10 @@ def recommender_node(_state: AgentState) -> AgentState:
         entries: list[tuple[Member, int]] = []   # (成員, verified_book_id)
         title_by_holding: dict[int, str] = {}
         records: list[dict] = []
+        target_titles: set[str] = set()      # 限縮時：目標書的（舊、新）正規化書名，同書判斷只問這些書名群
         for holding, citation, course, vb in rows:
+            if only_citation_ids is not None and citation.id in only_citation_ids:
+                target_titles.update({_norm(vb.buy_title or ""), _norm(vb.canonical_title or "")})
             enrolled = _resolve_enrolled(session, course, enrolled_cache)
             entries.append((
                 Member(
@@ -237,13 +250,18 @@ def recommender_node(_state: AgentState) -> AgentState:
                 ),
                 vb.id,
             ))
-            title_by_holding[holding.id] = vb.canonical_title
+            # 書名與同書認定都用「採購書名」：人工決定買原書的書，不能再被配到那本的 ISBN 併進別的書
+            title_by_holding[holding.id] = vb.buy_title
             records.append({
-                "id": vb.id, "isbn": vb.isbn_13, "title": vb.canonical_title,
-                "authors": _json_list(vb.canonical_authors),
+                "id": vb.id, "isbn": vb.buy_isbn, "title": vb.buy_title,
+                "authors": _json_list(vb.buy_authors),
             })
 
-        keys = assign_book_keys(records, _make_judge())    # verified_book_id → book_key
+        judge = _make_judge()
+        if only_citation_ids is not None:
+            real_judge = judge
+            judge = lambda a, b: _norm(a.get("title") or "") in target_titles and real_judge(a, b)   # 無關書名群不問 LLM
+        keys = assign_book_keys(records, judge)    # verified_book_id → book_key
         groups: dict[str, list[Member]] = defaultdict(list)
         for member, vb_id in entries:
             groups[keys[vb_id]].append(member)
@@ -262,6 +280,14 @@ def recommender_node(_state: AgentState) -> AgentState:
                 .where(RecommendationDB.book_key.is_not(None))
             ).all()
         }
+
+        if only_citation_ids is not None:
+            # 受影響的書：目標書目現在的鍵，加上它們原本所屬建議的鍵（原來那一組要重算，或整組消失就刪掉）
+            affected = {keys[vb_id] for member, vb_id in entries if member.citation_id in only_citation_ids}
+            affected |= {key for key, (rec_id, _sig) in existing.items()
+                         if only_citation_ids & set(linked[rec_id])}
+            groups = {key: group for key, group in groups.items() if key in affected}
+            existing = {key: found for key, found in existing.items() if key in affected}
 
         total = len(groups)
         counts = {p: 0 for p in PurchasePriority}
@@ -340,11 +366,14 @@ def recommender_node(_state: AgentState) -> AgentState:
         stale_ids = [rec_id for rec_id, _sig in existing.values()]
         if stale_ids:
             session.execute(delete(RecommendationDB).where(RecommendationDB.id.in_(stale_ids)))
-        legacy = session.execute(delete(RecommendationDB).where(RecommendationDB.book_key.is_(None)))
+        legacy_count = 0
+        if only_citation_ids is None:        # 舊格式列的清理屬於全校重算
+            legacy_count = session.execute(
+                delete(RecommendationDB).where(RecommendationDB.book_key.is_(None))).rowcount
         session.commit()
 
     print(f"  SKIP {skipped} 本（建議未變），重算 {total - skipped} 本；"
-          f"清掉不再存在 {len(stale_ids)} 筆、舊格式 {legacy.rowcount} 筆")
+          f"清掉不再存在 {len(stale_ids)} 筆、舊格式 {legacy_count} 筆")
 
     print()
     print("採購建議統計（一本書一筆）：")

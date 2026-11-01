@@ -11,10 +11,12 @@ from library_agent.db.models import (
     Citation,
     Course,
     HoldingCheck,
+    PurchaseDecision,
     Recommendation,
     RecommendationCourse,
     VerifiedBook,
 )
+from library_agent import demand, review_actions
 from library_agent.db.session import SessionLocal
 from library_agent.state import PurchasePriority
 
@@ -28,10 +30,12 @@ _PRIORITY_ORDER = [
 
 def _fetch_report_rows() -> list[dict]:
     """採購建議是「一本書一筆」（見 recommender）。course_name 是用到這本書的所有課、以「、」串接；
-    is_required 為任一課指定；course_id 是代表課程。回傳的 7 個鍵不能增減：_write_csv 的 DictWriter 依賴它們。"""
+    is_required 為任一課指定；course_id 是代表課程。回傳的鍵不能隨意增減：_write_csv 的 DictWriter 依賴它們。
+    need_copies＝不設上限的需求；decided_copies＝人決定的冊數（沒決定為 None）；final_copies＝購物車裡的冊數（沒決定為 0）。"""
     with SessionLocal() as session:
         recs = session.execute(
-            select(Recommendation, VerifiedBook, Course.course_name, Citation.is_required)
+            select(Recommendation, VerifiedBook, Course.course_name, Citation.is_required,
+                   HoldingCheck.status, HoldingCheck.holdings_count, Course.enrolled_count)
             .join(HoldingCheck, HoldingCheck.id == Recommendation.holding_id)
             .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id)
             .join(Citation, Citation.id == VerifiedBook.citation_id)
@@ -39,25 +43,34 @@ def _fetch_report_rows() -> list[dict]:
             .where(purchasable())
             .order_by(Recommendation.priority, Course.course_name, Recommendation.id)
         ).all()
-        used_by: dict[int, list[tuple[str, bool]]] = defaultdict(list)
-        for rec_id, name, is_required in session.execute(
-            select(RecommendationCourse.recommendation_id, Course.course_name, RecommendationCourse.is_required)
+        used_by: dict[int, list[tuple]] = defaultdict(list)
+        for rec_id, name, is_required, course_id, enrolled in session.execute(
+            select(RecommendationCourse.recommendation_id, Course.course_name, RecommendationCourse.is_required,
+                   RecommendationCourse.course_id, RecommendationCourse.enrolled)
             .join(Course, Course.course_id == RecommendationCourse.course_id)
             .order_by(Course.course_name)
         ).all():
-            used_by[rec_id].append((name, is_required))
+            used_by[rec_id].append((name, is_required, course_id, enrolled))
+        decisions = {key: copies_n for key, copies_n in session.execute(
+            select(PurchaseDecision.book_key, PurchaseDecision.copies)).all()}
 
     rows = []
-    for rec, vb, rep_name, rep_required in recs:
-        courses = used_by.get(rec.id) or [(rep_name, rep_required)]
+    for rec, vb, rep_name, rep_required, hc_status, hc_count, rep_enrolled in recs:
+        courses = used_by.get(rec.id) or [(rep_name, rep_required, rec.course_id, rep_enrolled or 0)]
+        need = demand.uncapped_copies(demand.status_of(hc_status),
+                                      demand.total_enrolled((c[2], c[3]) for c in courses), hc_count or 0)
+        decided = decisions.get(rec.book_key) if rec.book_key else None
         rows.append({
             "priority": rec.priority,
             "course_id": rec.course_id,
-            "course_name": "、".join(dict.fromkeys(name for name, _ in courses)),
-            "title": vb.canonical_title,
-            "is_required": any(required for _, required in courses),
+            "course_name": "、".join(dict.fromkeys(c[0] for c in courses)),
+            "title": vb.buy_title,
+            "is_required": any(c[1] for c in courses),
             "suggested_copies": rec.suggested_copies,
             "rationale": rec.rationale or "",
+            "need_copies": need,
+            "decided_copies": decided,
+            "final_copies": 0 if decided is None else decided,       # 購物車：沒決定的書不算要買
         })
     return rows
 
@@ -98,6 +111,7 @@ def _print_report(rows: list[dict]) -> None:
         if counts[p.value]:
             print(f"  {p.value:<8} {counts[p.value]:>4} 筆")
     print(f"  {'合計建議採購冊數':<10} {total_purchase:>4} 冊")
+    print(f"  {'合計購物車冊數':<10} {sum(r['final_copies'] for r in rows):>4} 冊（只算人明確決定要買的）")
     print(f"{'='*60}\n")
 
 
@@ -106,7 +120,8 @@ def _write_csv(rows: list[dict], path: str) -> None:
         writer = csv.DictWriter(
             f,
             fieldnames=["priority", "course_id", "course_name", "title",
-                        "is_required", "suggested_copies", "rationale"],
+                        "is_required", "suggested_copies", "need_copies", "decided_copies", "final_copies",
+                        "rationale"],
         )
         writer.writeheader()
         writer.writerows(rows)
@@ -171,10 +186,10 @@ def review() -> None:
             if ans == "q":
                 break
             elif ans == "a":
-                vb.review_status = "approved"
+                review_actions.decide(session, [vb.id], "matched")   # 與儀表板同一份邏輯：記錄選擇與時間
                 print("  ✓ 已核准\n")
             elif ans == "r":
-                vb.review_status = "rejected"
+                review_actions.decide(session, [vb.id], "none")
                 print("  ✗ 已退回（下游將排除）\n")
             elif ans == "e":
                 new_title = input("  新書名 > ").strip()

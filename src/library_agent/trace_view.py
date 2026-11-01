@@ -9,13 +9,13 @@ build_trace 蒐集資料（只讀），render_trace 產生已逸出的 HTML 片�
 """
 import html
 import json
-import math
 from collections import defaultdict
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from library_agent.book_kind import book_type_key
+from library_agent.demand import need_copies, uncapped_copies
 from library_agent.db.models import (
     Citation, Course, HoldingCheck, Recommendation, RecommendationCourse, VerifiedBook,
 )
@@ -34,7 +34,7 @@ class Syllabus:
 
 
 @dataclass(frozen=True)
-class SourceItem:
+class SourceItem:      #解析結果
     """這本書在某門課裡的一筆書目（第 1、2 段）。"""
     course_id: str
     course_name: str
@@ -105,6 +105,7 @@ class Trace:
     holding: HoldingInfo | None
     calc: Calc | None
     pending_reason: str | None = None   # 只有待審核的書有：為什麼還沒進採購建議
+    decision: str | None = None         # 只有已在儀表板做過決定的書有：人工決定了什麼、是否已套用
 
 
 def _authors(raw: str | None) -> list:
@@ -136,7 +137,11 @@ def _pairing_key(vb) -> tuple:
 
 def _calc(members: list, stored_priority: str, stored_copies: int) -> Calc:
     """用 merge_group 重算，並拆出畫面要解釋的中間值（需求、缺口）。
-    need 的算法必須與 recommender._decide 相同：總人數 0 時需求為 1。"""
+    need 的算法必須與 recommender._decide 相同：總人數 0 時需求為 1。
+    
+    members：recommender.Member 的清單。每個 Member 是「這本書在某一門課裡的一筆」，欄位有 holding_id, holdings_count, status, course_id, course_name, citation_id, is_required, enrolled。
+    stored_priority、stored_copies：資料庫裡存的建議（例如 "medium"、2）。傳進來只為了最後比對，_calc 自己不讀資料庫。
+    """
     from library_agent.agents import recommender as R   # 延後 import：它在 import 時會建構 OpenAI client
 
     decision = R.merge_group(members)
@@ -144,16 +149,24 @@ def _calc(members: list, stored_priority: str, stored_copies: int) -> Calc:
     per_course: dict[str, tuple[str, int]] = {}
     for m in sorted(members, key=lambda m: (m.course_name, m.course_id)):
         per_course.setdefault(m.course_id, (m.course_name, m.enrolled))
-    total = decision.enrolled_total
-    need = math.ceil(total / per) if total > 0 else 1
+
+    total = decision.enrolled_total  # 總人數
+    need = need_copies(total)        # 與 recommender 同一份算式（demand.py）
+
     return Calc(
         courses=list(per_course.values()), enrolled_total=total, per_copy=per, need=need,
-        current=decision.current_copies, gap=max(need - decision.current_copies, 0),
+        current=decision.current_copies, gap=uncapped_copies(decision.status, total, decision.current_copies),
         cap=R._settings.max_purchase_copies, is_required=decision.is_required,
         status=decision.status.value, priority=decision.priority.value, copies=decision.copies,
         stored_priority=stored_priority, stored_copies=stored_copies,
         consistent=(decision.priority.value, decision.copies) == (stored_priority, stored_copies),
     )
+
+
+def _copies_then_smaller_id(holding) -> tuple:
+    """比大小用的鍵：冊數多的勝；冊數相同時 id 小的勝（取負號，讓 max 挑到 id 最小的）。
+    冊數欄位可能是 NULL，視為 0。與 recommender.merge_group 挑代表館藏的規則相同。"""
+    return (holding.holdings_count or 0, -holding.id)
 
 
 def build_trace(session, rec_id: int) -> Trace | None:
@@ -164,10 +177,13 @@ def build_trace(session, rec_id: int) -> Trace | None:
     if rec is None:
         return None
 
+    # 取關聯表 recommendation_courses 裡屬於這筆建議的所有列。一本書被幾個書目用到，就有幾列。
     links = session.execute(
         select(RecommendationCourse).where(RecommendationCourse.recommendation_id == rec_id)
     ).scalars().all()
-    snapshot = {link.citation_id: link.enrolled for link in links}     # 計算當時的人數
+
+    snapshot = {link.citation_id: link.enrolled for link in links}     # 計算當時的人數  {citation_id: 人數}
+
     if links:
         citation_ids = list(snapshot)
     else:   # 舊格式（沒有關聯列）：退回這筆建議自己的書目
@@ -178,6 +194,11 @@ def build_trace(session, rec_id: int) -> Trace | None:
         )
         citation_ids = [own] if own is not None else []
 
+    '''
+    rows 格式 : 
+    rows = [ (citation_301, vb_301, hc_301, course_政治學),
+         (citation_302, vb_302, hc_302, course_政治學概論) ]
+    '''
     rows = session.execute(
         select(Citation, VerifiedBook, HoldingCheck, Course)
         .join(VerifiedBook, VerifiedBook.citation_id == Citation.id)
@@ -192,10 +213,11 @@ def build_trace(session, rec_id: int) -> Trace | None:
     grouped: dict[tuple, list] = {}
     members = []
     holdings = []
+
     for citation, vb, holding, course in rows:
         enrolled = snapshot.get(citation.id, course.enrolled_count or 0)
         syllabi.setdefault(course.course_id, _syllabus(course))
-        sources.append(_source_item(citation, course, enrolled))
+        sources.append(_source_item(citation, course, enrolled))    # 每個書目是一次獨立的解析結果，不是重複資料。 不去重
         grouped.setdefault(_pairing_key(vb), []).append((citation.title, _authors(citation.authors)))
         if holding is not None:
             holdings.append(holding)
@@ -213,22 +235,23 @@ def build_trace(session, rec_id: int) -> Trace | None:
 
     holding_info = calc = None
     if members:
-        rep = next((h for h in holdings if h.id == rec.holding_id),
-                   max(holdings, key=lambda h: ((h.holdings_count or 0), -h.id)))
+        # 代表館藏永遠取冊數最多者（與 merge_group 同一規則），第 ④ 段與第 ⑤ 段的「現有冊數」才會一致。
+        # 不看 rec.holding_id：建議產生後若別筆館藏被更新，它指向的那筆可能已不是最大的。
+        rep = max(holdings, key=_copies_then_smaller_id)  # 因為一本書可能有好幾筆館藏查詢結果，但第4段只能顯示一筆
         holding_info = HoldingInfo(
             rep.status, rep.holdings_count or 0, rep.alma_mms_id, rep.matched_edition,
             len({(h.status, h.holdings_count, h.alma_mms_id) for h in holdings}) > 1,
         )
         calc = _calc(members, rec.priority, rec.suggested_copies)
 
-    title = rows[0][1].canonical_title if rows else f"建議 #{rec.id}"
+    title = rows[0][1].buy_title if rows else f"建議 #{rec.id}"
     return Trace(rec.id, title, rec.book_key, rec.rationale, list(syllabi.values()), sources,
                  pairings, holding_info, calc)
 
 
 def _pending_reason(vb, confidence: float) -> str:
     """這本書為什麼卡在待審核（沒進採購建議）。送審來源：match_auditor 判配錯；validator 在權威書目查無此書
-    （verified=False，實測佔「未稽核」的 513/532）；解析信心低於門檻（match_auditor 不稽核這類，所以 pairing_verdict 是空的）。"""
+    （verified=False，實測「未稽核」的 532 筆全是這類，其中 19 筆信心也偏低）；解析信心低於門檻（match_auditor 不稽核這類，所以 pairing_verdict 是空的）。"""
     from library_agent.config import get_settings
 
     threshold = get_settings().human_review_confidence_threshold
@@ -245,27 +268,67 @@ def _pending_reason(vb, confidence: float) -> str:
     return "；".join(parts) or "等待人工審核"
 
 
-def build_pending_trace(session, vb_id: int) -> Trace | None:
-    """待審核的書（還沒有採購建議）的追溯：只有課綱、解析、配對、館藏，沒有冊數算式。
-    找不到、或這本書不是待審核狀態時回 None。標題用原書名：配錯時配到的那本是別的書。"""
-    row = session.execute(
+_CHOICE_LABEL = {"matched": "買配對到的書", "original": "買原書", "custom": "改買其他書名", "none": "都不買"}
+
+
+def _decision_text(vb) -> str:
+    """審核紀錄裡這本書的人工決定：決定了什麼、採購書名、決定是否已反映到館藏與採購建議。"""
+    text = f"人工決定：{_CHOICE_LABEL.get(vb.review_choice, vb.review_choice or '')}"
+    if vb.purchase_title:
+        text += f"（採購書名「{vb.purchase_title}」）"
+    if vb.review_choice == "none":
+        return text + "，不會採購"
+    return text + ("；已套用到館藏與採購建議" if vb.review_applied_at else "；待套用")
+
+
+def build_pending_trace(session, vb_ids: list[int]) -> Trace | None:
+    """待審核的書（還沒有採購建議），以及已在儀表板做過決定的書（審核紀錄）的追溯：
+    只有課綱、解析、配對、館藏，沒有冊數算式；待審的說明為什麼還沒進採購建議，已決定的說明人工決定了什麼。
+    一組可含多個書目（同一本書被多門課列出）：課綱依課去重、來源每書目一列、相同的配對合併。
+    只收待審或有決定紀錄的；全部都不是（或沒給 id）回 None。
+    標題用原書名：配錯時配到的那本是別的書。"""
+    rows = session.execute(
         select(Citation, VerifiedBook, Course)
         .join(VerifiedBook, VerifiedBook.citation_id == Citation.id)
         .join(Course, Course.course_id == Citation.course_id)
-        .where(VerifiedBook.id == vb_id, VerifiedBook.review_status == "pending")
-    ).first()
-    if row is None:
+        .where(VerifiedBook.id.in_(list(vb_ids)),
+               or_(VerifiedBook.review_status == "pending", VerifiedBook.review_choice.is_not(None)))
+        .order_by(Course.course_name, Citation.id)
+    ).all()
+    if not rows:
         return None
-    citation, vb, course = row
-    holding = session.scalar(select(HoldingCheck).where(HoldingCheck.verified_book_id == vb.id))
-    holding_info = None if holding is None else HoldingInfo(
-        holding.status, holding.holdings_count or 0, holding.alma_mms_id, holding.matched_edition, False)
-    k = _pairing_key(vb)
-    pairing = Pairing(k[0], list(k[1]), k[2], k[3], k[4], k[5], k[6], k[7],
-                      [(citation.title, _authors(citation.authors))], k[8])
-    return Trace(0, citation.title, None, None, [_syllabus(course)],
-                 [_source_item(citation, course, course.enrolled_count or 0)], [pairing],
-                 holding_info, None, pending_reason=_pending_reason(vb, citation.confidence or 0.0))
+    holdings = session.scalars(
+        select(HoldingCheck).where(HoldingCheck.verified_book_id.in_([vb.id for _, vb, _ in rows]))
+    ).all()
+
+    syllabi: dict[str, Syllabus] = {}
+    sources: list[SourceItem] = []
+    grouped: dict[tuple, list] = {}
+    reasons: dict[str, None] = {}                      # 去重並保持順序
+    decisions: dict[str, None] = {}
+    for citation, vb, course in rows:
+        syllabi.setdefault(course.course_id, _syllabus(course))
+        sources.append(_source_item(citation, course, course.enrolled_count or 0))
+        grouped.setdefault(_pairing_key(vb), []).append((citation.title, _authors(citation.authors)))
+        if vb.review_choice:
+            decisions.setdefault(_decision_text(vb))
+        else:
+            reasons.setdefault(_pending_reason(vb, citation.confidence or 0.0))
+    pairings = [
+        Pairing(k[0], list(k[1]), k[2], k[3], k[4], k[5], k[6], k[7], originals, k[8])
+        for k, originals in grouped.items()
+    ]
+
+    holding_info = None
+    if holdings:
+        rep = max(holdings, key=_copies_then_smaller_id)
+        holding_info = HoldingInfo(
+            rep.status, rep.holdings_count or 0, rep.alma_mms_id, rep.matched_edition,
+            len({(h.status, h.holdings_count, h.alma_mms_id) for h in holdings}) > 1,
+        )
+    return Trace(0, rows[0][0].title, None, None, list(syllabi.values()), sources, pairings,
+                 holding_info, None, pending_reason="；".join(reasons) or None,
+                 decision="；".join(decisions) or None)
 
 
 # ---------------------------------------------------------------- 渲染
@@ -357,9 +420,14 @@ def _sec4(t: Trace) -> str:
 
 def _sec5(t: Trace) -> str:
     c = t.calc
-    if c is None and t.pending_reason:
-        return (f'<div class="tr-note">未進入採購建議：{_e(t.pending_reason.rstrip('。'))}。'
-                '人工放行（main review）後，recommender 才會計算冊數。</div>')
+    if c is None and (t.decision or t.pending_reason):
+        notes = []
+        if t.decision:
+            notes.append(f'<div class="tr-note">{_e(t.decision)}。</div>')
+        if t.pending_reason:
+            notes.append(f'<div class="tr-note">未進入採購建議：{_e(t.pending_reason.rstrip('。'))}。'
+                         '人工放行（main review）後，recommender 才會計算冊數。</div>')
+        return "".join(notes)
     if c is None:
         return '<p class="tr-dim">尚無館藏資料，無法重算冊數。</p>'
     people = " ＋ ".join(f"{_e(name)} {n}" for name, n in c.courses)

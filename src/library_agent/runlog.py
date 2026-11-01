@@ -38,7 +38,7 @@ def _append(line: str) -> None:
         return
     global _seq
     with _lock:
-        node = _node.get() or (_running[-1] if _running else None)
+        node = _node.get() or (_running[-1] if _running else None)  # 嘗試取得目前節點名稱。先看 _node.get() 有沒有，如果沒有（可能在別的執行緒跑），就拿 _running[-1]（最後一個開始跑的節點名稱）。
         text = (f"[{node}] {line}" if node else line)[:_MAX_LINE]
         _seq += 1
         _buffer.append((_seq, text))
@@ -49,14 +49,14 @@ class _Tee:
     """檔案物件的外殼：先記下完整的行，再原樣寫給真正的輸出。"""
 
     def __init__(self, real):
-        self._real = real
+        self._real = real  # 把「原本真正的輸出管道（例如真正的終端機）」存起來
         # 每個執行緒各自累積「還沒換行的半行」：print 會把文字與換行分兩次 write，
         # 多個 worker 同時印時共用一個緩衝會把不同行接在一起。
         self._local = threading.local()
 
     def write(self, s):
         pending = getattr(self._local, "partial", "") + s
-        *done, self._local.partial = pending.split("\n")
+        *done, self._local.partial = pending.split("\n") 
         # 先記再寫：就算真正的輸出寫失敗（例如終端機編碼），這一行也不會漏掉
         for line in done:
             _append(line)
@@ -122,7 +122,7 @@ def current_node() -> str | None:
 def read(after: int = 0, epoch: int | None = None) -> dict:
     """回傳流水號大於 after 的行。epoch 與目前不同（前端手上是上一次執行的游標）就整份重給。"""
     with _lock:
-        if epoch is not None and epoch != _epoch:
+        if epoch is not None and epoch != _epoch:  # 如果前端帶來的 epoch 跟後端目前的 _epoch 不一樣（代表伺服器重啟過，或是重新執行了），後端強制把 after 設為 0，讓前端從頭拿資料。
             after = 0
         return {
             "epoch": _epoch,

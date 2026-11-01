@@ -121,7 +121,7 @@ def test_rec_table_marks_every_course_category_and_multiple_btypes():
         title="T", status="owned_physical", copies=3, rationale="r",
     )
 
-    html = dashboard._rec_table([row], [])
+    html = dashboard._rec_table([row])
 
     assert _has(html, 'data-btypes="required optional"')       # 兩個類別都留得住：選「指定」或「參考」都會看到這列
     assert _has(html, "課甲（參考）") and _has(html, "課乙（指定）")
@@ -135,7 +135,8 @@ def test_report_rows_join_course_names(shared_book):
     assert row["is_required"] is True                          # 任一課指定
     assert (row["priority"], row["suggested_copies"]) == ("medium", 3)
     assert set(row) == {"priority", "course_id", "course_name", "title",
-                        "is_required", "suggested_copies", "rationale"}     # CSV 的 DictWriter 依賴這組鍵
+                        "is_required", "suggested_copies", "rationale",
+                        "need_copies", "decided_copies", "final_copies"}    # CSV 的 DictWriter 依賴這組鍵（第二步新增後三個）
 
 
 def test_export_recommendations_lists_every_course_of_the_book(shared_book):
@@ -186,7 +187,7 @@ def test_sections_with_the_same_name_are_collapsed_with_a_count(sectioned_book):
     (row,) = [r for r in dashboard._load_data()["recs"] if r.title == TITLE_S]
 
     assert [(c.name, c.sections) for c in row.courses] == [("A別的課", 1), ("B同名課", 2)]
-    html = dashboard._rec_table([row], [])
+    html = dashboard._rec_table([row])
     assert _has(html, "B同名課（指定）×2")
     assert not _has(html, "A別的課（指定）×")        # 只有一個班的不加 ×1
 
@@ -223,16 +224,7 @@ def test_rec_table_rows_carry_rec_id_and_a_text_free_toggle():
     row = dashboard.RecRow("medium", [dashboard.CourseRef("課甲", "required", False)], "T",
                            "owned_physical", 3, "r", rec_id=42)
 
-    html = dashboard._rec_table([row], [])
+    html = dashboard._rec_table([row])
 
     assert _has(html, 'data-rec="42"')
     assert re.search(r'<button class="tbtn"[^>]*></button>', html)   # 按鈕內沒有文字：匯出 CSV 讀 textContent 不會被污染
-
-
-def test_pending_rows_carry_vb_id_and_a_toggle():
-    pending = [("課甲", "T", 0.5, "nla", True, "指定", 77)]
-
-    html = dashboard._rec_table([], pending)
-
-    assert _has(html, 'data-vb="77"') and not _has(html, "data-rec")
-    assert re.search(r'<button class="tbtn"[^>]*></button>', html)

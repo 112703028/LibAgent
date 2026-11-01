@@ -16,7 +16,7 @@ _SRU_PARAMS = {
     "version": "1.2",
     "operation": "searchRetrieve",
     "recordSchema": "marcxml",
-    "maximumRecords": 1,
+    "maximumRecords": 5,  # 拿多筆候選，供作者比對挑最佳匹配（原本=1，短書名常誤配第一筆結果）
 }
 _TIMEOUT = 20.0
 
@@ -32,17 +32,7 @@ class BookRecord:
     source: str = "ncl"
 
 
-def _parse_response(xml_text: str) -> BookRecord | None:
-    root = ET.fromstring(xml_text)
-
-    num_el = root.find(f"{{{_SRW_NS}}}numberOfRecords")
-    if num_el is None or int(num_el.text or 0) == 0:
-        return None
-
-    marc = root.find(f".//{{{_MARC_NS}}}record")
-    if marc is None:
-        return None
-
+def _parse_one_record(marc: ET.Element) -> BookRecord | None:
     # 245 $a (主標) + $b (副標)
     title = ""
     f245 = marc.find(f"{{{_MARC_NS}}}datafield[@tag='245']")
@@ -78,17 +68,60 @@ def _parse_response(xml_text: str) -> BookRecord | None:
     return BookRecord(canonical_title=title, canonical_authors=authors, isbn_13=isbn_13)
 
 
-def _query(cql: str) -> BookRecord | None:
+def _parse_response(xml_text: str) -> list[BookRecord]:
+    """回傳所有候選記錄（依 SRU 回傳順序），供呼叫端依作者挑最佳匹配。"""
+    root = ET.fromstring(xml_text)
+
+    num_el = root.find(f"{{{_SRW_NS}}}numberOfRecords")
+    if num_el is None or int(num_el.text or 0) == 0:
+        return []
+
+    records = []
+    for marc in root.findall(f".//{{{_MARC_NS}}}record"):
+        r = _parse_one_record(marc)
+        if r is not None:
+            records.append(r)
+    return records
+
+
+def _normalize_author(name: str) -> str:
+    """去標點/空白，供作者姓名寬鬆比對（處理全形逗號、空格等排版差異）。"""
+    return re.sub(r"[\s,，.。]", "", name)
+
+
+def _pick_best_match(records: list[BookRecord], authors: list[str] | None) -> BookRecord | None:
+    """從候選記錄中挑最佳匹配：若有任一候選作者與查詢作者重疊（正規化後子字串比對）
+    就選它；否則退回第一筆（維持原本「查到就採信」的行為，避免變嚴格到查無結果）。"""
+    if not records:
+        return None
+    if not authors:
+        return records[0]
+
+    query_names = [_normalize_author(a) for a in authors if a and a.strip()]
+    if not query_names:
+        return records[0]
+
+    for record in records:
+        candidate_names = [_normalize_author(a) for a in record.canonical_authors]
+        for q in query_names:
+            for c in candidate_names:
+                if q and c and (q in c or c in q):
+                    return record
+
+    return records[0]
+
+
+def _query(cql: str) -> list[BookRecord]:
     params = {**_SRU_PARAMS, "query": cql}
     try:
         with httpx.Client(timeout=_TIMEOUT) as client:
             response = client.get(_SRU_BASE, params=params)
         if not response.text.lstrip().startswith("<?xml"):
-            return None
+            return []
         response.raise_for_status()
         return _parse_response(response.text)
     except Exception:
-        return None
+        return []
 
 
 def _clean_title(title: str) -> str:
@@ -111,23 +144,23 @@ def lookup(
     authors: list[str] | None = None,
     isbn: str | None = None,
 ) -> BookRecord | None:
-    # 1. ISBN（最準）
+    # 1. ISBN（最準，唯一鍵不需要作者比對）
     if isbn:
-        result = _query(f'alma.isbn="{isbn}"')
-        if result:
-            return result
+        records = _query(f'alma.isbn="{isbn}"')
+        if records:
+            return records[0]
 
-    # 2. 書名
-    result = _query(f'alma.title="{title}"')
-    if result:
-        return result
+    # 2. 書名（可能多筆候選，依作者挑最佳匹配；短書名如「游泳」「繪本」容易搜到不相關結果）
+    records = _query(f'alma.title="{title}"')
+    if records:
+        return _pick_best_match(records, authors)
 
     # 3. 清理版次/副標後再查
     clean = _clean_title(title)
     if clean != title and clean:
-        result = _query(f'alma.title="{clean}"')
-        if result:
-            return result
+        records = _query(f'alma.title="{clean}"')
+        if records:
+            return _pick_best_match(records, authors)
 
     return None
 
