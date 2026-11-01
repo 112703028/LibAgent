@@ -1652,6 +1652,55 @@ def purchase_decide(body: dict = Body(...)):
     return {"ok": True, "copies": copies, "suggested": suggested, "final": copies}
 
 
+_BATCH_MODES = ("suggested", "zero", "clear")
+_MAX_BATCH = 200
+
+
+@app.post("/purchase/decide-many")
+def purchase_decide_many(body: dict = Body(...)):
+    """批次決定（採購建議／採購單分頁的批次按鈕）。mode：
+      suggested  決定冊數＝伺服器端「當下」的系統建議（＝加入採購單，記下決定當時的建議）；系統建議為 0 的略過
+      zero       決定冊數＝0（這次不買，明確排除）
+      clear      刪除決定（回到還沒決定、不在採購單；對應的建議已不存在也要能清掉）
+    一次最多 200 本。驗證失敗回 400 且不寫入任何東西；找不到建議的 key 略過（clear 除外），不讓整批失敗。
+    回傳 results：每個 key 處理後的決定冊數與最終冊數，前端據此就地更新各列。"""
+    keys = body.get("book_keys") if isinstance(body, dict) else None
+    mode = body.get("mode") if isinstance(body, dict) else None
+    if mode not in _BATCH_MODES:
+        return _review_error("mode 必須是 suggested、zero 或 clear")
+    if (not isinstance(keys, list) or not keys or len(keys) > _MAX_BATCH
+            or not all(isinstance(k, str) and k.strip() for k in keys)):
+        return _review_error(f"book_keys 必須是 1 到 {_MAX_BATCH} 個非空文字")
+    keys = list(dict.fromkeys(k.strip() for k in keys))      # 去重並保持順序
+
+    with SessionLocal() as s:
+        if mode == "clear":
+            deleted = s.execute(delete(PurchaseDecision).where(PurchaseDecision.book_key.in_(keys))).rowcount
+            s.commit()
+            return {"ok": True, "changed": deleted, "skipped": [],
+                    "results": {k: {"copies": None, "final": 0} for k in keys}}
+        suggestions = dict(s.execute(
+            select(Recommendation.book_key, Recommendation.suggested_copies).where(Recommendation.book_key.in_(keys))
+        ).all())
+        now = datetime.now(timezone.utc)
+        values, results, skipped = [], {}, []
+        for k in keys:
+            suggested = suggestions.get(k)
+            if suggested is None or (mode == "suggested" and suggested == 0):
+                skipped.append(k)                 # 找不到建議，或沒有東西可加（系統建議為 0）
+                continue
+            copies = suggested if mode == "suggested" else 0
+            values.append({"book_key": k, "copies": copies, "suggested_at_decision": suggested, "decided_at": now})
+            results[k] = {"copies": copies, "final": copies}
+        if values:
+            stmt = pg_insert(PurchaseDecision).values(values)
+            s.execute(stmt.on_conflict_do_update(index_elements=["book_key"], set_={
+                "copies": stmt.excluded.copies, "suggested_at_decision": stmt.excluded.suggested_at_decision,
+                "decided_at": stmt.excluded.decided_at}))
+        s.commit()
+    return {"ok": True, "changed": len(values), "skipped": skipped, "results": results}
+
+
 def _run_apply() -> None:
     """背景執行「套用審核結果」。與 pipeline 共用 _run_state／_run_lock 與網頁執行紀錄：同時只能有一個在跑，
     結束後頁面既有的輪詢會自動重整。"""
