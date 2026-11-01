@@ -135,7 +135,8 @@ def test_report_rows_join_course_names(shared_book):
     assert row["is_required"] is True                          # 任一課指定
     assert (row["priority"], row["suggested_copies"]) == ("medium", 3)
     assert set(row) == {"priority", "course_id", "course_name", "title",
-                        "is_required", "suggested_copies", "rationale"}     # CSV 的 DictWriter 依賴這組鍵
+                        "is_required", "suggested_copies", "rationale",
+                        "need_copies", "decided_copies", "final_copies"}    # CSV 的 DictWriter 依賴這組鍵（第二步新增後三個）
 
 
 def test_export_recommendations_lists_every_course_of_the_book(shared_book):

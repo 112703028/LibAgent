@@ -15,6 +15,22 @@ from library_agent.state import HoldingStatus
 _settings = get_settings()
 
 
+def total_enrolled(course_enrolments) -> int:
+    """(course_id, 人數) 的可迭代物件 → 總人數。同一門課重複列只算一次（與 recommender.merge_group 一致）。"""
+    per_course: dict = {}
+    for course_id, enrolled in course_enrolments:
+        per_course.setdefault(course_id, enrolled or 0)
+    return sum(per_course.values())
+
+
+def status_of(raw: str | None) -> HoldingStatus:
+    """資料庫存的館藏狀態字串 → enum；不認得的當 unknown（不會是電子書），讀取端不該因此崩潰。"""
+    try:
+        return HoldingStatus(raw)
+    except ValueError:
+        return HoldingStatus.UNKNOWN
+
+
 def need_copies(enrolled_total: int) -> int:
     per = max(_settings.students_per_copy, 1)
     return math.ceil(enrolled_total / per) if enrolled_total > 0 else 1

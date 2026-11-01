@@ -40,3 +40,14 @@ def test_capped_uncapped_equals_decide_for_a_grid_of_cases(status, enrolled, cur
     _priority, copies = R._decide(status, True, enrolled, current)
 
     assert min(D.uncapped_copies(status, enrolled, current), CAP) == copies
+
+
+def test_total_enrolled_counts_each_course_once():
+    assert D.total_enrolled([("A", 60), ("A", 60), ("B", 40)]) == 100
+    assert D.total_enrolled([("A", None), ("B", 40)]) == 40          # 人數不明當 0
+    assert D.total_enrolled([]) == 0
+
+
+def test_status_of_maps_unknown_strings_to_unknown_instead_of_raising():
+    assert D.status_of("owned_ebook") == HS.OWNED_EBOOK
+    assert D.status_of("something_new") == HS.UNKNOWN and D.status_of(None) == HS.UNKNOWN

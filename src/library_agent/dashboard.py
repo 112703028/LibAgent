@@ -31,12 +31,13 @@ from library_agent.db.models import (
     Citation,
     Course,
     HoldingCheck,
+    PurchaseDecision,
     Recommendation,
     RecommendationCourse,
     VerifiedBook,
 )
 from library_agent.db.session import SessionLocal
-from library_agent import review_actions
+from library_agent import demand, review_actions
 from library_agent.review_apply import pending_apply_ids
 from library_agent.review_groups import KINDS, PendingItem, group_pending
 from library_agent.trace_view import _authors   # 作者欄位是 JSON 字串，與追溯畫面同一個解析（壞掉回 []）
@@ -93,6 +94,15 @@ class RecRow(NamedTuple):
     rationale: str
     rec_id: int = 0      # 展開追溯畫面用（GET /trace/{rec_id}）；放最後，既有建構呼叫不受影響
     unverified: bool = False   # 這本書有書目在驗證階段查無此書（館藏是用書名直接查的結果）
+    book_key: str | None = None    # 同一本書的識別；人的決定以它對應（舊格式的建議沒有，也就不能下決定）
+    need: int = 0                  # 不設上限的需求冊數（demand.uncapped_copies）；copies 是套上限後的系統建議
+    decided: int | None = None     # 人決定的冊數；None＝沒決定（0＝這次不買）
+    stale_from: int | None = None  # 決定之後系統建議變了：決定當時的系統建議
+
+    @property
+    def final(self) -> int:
+        """最終採購冊數：有決定用決定，否則用系統建議。"""
+        return self.copies if self.decided is None else self.decided
 
 
 # 同一門課有兩個書目時（實測 8 組），取較「重」的類別
@@ -192,6 +202,7 @@ def _load_data(departments: list[str] | None = None) -> dict:
                     HoldingCheck.status, Recommendation.suggested_copies, Recommendation.rationale,
                     Course.course_name, Course.department, Citation.is_required, Citation.raw_mention,
                     Recommendation.course_id, _confirmed(),
+                    Recommendation.book_key, HoldingCheck.holdings_count, Course.enrolled_count,
                 )
                 .join(HoldingCheck, HoldingCheck.id == Recommendation.holding_id)
                 .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id)
@@ -204,24 +215,35 @@ def _load_data(departments: list[str] | None = None) -> dict:
         # 這本書被哪些課用到（關聯表）。沒有關聯列的建議（recommender 重建前的舊格式列）退回用代表課程。
         used_by: dict[int, list[tuple]] = defaultdict(list)
         if rec_rows:
-            for rec_id, course_id, name, dept, is_required, raw_mention, confirmed in s.execute(
+            for rec_id, course_id, name, dept, is_required, raw_mention, confirmed, enrolled in s.execute(
                 select(RecommendationCourse.recommendation_id, RecommendationCourse.course_id,
                        Course.course_name, Course.department,
-                       RecommendationCourse.is_required, Citation.raw_mention, _confirmed())
+                       RecommendationCourse.is_required, Citation.raw_mention, _confirmed(),
+                       RecommendationCourse.enrolled)
                 .join(Course, Course.course_id == RecommendationCourse.course_id)
                 .join(Citation, Citation.id == RecommendationCourse.citation_id)
                 .join(VerifiedBook, VerifiedBook.citation_id == RecommendationCourse.citation_id)
                 .where(RecommendationCourse.recommendation_id.in_([r[0] for r in rec_rows]))
             ).all():
-                used_by[rec_id].append((course_id, name, dept, is_required, raw_mention, confirmed))
+                used_by[rec_id].append((course_id, name, dept, is_required, raw_mention, confirmed, enrolled))
+
+        # 人對採購冊數的決定（以 book_key 對應；recommendations 重建後仍在）
+        decisions = {
+            key: (copies_n, suggested_at)
+            for key, copies_n, suggested_at in s.execute(
+                select(PurchaseDecision.book_key, PurchaseDecision.copies, PurchaseDecision.suggested_at_decision)
+            ).all()
+        }
 
         recs: list[RecRow] = []
         for (rec_id, priority, title, st, rec_copies, rationale,
-             rep_name, rep_dept, rep_req, rep_mention, rep_course_id, rep_confirmed) in rec_rows:
+             rep_name, rep_dept, rep_req, rep_mention, rep_course_id, rep_confirmed,
+             book_key, rep_holdings, rep_enrolled) in rec_rows:
             refs: dict[str, CourseRef] = {}
             section_ids: dict[str, set[str]] = defaultdict(set)    # 課名 → 這個名稱下有哪幾個班
-            entries = used_by.get(rec_id) or [(rep_course_id, rep_name, rep_dept, rep_req, rep_mention, rep_confirmed)]
-            for course_id, name, dept, is_required, raw_mention, _confirmed_flag in entries:
+            entries = used_by.get(rec_id) or [
+                (rep_course_id, rep_name, rep_dept, rep_req, rep_mention, rep_confirmed, rep_enrolled or 0)]
+            for course_id, name, dept, is_required, raw_mention, _confirmed_flag, _enrolled in entries:
                 key = _book_type_key(is_required, raw_mention)
                 prev = refs.get(name)
                 section_ids[name].add(course_id)
@@ -232,8 +254,13 @@ def _load_data(departments: list[str] | None = None) -> dict:
                 )
             courses = [c._replace(sections=len(section_ids[c.name]))
                        for c in sorted(refs.values(), key=lambda c: c.name)]
+            need = demand.uncapped_copies(demand.status_of(st), demand.total_enrolled((e[0], e[6]) for e in entries),
+                                          rep_holdings or 0)
+            decision = decisions.get(book_key) if book_key else None
             recs.append(RecRow(priority, courses, title, st, rec_copies, rationale or "", rec_id,
-                               unverified=any(not e[5] for e in entries)))
+                               unverified=any(not e[5] for e in entries), book_key=book_key, need=need,
+                               decided=None if decision is None else decision[0],
+                               stale_from=decision[1] if decision and decision[1] != rec_copies else None))
         recs.sort(key=lambda r: (_PRIORITY_RANK.get(r.priority, 9),
                                  r.courses[0].name if r.courses else "", r.title))
 
@@ -298,6 +325,7 @@ def _load_data(departments: list[str] | None = None) -> dict:
     by_kind = group_pending(decided_items, rec_of, threshold)
     earliest = datetime.min.replace(tzinfo=timezone.utc)
     decided = sorted((g for kind in KINDS for g in by_kind[kind]), key=lambda g: g.reviewed_at or earliest, reverse=True)
+    kpis["copies_final"] = sum(r.final for r in recs)      # 採用冊數：有決定用決定，否則用系統建議（kpis["copies"] 是系統建議）
     return {"kpis": kpis, "priority": prio, "status": status, "recs": recs, "pending": pending,
             "review": review, "decided": decided, "pending_apply": pending_apply}
 
@@ -1388,7 +1416,7 @@ def _csv_response(header: list[str], rows: list[tuple], filename_prefix: str) ->
 @app.get("/export/recommendations")
 def export_recommendations() -> StreamingResponse:
     data = _load_data()
-    header = ["優先級", "課程", "書名", "類別", "館藏狀態", "冊數", "理由"]
+    header = ["優先級", "課程", "書名", "類別", "館藏狀態", "冊數", "需求冊數", "決定冊數", "最終採購數", "理由"]
     rows = [
         (
             _PRIORITY_LABEL.get(r.priority, r.priority),
@@ -1397,6 +1425,9 @@ def export_recommendations() -> StreamingResponse:
             "、".join(_KEY_LABEL[k] for k in sorted({c.key for c in r.courses}, key=_KEY_RANK.get)),
             _STATUS_LABEL.get(r.status, r.status),
             r.copies,
+            r.need,
+            "" if r.decided is None else r.decided,
+            r.final,
             r.rationale,
         )
         for r in data["recs"]
