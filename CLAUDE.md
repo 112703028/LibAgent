@@ -109,7 +109,22 @@ match_auditor 判定）→ Alma 館藏 → 冊數怎麼算。**只讀**，不核
   查無此書只依原書名；同一門課在組內只算一次人數。學系篩選只影響組內計入哪些書目，「所在採購建議」是全校的。
 - 採購表不再有待審列，優先級篩選也沒有「待審核」；KPI「待人工審核」卡片點下去會開啟待審最多的分頁
   （卡片的 `data-review-open`）；待審清單的 CSV 匯出在分頁列右側（`/export/pending`）。
-- **還沒做**（設計在 `docs/superpowers/specs/2026-10-31-review-panel-design.md`）：「採購冊數由使用者決定」。
+### 採購冊數由使用者決定（採購表的「決定冊數」欄）
+
+系統建議只是參考，最後由採購人員填：
+
+- **一欄輸入框**（冊數之後）：**留空＝採用系統建議；填 0＝這次不買**（書仍留在清單，與審核的「退回」不同）；改變就儲存，`POST /purchase/decide`
+  （`{book_key, copies}`，`copies` 為 0–9999 的整數，`null`／省略＝清除；驗證失敗回 400 且不寫入，找不到建議回 404）。
+- **存在獨立的 `purchase_decisions`（以 `book_key` 為鍵）**，不放在 `recommendations` 上：librarian／recommender 會刪掉重建建議，決定不能跟著消失
+  （有測試：建議被刪掉重建後決定仍在）。另存「決定當時的系統建議」，之後系統建議變了就在該格標「建議已從 A 變成 B」。
+  **限制**：決定以 `book_key` 對應，書的認定改變（例如在審核裡改成「買原書」，鍵會變）時，原本的決定就對不上；不記是誰決定，只記時間。
+- **「需求 N」**：被單本上限（`max_purchase_copies`，預設 5）截斷的書，冊數旁標「（需求 26）」。需求是**讀取時**用 `demand.py` 算的，不存：
+  `demand.need_copies / uncapped_copies` 是唯一一份需求算式，recommender 的 `_decide`、追溯畫面、儀表板都用它，
+  並有測試鎖住 `min(uncapped, 上限)` 等於 `_decide` 的冊數。
+- **KPI**：「系統建議冊數」（`kpis["copies"]`）與「採用冊數」（`kpis["copies_final"]`，有決定用決定，否則用系統建議）。
+- **匯出 CSV**（前端與 `/export/recommendations`、`library-agent report`）多「需求冊數／決定冊數／最終採購數」。前端匯出讀每格 `textContent`，
+  輸入框的值與「需求」標記都不是文字節點，所以匯出程式**明確**讀 `data-need` 與輸入框的值。
+- 舊格式的建議（`book_key` 為 NULL）沒有輸入框。寫入決定的測試一律用 `isolated_db`，**不要**對開發庫做真實決定。
 
 #### 審核動作（審核卡片上的按鈕，也是 `library-agent review` 的核准／退回走的同一份邏輯：`review_actions.py`）
 

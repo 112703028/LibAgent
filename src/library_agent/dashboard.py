@@ -353,23 +353,29 @@ def _kpi_tiles(k: dict) -> str:
         ("書目數", k["citations"], ""),
         ("已驗證", k["verified"], ""),
         ("待人工審核", k["pending"], "warn" if k["pending"] else ""),
-        ("建議採購總冊數", k["copies"], "accent"),
+        ("系統建議冊數", k["copies"], "accent"),
+        ("採用冊數", k.get("copies_final", k["copies"]), "accent"),    # 有決定用決定，否則用系統建議
     ]
     return "".join(
         (f'<a class="kpi" href="#review"><div class="val {cls}">{val}</div><div class="lbl">{lbl}</div></a>'
          if lbl == "待人工審核" else
-         f'<div class="kpi"><div class="val {cls}">{val}</div><div class="lbl">{lbl}</div></div>')
+         f'<div class="kpi"><div class="val {cls}"{" id=" + chr(34) + "kpi-final" + chr(34) if lbl == "採用冊數" else ""}>'
+         f'{val}</div><div class="lbl">{lbl}</div></div>')
         for lbl, val, cls in tiles
     )
 
 
 def _rec_row(priority: str, course: str, title: str, btype: str, status_html: str,
              copies_html: str, rationale: str, btypes: str, course_html: str | None = None,
-             rec_id: int | None = None, unverified: bool = False) -> str:
+             rec_id: int | None = None, unverified: bool = False, book_key: str | None = None,
+             need: int = 0, cut: bool = False, decided: int | None = None, stale_from: int | None = None,
+             final: int = 0) -> str:
     """btypes：類別 token（required / optional / ai），以空白分隔的清單（一本書涵蓋多個類別時有多個，
     前端用「包含」比對）。rec_id：採購建議的 id，有值才有展開鈕（取 GET /trace/{rec_id}）。
     展開鈕與「未驗證」標記內都不放任何文字（由 CSS 畫），因為匯出 CSV 是讀每格的 textContent。
-    unverified：這本書有書目在驗證階段查無此書。"""
+    unverified：這本書有書目在驗證階段查無此書。
+    決定冊數（採購人員自己填）：book_key 為 None（舊格式的建議）的列沒有輸入框；留空＝採用系統建議，0＝這次不買。
+    「需求 N」（被上限截斷時）與「建議已從 A 變成 B」都由 CSS 用 data-* 畫，輸入框的值也不是文字節點。"""
     pcolor = _PRIORITY_COLOR.get(priority, _PENDING_COLOR)
     plabel = _PRIORITY_LABEL.get(priority, _PENDING_LABEL)
     data_id = f' data-rec="{rec_id}"' if rec_id is not None else ""
@@ -378,15 +384,27 @@ def _rec_row(priority: str, course: str, title: str, btype: str, status_html: st
     marker = ('<span class="unv" title="驗證階段查無此書，館藏是用書名直接查詢的結果"></span>'
               if unverified else "")
     unv_attr = ' data-unverified="1"' if unverified else ""
+    if book_key is None:
+        dec_cell = '<td class="dec"></td>'
+    else:
+        saved = "" if decided is None else str(decided)
+        stale = f' data-stale="{stale_from}" data-now="{html.escape(copies_html)}"' if stale_from is not None else ""
+        dec_cell = (
+            f'<td class="dec"{stale}><input class="dec-in{" has" if decided is not None else ""}" type="number" '
+            f'min="0" max="9999" step="1" data-key="{html.escape(book_key)}" data-saved="{saved}" '
+            f'placeholder="採用建議" value="{saved}" aria-label="決定冊數"><div class="aerr" hidden></div></td>'
+        )
     return (
-        f'<tr data-priority="{html.escape(priority)}" data-btypes="{html.escape(btypes)}"{data_id}{unv_attr}>'
+        f'<tr data-priority="{html.escape(priority)}" data-btypes="{html.escape(btypes)}" '
+        f'data-final="{final}"{data_id}{unv_attr}>'
         f'<td class="chk"><input type="checkbox" class="rowchk"></td>'
         f'<td><span class="pill" style="background:{pcolor}">{html.escape(plabel)}</span></td>'
         f'<td>{course_html if course_html is not None else html.escape(course or "")}</td>'
         f'<td>{toggle}{html.escape(title or "")}{marker}</td>'
         f'<td>{btype}</td>'
         f'<td>{status_html}</td>'
-        f'<td class="num">{copies_html}</td>'
+        f'<td class="{"num cut" if cut else "num"}" data-need="{need}">{copies_html}</td>'
+        f'{dec_cell}'
         f'<td class="rationale">{html.escape(rationale or "")}</td></tr>'
     )
 
@@ -436,13 +454,14 @@ def _rec_table(recs: list) -> str:
         body.append(_rec_row(
             r.priority, "", r.title, "".join(_tag_for_key(k) for k in keys), status_html,
             str(r.copies), r.rationale, " ".join(keys), course_html=_course_cell(r.courses),
-            rec_id=r.rec_id or None, unverified=r.unverified,
+            rec_id=r.rec_id or None, unverified=r.unverified, book_key=r.book_key, need=r.need,
+            cut=r.need > r.copies, decided=r.decided, stale_from=r.stale_from, final=r.final,
         ))
     return (
         '<table id="rectable"><thead><tr>'
         '<th class="chk"><input type="checkbox" id="rowchkall" title="全選/全不選"></th>'
         '<th>優先級</th><th>課程</th><th>書名</th><th>類別</th>'
-        '<th>館藏狀態</th><th>冊數</th><th>理由</th></tr></thead>'
+        '<th>館藏狀態</th><th>冊數</th><th>決定冊數</th><th>理由</th></tr></thead>'
         f'<tbody>{"".join(body)}</tbody></table>'
     )
 
@@ -737,6 +756,11 @@ a.kpi {{ display:block; text-decoration:none; color:inherit; }}
 .rnote {{ margin:0 0 10px; font-size:12.5px; color:var(--text-secondary); }}
 .rtbl td {{ font-size:12.5px; }}
 .rdim {{ color:var(--text-secondary); }}
+td.num.cut::after {{ content:"（需求 " attr(data-need) "）"; font-weight:400; font-size:11px; color:#a05f00; white-space:nowrap; }}
+td.dec {{ min-width:100px; }}
+.dec-in {{ width:84px; font:inherit; font-size:12.5px; padding:3px 6px; border:1px solid var(--border); border-radius:6px; }}
+.dec-in.has {{ border-color:#1f6feb; font-weight:700; }}
+td.dec[data-stale]::after {{ content:"建議已從 " attr(data-stale) " 變成 " attr(data-now); display:block; font-size:11px; color:#a05f00; }}
 .maintabs {{ margin-bottom:14px; padding-bottom:10px; border-bottom:1px solid var(--gridline); }}
 .tabspacer {{ flex:1; }}
 .ract {{ min-width:230px; }}
@@ -1097,6 +1121,39 @@ if (_reviewCard) {{
   }});
 }}
 
+// ---- 採購冊數的決定：輸入框改變就儲存（留空＝採用系統建議；0＝這次不買） ----
+function _refreshFinalKpi() {{
+  const el = document.getElementById('kpi-final');
+  if (!el) return;
+  let sum = 0;
+  document.querySelectorAll('#rectable tbody tr:not(.trace-row)').forEach(function(tr){{ sum += Number(tr.dataset.final) || 0; }});
+  el.textContent = sum;
+}}
+const _recTable = document.getElementById('rectable');
+if (_recTable) _recTable.addEventListener('change', async function(ev){{
+  const input = ev.target.closest('.dec-in');
+  if (!input) return;
+  const tr = input.closest('tr'), cell = input.closest('td'), err = cell.querySelector('.aerr');
+  const raw = input.value.trim();
+  input.disabled = true;
+  try {{
+    const d = await _postJson('/purchase/decide', {{book_key: input.dataset.key, copies: raw === '' ? null : Number(raw)}});
+    const saved = d.copies === null ? '' : String(d.copies);
+    input.value = saved;
+    input.dataset.saved = saved;
+    input.classList.toggle('has', d.copies !== null);
+    tr.dataset.final = d.final;
+    cell.removeAttribute('data-stale');
+    err.hidden = true;
+    _refreshFinalKpi();
+  }} catch (e) {{
+    input.value = input.dataset.saved || '';
+    err.textContent = e.message;
+    err.hidden = false;
+  }}
+  input.disabled = false;
+}});
+
 const _el = id => document.getElementById(id);
 let _sawRunning = false;  // 這個分頁是否親眼看過 running；只有這樣才代表「這次是我觸發的」
 async function _poll() {{
@@ -1329,7 +1386,7 @@ _el('expgo').addEventListener('click', function(){{
   const onlyChecked = _el('exponlychecked').checked;
   const wantPrio = new Set(Array.from(document.querySelectorAll('.expchk'))
     .filter(c => c.checked).map(c => c.value));
-  const header = ['優先級','課程','書名','類別','館藏狀態','冊數','理由'];
+  const header = ['優先級','課程','書名','類別','館藏狀態','冊數','需求冊數','決定冊數','最終採購數','理由'];
   const lines = [header.map(_csvCell).join(',')];
   let n = 0;
   document.querySelectorAll('#rectable tbody tr:not(.trace-row)').forEach(function(tr){{
@@ -1339,8 +1396,15 @@ _el('expgo').addEventListener('click', function(){{
     }} else {{
       if (!wantPrio.has(tr.dataset.priority)) return;
     }}
-    // 跳過第一欄（checkbox），讀其餘 td 的可見文字
-    const cells = Array.from(tr.querySelectorAll('td')).slice(1).map(td => td.textContent);
+    // 跳過第一欄（checkbox）。決定冊數是輸入框、「需求」標記由 CSS 畫，兩者都不在 textContent 裡，所以明確讀
+    // data-need 與輸入框的值；最終採購數＝有決定用決定，否則用系統建議（填 0 就是 0）。
+    const numCell = tr.querySelector('td.num');
+    const input = tr.querySelector('.dec-in');
+    const copies = numCell.textContent.trim();
+    const decided = input ? input.value.trim() : '';
+    const cells = Array.from(tr.querySelectorAll('td')).slice(1, 6).map(td => td.textContent)
+      .concat([copies, numCell.dataset.need || '', decided, decided !== '' ? decided : copies,
+               tr.querySelector('td.rationale').textContent]);
     lines.push(cells.map(_csvCell).join(','));
     n++;
   }});
