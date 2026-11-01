@@ -438,7 +438,7 @@ def test_pending_endpoint_404_when_nothing_is_pending(isolated_db, monkeypatch):
 # ---------- 審核紀錄：已決定的書也能展開看決策過程 ----------
 
 DECIDED = [("matched", "approved", "買配對到的書"), ("original", "approved", "買原書"),
-           ("custom", "approved", "輸入書名加入"), ("none", "rejected", "都不買")]
+           ("custom", "approved", "改買其他書名"), ("none", "rejected", "都不買")]
 
 
 @pytest.mark.parametrize("choice,review,label", DECIDED)

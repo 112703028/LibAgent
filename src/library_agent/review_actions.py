@@ -3,12 +3,14 @@
 動作語意：
   matched   買配對到的書  → approved；沿用驗證器配到的書與已查好的館藏，沒有採購書名
   original  買原書        → approved；採購書名＝原書名、原作者、（過檢查碼的）原書 ISBN
-  custom    輸入書名加入  → approved；採購書名＝使用者輸入的書名，作者留空，ISBN 選填
+  custom    改買其他書名  → approved；採購書名＝使用者輸入的書名，作者留空，ISBN 選填；
+            輸入的書名等於這筆的原書名、又沒填 ISBN 時，視同 original（畫面每一列都是「輸入框預填原書名＋加入」，
+            沒改書名就要保留原作者與原 ISBN，並記成買原書）
   none      都不買／捨棄  → rejected
 「採購書名」另存在 purchase_*，**不覆蓋** canonical_*（驗證器配到的證據，審核要留著）。
 
 決定只寫資料庫（不 commit，由呼叫端負責），並把 review_applied_at 設成 NULL：
-放行的書要等「套用審核結果」重查館藏、重算採購建議後才會出現在採購清單（見 review_apply）。
+放行的書要等「套用審核結果」重查館藏、重算採購建議後才會出現在採購建議（見 review_apply）。
 """
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -76,13 +78,16 @@ def decide(session, vb_ids: list, action: str, *, title: str | None = None, isbn
 
     changed = []
     for vb, citation in rows:
+        chosen = action
+        if action == "custom" and clean_isbn is None and clean_title == (citation.title or "").strip():
+            chosen = "original"          # 逐筆比對自己的原書名：同一組裡原書名不同的，仍是自訂書名
         vb.review_status = "rejected" if action == "none" else "approved"
-        vb.review_choice = action
-        if action == "original":
+        vb.review_choice = chosen
+        if chosen == "original":
             vb.purchase_title = citation.title
             vb.purchase_authors = citation.authors or "[]"
             vb.purchase_isbn = normalize_isbn(citation.isbn)
-        elif action == "custom":
+        elif chosen == "custom":
             vb.purchase_title, vb.purchase_authors, vb.purchase_isbn = clean_title, "[]", clean_isbn
         else:
             vb.purchase_title = vb.purchase_authors = vb.purchase_isbn = None

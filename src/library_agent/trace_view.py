@@ -268,7 +268,7 @@ def _pending_reason(vb, confidence: float) -> str:
     return "；".join(parts) or "等待人工審核"
 
 
-_CHOICE_LABEL = {"matched": "買配對到的書", "original": "買原書", "custom": "輸入書名加入", "none": "都不買"}
+_CHOICE_LABEL = {"matched": "買配對到的書", "original": "買原書", "custom": "改買其他書名", "none": "都不買"}
 
 
 def _decision_text(vb) -> str:

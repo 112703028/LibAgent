@@ -173,7 +173,7 @@ def test_the_ui_says_purchase_suggestions_not_purchase_list():
     html = markup(page([rec()], reviews(), [decided_group()], pending_apply=2))
 
     assert "採購清單" not in html                       # 「採購清單」容易和「採購單（購物車）」搞混
-    assert "以此書名加入採購建議" in html and "套用後，放行的書才會出現在採購建議" in html
+    assert "加入採購建議" in html and "套用後，放行的書才會出現在採購建議" in html
 
 
 # ---------- 共用工具列 ----------
@@ -298,7 +298,7 @@ def test_legacy_row_has_no_cart_button():
 
 # ---------- 批次列 ----------
 
-def test_every_panel_has_a_batch_bar_with_the_buttons_that_fit_it():
+def test_purchase_and_log_panels_have_a_batch_bar_and_pending_panels_do_not():
     pn = panels(page([rec()], reviews(), [decided_group()]))
     recs_chunk = pn["recs"][1]
     bars = re.findall(r'<div class="rbatch[^"]*">.*?</div>', recs_chunk, re.S)
@@ -306,14 +306,9 @@ def test_every_panel_has_a_batch_bar_with_the_buttons_that_fit_it():
     assert len(bars) == 1                                                     # 採購單移到抽屜，只剩一條批次列
     assert [m for m in re.findall(r'data-pbatch="(\w+)"', bars[0])] == ["suggested", "zero", "clear"]
     assert "加入採購單（採用系統建議）" in bars[0] and "設為不買" in bars[0] and "清除決定" in bars[0]
-    assert 'data-batch="matched"' in pn["mismatch"][1] and 'data-batch="none"' in pn["notfound"][1]
+    for kind in ("mismatch", "notfound", "other"):
+        assert "data-batch" not in pn[kind][1] and 'class="rbatch"' not in pn[kind][1], kind     # 待審分頁沒有批次列
     assert 'data-ubatch="undo"' in pn["decided"][1] and "撤銷所選" in pn["decided"][1]
-
-
-def test_batch_bars_never_offer_buy_original_or_custom_title():
-    html = page([rec()], reviews(), [decided_group()])
-
-    assert 'data-batch="original"' not in html and 'data-batch="custom"' not in html
 
 
 # ---------- 逸出 ----------

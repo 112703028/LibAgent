@@ -538,13 +538,7 @@ def _review_list_status(g) -> str:
     return "已擋下，不在採購建議" if g.kind == "mismatch" else "不在採購建議"
 
 
-_CHOICE_LABEL = {"matched": "買配對到的書", "original": "買原書", "custom": "輸入書名加入", "none": "都不買／捨棄"}
-# 批次列：只提供不需要逐組輸入的動作（買原書、輸入書名要逐組看清楚再按）
-_BATCH_ACTIONS = {
-    "mismatch": [("matched", "買配對到的書", False), ("none", "都不買", True)],
-    "notfound": [("none", "捨棄所選", True)],
-    "other": [("matched", "買這本書", False), ("none", "都不買", True)],
-}
+_CHOICE_LABEL = {"matched": "買配對到的書", "original": "買原書", "custom": "改買其他書名", "none": "都不買"}
 
 
 def _abtn(act: str, label: str, *, negative: bool = False) -> str:
@@ -553,17 +547,17 @@ def _abtn(act: str, label: str, *, negative: bool = False) -> str:
 
 
 def _action_cell(g) -> str:
-    """這一組的處理動作。按鈕的語意依類別不同；書名輸入框預填原書名（多數情況只要確認或改個錯字）。"""
-    if g.kind == "mismatch":
-        body = _abtn("original", "買原書") + _abtn("matched", "買配對到的書") + _abtn("none", "都不買", negative=True)
-    elif g.kind == "notfound":
-        body = (
-            f'<input class="atitle" type="text" maxlength="500" value="{html.escape(g.title or "")}" aria-label="要採購的書名">'
-            '<input class="aisbn" type="text" maxlength="20" placeholder="ISBN（選填）" aria-label="ISBN（選填）">'
-            + _abtn("custom", "以此書名加入採購建議") + _abtn("none", "捨棄", negative=True)
-        )
-    else:
-        body = _abtn("matched", "買這本書") + _abtn("none", "都不買", negative=True)
+    """這一組的處理動作，三個待處理分頁（配錯／查無此書／其他）完全一樣：書名輸入框（預填原書名，多數情況只要確認或改個錯字）
+    ＋ISBN（選填）＋［加入採購建議］［都不買］。有配到書的列多一顆「改填配到的書名」：只把配到的書名填進輸入框，
+    不送出，使用者看過再按加入；所以所有決定都走同一條路（輸入框的內容就是要買的書）。
+    輸入的書名等於原書名且沒填 ISBN 時，後端視同「買原書」（review_actions）。"""
+    fill = (f'<button class="abtn" type="button" data-fill="{html.escape(g.matched_title, quote=True)}">改填配到的書名</button>'
+            if g.kind != "notfound" and g.matched_title else "")
+    body = (
+        f'<input class="atitle" type="text" maxlength="500" value="{html.escape(g.title or "")}" aria-label="要採購的書名">'
+        '<input class="aisbn" type="text" maxlength="20" placeholder="ISBN（選填）" aria-label="ISBN（選填）">'
+        + _abtn("custom", "加入採購建議") + fill + _abtn("none", "都不買", negative=True)
+    )
     return f'<td class="ract">{body}<div class="aerr" hidden></div></td>'
 
 
@@ -616,14 +610,6 @@ def _decided_row(g) -> str:
         f'<td>{html.escape(label)}</td><td>{bought}</td><td>{state}</td>'
         '<td><button class="abtn" type="button" data-undo>撤銷</button><div class="aerr" hidden></div></td></tr>'
     )
-
-
-def _batch_bar(kind: str) -> str:
-    buttons = "".join(
-        f'<button class="abtn{" abtn-no" if neg else ""}" type="button" data-batch="{act}">{label}</button>'
-        for act, label, neg in _BATCH_ACTIONS[kind]
-    )
-    return f'<div class="rbatch">勾選的組：{buttons}</div>'
 
 
 def _purchase_batch_bars() -> str:
@@ -697,8 +683,7 @@ def _review_panel(review: dict, decided: list | None = None, pending_apply: int 
             tabs.append(tab(kind, f"{label} {len(groups)} 組（{sum(g.items for g in groups)} 筆書目）"))
             if groups:
                 body = (
-                    _batch_bar(kind)
-                    + '<table class="rtbl"><thead><tr><th class="chk"><input type="checkbox" class="rchkall" title="全選/全不選"></th>'
+                    '<table class="rtbl"><thead><tr><th class="chk"><input type="checkbox" class="rchkall" title="全選/全不選"></th>'
                     '<th>優先級</th><th>用到的課（人數）</th><th>原書（課綱列的）</th><th>配到的書</th>'
                     '<th>原因</th><th>人數合計</th><th>處理</th></tr></thead>'
                     f'<tbody>{"".join(_review_row(g) for g in groups)}</tbody></table>'
@@ -1286,23 +1271,6 @@ function _visibleChecked(panel, selector) {{
     .filter(function(tr){{ return tr.style.display !== 'none'; }});
 }}
 
-async function _batchDecide(btn) {{
-  const panel = btn.closest('.rpanel');
-  const rows = _visibleChecked(panel, '.rchk');
-  if (!rows.length) {{ alert('請先勾選要處理的組'); return; }}
-  const ids = [].concat.apply([], rows.map(_rowIds));
-  if (!confirm('確定對 ' + rows.length + ' 組（' + ids.length + ' 筆書目）執行「' + btn.textContent + '」？')) return;
-  panel.querySelectorAll('.rbatch .abtn').forEach(function(b){{ b.disabled = true; }});
-  try {{
-    for (let i = 0; i < ids.length; i += 200) {{      // 伺服器一次最多收 200 個
-      await _postJson('/review/decide', {{ids: ids.slice(i, i + 200), action: btn.dataset.batch}});
-    }}
-  }} catch (e) {{
-    alert(e.message);
-  }}
-  _reviewReload();
-}}
-
 async function _undoRow(btn) {{
   const tr = btn.closest('tr');
   btn.disabled = true;
@@ -1340,8 +1308,11 @@ if (_reviewCard) {{
     if (goto) return _selectTop(goto.dataset.gotoTop);
     const act = t.closest('[data-act]');
     if (act) return _decideRow(act);
-    const batch = t.closest('[data-batch]');
-    if (batch) return _batchDecide(batch);
+    const fill = t.closest('[data-fill]');
+    if (fill) {{                                  // 只填入書名，不送出
+      fill.closest('tr').querySelector('.atitle').value = fill.dataset.fill;
+      return;
+    }}
     const undo = t.closest('[data-undo]');
     if (undo) return _undoRow(undo);
     const apply = t.closest('#applybtn');

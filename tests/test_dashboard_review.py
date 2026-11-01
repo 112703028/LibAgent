@@ -296,7 +296,7 @@ def decided_world():
         # 買原書：驗證器配到「TESTBOOK-RV-BUY-MATCHED」，人工決定採購書名「TESTBOOK-RV-BUY」
         _seed_book(s, "TESTRVP1", DEPT_A, 20, "TESTBOOK-RV-BUY-MATCHED", verdict="mismatch", review="approved",
                    choice="original", purchase_title="TESTBOOK-RV-BUY", recommend=("high", 2))
-        # 查無此書、但人工已確認（輸入書名加入）：不該再標「未驗證」
+        # 查無此書、但人工已確認（改買其他書名）：不該再標「未驗證」
         _seed_book(s, "TESTRVQ1", DEPT_A, 20, "TESTBOOK-RV-CONFIRMED", verified=False, source="ncl_not_found",
                    review="approved", choice="custom", purchase_title="TESTBOOK-RV-CONFIRMED",
                    recommend=("high", 2))
@@ -357,47 +357,52 @@ def test_group_pending_carries_choice_buy_title_and_applied():
     assert [(g.choice, g.buy_title, g.applied) for g in groups] == [("original", "T", False)]   # 組內全部已套用才算已套用
 
 
-def test_mismatch_row_has_three_action_buttons():
-    html = panel(mismatch=[grp("mismatch")])
-
-    assert all(f'data-act="{a}"' in html for a in ("original", "matched", "none"))
-    assert 'data-act="custom"' not in html
-    assert "買原書" in html and "買配對到的書" in html and "都不買" in html
+def kind_rows():
+    return dict(mismatch=[grp("mismatch")], notfound=[grp("notfound", "找不到的書", vb_ids=(2,), source="ncl_not_found", judge=None, reason=None)],
+                other=[grp("other", "OT-BOOK", vb_ids=(3,), judge=None, reason=None)])
 
 
-def test_notfound_row_has_a_prefilled_title_box_an_isbn_box_and_two_buttons():
-    html = panel(notfound=[grp("notfound", "找不到的書", source="ncl_not_found", judge=None, reason=None)])
+def test_every_pending_row_has_the_same_actions_title_box_isbn_box_add_and_discard():
+    for kind, groups in kind_rows().items():
+        html = panel(**{kind: groups})
+        title = groups[0].title
 
-    assert re.search(r'<input class="atitle"[^>]*value="找不到的書"', html)
-    assert 'class="aisbn"' in html
-    assert 'data-act="custom"' in html and 'data-act="none"' in html
-    assert 'data-act="original"' not in html and 'data-act="matched"' not in html
-    assert "以此書名加入採購建議" in html and "捨棄" in html
+        assert re.search(rf'<input class="atitle"[^>]*value="{re.escape(title)}"', html), kind      # 預填原書名
+        assert 'class="aisbn"' in html, kind
+        assert re.search(r'data-act="custom"[^>]*>加入採購建議<', html), kind
+        assert re.search(r'data-act="none"[^>]*>都不買<', html), kind
+        assert 'data-act="original"' not in html and 'data-act="matched"' not in html, kind
 
 
-def test_other_row_has_two_buttons():
-    html = panel(other=[grp("other", judge=None, reason=None)])
+def test_rows_with_a_matched_book_get_a_fill_button_that_only_carries_its_title():
+    rows = kind_rows()
+    for kind in ("mismatch", "other"):
+        g = rows[kind][0]
+        html = panel(**{kind: [g]})
 
-    assert 'data-act="matched"' in html and 'data-act="none"' in html
-    assert "買這本書" in html and 'data-act="original"' not in html
+        assert re.search(rf'<button[^>]*data-fill="{re.escape(g.matched_title)}"[^>]*>改填配到的書名</button>', html), kind
+        assert 'data-fill="' in html and "data-act" not in re.search(r'<button[^>]*data-fill[^>]*>', html).group(0)   # 只填入，不送出
+    assert "data-fill" not in panel(notfound=rows["notfound"])          # 查無此書沒有配到的書
+
+
+def test_the_fill_button_escapes_the_matched_title():
+    g = dataclasses.replace(grp("mismatch"), matched_title='X" onmouseover="alert(1)')
+
+    html = panel(mismatch=[g])
+
+    assert 'data-fill="X&quot; onmouseover=&quot;alert(1)"' in html and ' onmouseover="alert(1)"' not in html
+
+
+def test_pending_tabs_have_no_batch_bar():
+    html = panel(**kind_rows())
+
+    assert "data-batch" not in html and "勾選的組" not in html
 
 
 def test_pending_rows_have_a_checkbox_for_batch_actions():
     html = panel(mismatch=[grp("mismatch")])
 
     assert 'class="rchk"' in html
-
-
-def test_batch_bars_offer_only_matched_and_none():
-    html = panel(mismatch=[grp("mismatch")], notfound=[grp("notfound", "B", vb_ids=(2,))],
-                 other=[grp("other", "C", vb_ids=(3,))])
-
-    assert 'data-batch="original"' not in html and 'data-batch="custom"' not in html
-    chunks = html.split('<div class="rpanel"')[1:]          # 逐個面板切開，避免正規表示式跨面板
-    panels = {m.group(1): chunk for chunk in chunks for m in [re.match(r' data-k="(\w+)"', chunk)] if m}
-    mm, nf = panels["mismatch"], panels["notfound"]
-    assert 'data-batch="matched"' in mm and 'data-batch="none"' in mm
-    assert 'data-batch="none"' in nf and 'data-batch="matched"' not in nf     # 查無此書沒有「買配對到的書」
 
 
 def test_decided_tab_lists_choice_status_and_undo():
@@ -408,7 +413,7 @@ def test_decided_tab_lists_choice_status_and_undo():
     html = dashboard._review_panel(review, decided=done, pending_apply=0)
 
     assert 'data-k="decided"' in html and "審核紀錄" in html
-    assert "買原書" in html and "輸入書名加入" in html and "都不買" in html
+    assert "買原書" in html and "改買其他書名" in html and "都不買" in html
     assert "待套用" in html and "已套用" in html
     assert html.count('data-undo') == 3
     decided_panel = re.search(r'<div class="rpanel" data-k="decided".*', html, re.S).group(0)

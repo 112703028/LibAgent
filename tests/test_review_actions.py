@@ -3,7 +3,8 @@
 動作語意（見設計文件第三步）：
   matched   買配對到的書 → approved，沒有採購書名
   original  買原書       → approved，採購書名＝原書名／原作者／（過檢查碼的）原書 ISBN
-  custom    輸入書名     → approved，採購書名＝輸入的書名，作者留空，ISBN 選填
+  custom    改買其他書名 → approved，採購書名＝輸入的書名，作者留空，ISBN 選填；
+            輸入的書名等於原書名且沒填 ISBN 時，視同「買原書」（畫面只有一條路：輸入框預填原書名）
   none      都不買／捨棄 → rejected
 """
 import builtins
@@ -117,6 +118,32 @@ def test_custom_stores_the_typed_title_and_normalized_isbn(isolated_db):
     do(isolated_db, [vb], "custom", title="  我要買的書  ", isbn="0306406152")
 
     assert fields(vb_of(isolated_db, vb)) == ("approved", "custom", "我要買的書", "[]", "9780306406157")
+
+
+def test_custom_with_the_original_title_and_no_isbn_is_recorded_as_buying_the_original(isolated_db):
+    # 畫面上每一列都是「輸入框預填原書名＋加入」：沒改書名時要保留原作者與（過檢查碼的）原 ISBN，並記成「買原書」
+    vb = seed_book(isolated_db, 1, title="Macroeconomics", citation_isbn="0-306-40615-2", authors='["Hall"]')
+
+    do(isolated_db, [vb], "custom", title="  Macroeconomics ", isbn="")
+
+    assert fields(vb_of(isolated_db, vb)) == ("approved", "original", "Macroeconomics", '["Hall"]', "9780306406157")
+
+
+def test_custom_with_the_original_title_but_a_typed_isbn_stays_custom(isolated_db):
+    vb = seed_book(isolated_db, 1, title="Macroeconomics", citation_isbn="0-306-40615-2", authors='["Hall"]')
+
+    do(isolated_db, [vb], "custom", title="Macroeconomics", isbn="0306406152")
+
+    assert fields(vb_of(isolated_db, vb)) == ("approved", "custom", "Macroeconomics", "[]", "9780306406157")
+
+
+def test_custom_title_is_compared_with_each_rows_own_citation(isolated_db):
+    same, other = seed_book(isolated_db, 1, title="同名書"), seed_book(isolated_db, 2, title="別名書")
+
+    do(isolated_db, [same, other], "custom", title="同名書")
+
+    assert vb_of(isolated_db, same).review_choice == "original"          # 這一筆的原書名就是輸入的書名
+    assert vb_of(isolated_db, other).review_choice == "custom"           # 同一組裡原書名不同的，仍是自訂書名
 
 
 def test_custom_without_an_isbn_keeps_it_null(isolated_db):
