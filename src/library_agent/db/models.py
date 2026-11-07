@@ -176,6 +176,10 @@ class PurchaseDecision(Base):
     copies: Mapped[int] = mapped_column(Integer, nullable=False)     # 0＝這次不買；留空（清除）則刪掉這一列
     suggested_at_decision: Mapped[int] = mapped_column(Integer, nullable=False)
     decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # 決定時的快照（purchase_reconcile）：書名給人看；citation_ids 是這本書由哪些課綱書目組成（JSON 整數陣列），
+    # 書的識別鍵之後改變時，重算採購建議後靠它把決定搬到新鍵。NULL＝不知道（升級前對不上任何建議的舊決定）。
+    title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    citation_ids: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class RecommendationCourse(Base):

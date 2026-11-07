@@ -41,6 +41,7 @@ from library_agent.db.models import (
 from library_agent.db.session import SessionLocal
 from library_agent import demand, review_actions
 from library_agent.review_apply import pending_apply_ids
+from library_agent.purchase_reconcile import snapshot
 from library_agent.review_groups import KINDS, PendingItem, group_pending
 from library_agent.trace_view import _authors   # 作者欄位是 JSON 字串，與追溯畫面同一個解析（壞掉回 []）
 
@@ -2164,11 +2165,13 @@ def purchase_decide(body: dict = Body(...)):
             return JSONResponse({"ok": False, "message": "找不到這本書的採購建議（可能已被重算移除，請重新整理頁面）"},
                                 status_code=404)
         now = datetime.now(timezone.utc)
+        title, citation_ids = snapshot(s, key)        # 書的識別鍵之後改變時，對帳靠它搬移
+        snap = {"title": title, "citation_ids": json.dumps(citation_ids)}
         s.execute(
             pg_insert(PurchaseDecision)
-            .values(book_key=key, copies=copies, suggested_at_decision=suggested, decided_at=now)
+            .values(book_key=key, copies=copies, suggested_at_decision=suggested, decided_at=now, **snap)
             .on_conflict_do_update(index_elements=["book_key"], set_={
-                "copies": copies, "suggested_at_decision": suggested, "decided_at": now})
+                "copies": copies, "suggested_at_decision": suggested, "decided_at": now, **snap})
         )
         s.commit()
     return {"ok": True, "copies": copies, "suggested": suggested, "final": copies}
@@ -2212,13 +2215,16 @@ def purchase_decide_many(body: dict = Body(...)):
                 skipped.append(k)                 # 找不到建議，或沒有東西可加（系統建議為 0）
                 continue
             copies = suggested if mode == "suggested" else 0
-            values.append({"book_key": k, "copies": copies, "suggested_at_decision": suggested, "decided_at": now})
+            title, citation_ids = snapshot(s, k)
+            values.append({"book_key": k, "copies": copies, "suggested_at_decision": suggested, "decided_at": now,
+                           "title": title, "citation_ids": json.dumps(citation_ids)})
             results[k] = {"copies": copies, "final": copies}
         if values:
             stmt = pg_insert(PurchaseDecision).values(values)
             s.execute(stmt.on_conflict_do_update(index_elements=["book_key"], set_={
                 "copies": stmt.excluded.copies, "suggested_at_decision": stmt.excluded.suggested_at_decision,
-                "decided_at": stmt.excluded.decided_at}))
+                "decided_at": stmt.excluded.decided_at, "title": stmt.excluded.title,
+                "citation_ids": stmt.excluded.citation_ids}))
         s.commit()
     return {"ok": True, "changed": len(values), "skipped": skipped, "results": results}
 
