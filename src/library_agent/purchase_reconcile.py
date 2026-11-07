@@ -10,8 +10,9 @@ from typing import NamedTuple
 
 from sqlalchemy import select
 
+from library_agent.db.filters import not_superseded, purchasable
 from library_agent.db.models import (
-    HoldingCheck, PurchaseDecision, Recommendation, RecommendationCourse, VerifiedBook,
+    Citation, HoldingCheck, PurchaseDecision, Recommendation, RecommendationCourse, VerifiedBook,
 )
 
 
@@ -92,3 +93,20 @@ def reconcile(session) -> ReconcileResult:
             orphaned += 1
     session.flush()
     return ReconcileResult(refreshed, moved, orphaned)
+
+
+def orphans(session) -> list[dict]:
+    """找不到對應的書的決定：冊數 ≥ 1、鍵不在任何可採購的採購建議裡（與購物車同一個條件）。
+    決定 0（這次不買）不列；依決定時間新到舊。"""
+    live = set(session.scalars(
+        select(Recommendation.book_key)
+        .join(HoldingCheck, HoldingCheck.id == Recommendation.holding_id)
+        .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id)
+        .join(Citation, Citation.id == VerifiedBook.citation_id)
+        .where(Recommendation.book_key.is_not(None), purchasable(), not_superseded())
+    ).all())
+    rows = session.scalars(
+        select(PurchaseDecision).where(PurchaseDecision.copies >= 1)
+        .order_by(PurchaseDecision.decided_at.desc(), PurchaseDecision.id.desc())
+    ).all()
+    return [{"book_key": d.book_key, "title": d.title, "copies": d.copies} for d in rows if d.book_key not in live]

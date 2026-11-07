@@ -137,7 +137,7 @@ match_auditor 判定）→ Alma 館藏 → 冊數怎麼算。**只讀**，不核
   回傳 `results` 供前端就地更新；找不到建議或建議為 0 的 key 略過）。
 - **存在獨立的 `purchase_decisions`（以 `book_key` 為鍵）**，不放在 `recommendations` 上：librarian／recommender 會刪掉重建建議，決定不能跟著消失
   （有測試）。另存「決定當時的系統建議」，之後系統建議變了就在該格標「建議已從 A 變成 B」。
-  **限制**：決定以 `book_key` 對應，書的認定改變（例如在審核裡改成「買原書」，鍵會變）時，原本的決定就對不上；不記是誰決定，只記時間。
+  **書的識別鍵改變時，決定跟著搬**（`purchase_reconcile.py`）：決定時另記 `title` 與 `citation_ids`（這本書由哪些課綱書目組成；citation 在重新驗證時不變）。`recommender.recommend()`（全校與限縮）結束時對帳：鍵還在→更新快照；鍵不在→記下的書目中仍屬於某筆建議者全部指向同一本、且那本還沒有決定→搬過去（冊數、決定當時的建議、決定時間不動）；新書已有決定、拆成兩本、書不見了、沒有快照→不動，成為「找不到的決定」：`/cart` 的 `orphans`（只列冊數 ≥ 1），抽屜清單下方「找不到對應的書（N）」可移除，不算進合計、不匯出。決定時間新的先處理。不記是誰決定，只記時間。
 - **「需求 N」**：被單本上限（`max_purchase_copies`，預設 5）截斷的書，冊數旁標「（需求 26）」。需求是**讀取時**用 `demand.py` 算的，不存：
   `demand.need_copies / uncapped_copies` 是唯一一份需求算式，recommender 的 `_decide`、追溯畫面、儀表板都用它，
   並有測試鎖住 `min(uncapped, 上限)` 等於 `_decide` 的冊數。
