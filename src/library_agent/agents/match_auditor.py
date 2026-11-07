@@ -18,7 +18,9 @@ validator 只要查得到記錄就算 verified=True，但實測發現相當比�
 import json
 import re
 import sys
+import threading
 import unicodedata
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from sqlalchemy import select
@@ -203,6 +205,60 @@ def _cross_script(a: str, b: str) -> bool:
     return {_script(a), _script(b)} == {"lat", "cjk"}
 
 
+def rule_verdict(orig_title: str, cand_title: str) -> str | None:
+    """字串規則這一層的結論：相似度低於門檻、又不是跨文字 → "mismatch"（不用問 LLM）；否則 None（交給 LLM）。"""
+    if rule_score(orig_title, cand_title) >= RULE_THRESHOLD or _cross_script(orig_title, cand_title):
+        return None
+    return "mismatch"
+
+
+def pick_same_book(orig_title: str, orig_authors: list[str], candidates: list[tuple[str, list[str]]],
+                   llm: Callable[[str, list[str], str, list[str]], tuple[bool, str]],
+                   max_llm: int = 3) -> tuple[int | None, str]:
+    """從多筆候選（書名, 作者）中挑出與原書是同一本的那筆（書商後備用）。回傳 (候選索引或 None, 理由)。
+
+    與稽核同一套判斷：字串規則判不同本的不問 LLM；規則通過的依相似度由高到低排，跨文字的排在後面；
+    最多問前 max_llm 名，第一個判「同一本」的就採用。llm 失敗時的方向由呼叫端決定（書商用 bookstore_llm：失敗＝不同本）。"""
+    if not candidates:
+        return None, "沒有候選"
+    passing, cross = [], []
+    for i, (title, _authors) in enumerate(candidates):
+        if rule_verdict(orig_title, title) == "mismatch":
+            continue
+        score = rule_score(orig_title, title)
+        (passing if score >= RULE_THRESHOLD else cross).append((score, i))
+    order = [i for _s, i in sorted(passing, key=lambda x: -x[0])] + [i for _s, i in cross]
+    last = f"書名相似度都低於 {RULE_THRESHOLD}"
+    for i in order[:max_llm]:
+        same, reason = llm(orig_title, orig_authors, candidates[i][0], candidates[i][1])
+        if same:
+            return i, reason
+        last = reason
+    return None, last
+
+
+def _new_client():
+    from openai import OpenAI
+
+    return OpenAI(api_key=_settings.openai_api_key, base_url=_settings.openai_base_url)
+
+
+def bookstore_llm() -> Callable[[str, list[str], str, list[str]], tuple[bool, str]]:
+    """書商後備用的 LLM 判斷：與稽核同一份 prompt 與模型，但 LLM 失敗時判「不同本」（寧可不算驗證成功）。
+    client 在第一次呼叫時才建立，之後重用（validator 的多個執行緒共用同一個）。"""
+    holder: dict = {}
+    lock = threading.Lock()
+
+    def llm(orig_title, orig_authors, cand_title, cand_authors):
+        with lock:
+            if "client" not in holder:
+                holder["client"] = _new_client()
+        return _llm_same_book(holder["client"], _settings.llm_model_mini, orig_title, orig_authors,
+                              cand_title, cand_authors, fail_as_same=False)
+
+    return llm
+
+
 def _apply_verdict(session, it: dict) -> bool:
     """把單筆稽核結果寫進 session（不 commit）。回傳是否標記為配錯。"""
     vb = session.get(VerifiedBookDB, it["vb_id"])
@@ -256,10 +312,8 @@ def match_auditor_node(state: AgentState, limit: int = 0) -> AgentState:
     rule_mismatch, need_llm = [], []
     for it in items:
         it["rule_score"] = rule_score(it["orig_title"], it["matched_title"])
-        if it["rule_score"] >= RULE_THRESHOLD:
-            need_llm.append(it)
-        elif _cross_script(it["orig_title"], it["matched_title"]):
-            need_llm.append(it)  # 規則在跨文字系統上沒有信號，交 LLM 判是否為翻譯版
+        if rule_verdict(it["orig_title"], it["matched_title"]) is None:
+            need_llm.append(it)  # 規則判像同一本，或跨文字系統（規則沒有信號，交 LLM 判是否為翻譯版）
         else:
             it["verdict"] = "mismatch"
             it["judge"] = "rule"
