@@ -4,9 +4,15 @@
 書商補上 ISBN、審核改書名、重跑 pipeline 都可能讓它改變。決定時另記下這本書的書名與它由哪些課綱書目組成；
 課綱書目的 id 不會因為重新驗證而改變，所以是「這是哪本書」的線索。
 """
+import json
+from collections import defaultdict
+from typing import NamedTuple
+
 from sqlalchemy import select
 
-from library_agent.db.models import HoldingCheck, Recommendation, RecommendationCourse, VerifiedBook
+from library_agent.db.models import (
+    HoldingCheck, PurchaseDecision, Recommendation, RecommendationCourse, VerifiedBook,
+)
 
 
 def snapshot(session, book_key: str) -> tuple[str | None, list[int]]:
@@ -25,3 +31,64 @@ def snapshot(session, book_key: str) -> tuple[str | None, list[int]]:
         select(RecommendationCourse.citation_id).where(RecommendationCourse.recommendation_id == rec_id)
     ).all()
     return title, sorted(set(citation_ids))
+
+
+class ReconcileResult(NamedTuple):
+    refreshed: int   # 鍵還在、快照有更新
+    moved: int       # 鍵變了、搬到新鍵
+    orphaned: int    # 鍵不在、也搬不了（成為「找不到的決定」）
+
+
+def reconcile(session) -> ReconcileResult:
+    """重算採購建議之後對帳（由呼叫端 commit）。
+
+    - 鍵還在 → 快照更新成這本書現在的書名與課綱書目（之後又多了課，下次搬移的線索才完整）。
+    - 鍵不在 → 決定記下的課綱書目中，仍屬於某筆建議者全部指向同一本、且那本還沒有決定 → 搬過去：
+      只改 book_key 與快照，冊數、決定當時的建議、決定時間都不動。
+    - 其他（新書已有決定、拆成兩本以上、書不見了、沒有快照）一律不動，成為「找不到的決定」。
+    決定時間新的先處理，所以兩筆舊決定併成同一本時，搬過去的是較新的那筆。
+    """
+    rows = session.execute(
+        select(Recommendation.id, Recommendation.book_key, VerifiedBook.buy_title)
+        .join(HoldingCheck, HoldingCheck.id == Recommendation.holding_id)
+        .join(VerifiedBook, VerifiedBook.id == HoldingCheck.verified_book_id)
+        .where(Recommendation.book_key.is_not(None))
+    ).all()
+    key_of_rec = {rec_id: key for rec_id, key, _t in rows}
+    title_of = {key: title for _r, key, title in rows}
+    cits_of: dict[str, set[int]] = defaultdict(set)
+    key_of_cit: dict[int, str] = {}
+    for rec_id, cit in session.execute(select(RecommendationCourse.recommendation_id, RecommendationCourse.citation_id)):
+        key = key_of_rec.get(rec_id)
+        if key is not None:
+            cits_of[key].add(cit)
+            key_of_cit[cit] = key
+
+    decisions = session.scalars(
+        select(PurchaseDecision).order_by(PurchaseDecision.decided_at.desc(), PurchaseDecision.id.desc())
+    ).all()
+    taken = {d.book_key for d in decisions if d.book_key in title_of}
+
+    def snap(d, key: str) -> bool:
+        title, cids = title_of[key], json.dumps(sorted(cits_of[key]))
+        changed = (d.book_key, d.title, d.citation_ids) != (key, title, cids)
+        d.book_key, d.title, d.citation_ids = key, title, cids
+        return changed
+
+    refreshed = moved = orphaned = 0
+    for d in decisions:
+        if d.book_key in title_of:
+            refreshed += snap(d, d.book_key)
+    for d in decisions:
+        if d.book_key in title_of:
+            continue
+        ids = json.loads(d.citation_ids) if d.citation_ids else []
+        targets = {key_of_cit[c] for c in ids if c in key_of_cit}
+        if len(targets) == 1 and (target := next(iter(targets))) not in taken:
+            snap(d, target)
+            taken.add(target)
+            moved += 1
+        else:
+            orphaned += 1
+    session.flush()
+    return ReconcileResult(refreshed, moved, orphaned)
