@@ -805,7 +805,7 @@ def _render(data: dict) -> str:
 
 <details class="pipeline" id="pipeline">
   <summary class="pipe-sum">
-    <span class="pipe-name">管線</span>
+    <span class="pipe-name">pipeline</span>
     <span id="runstatus" class="runstatus">—</span>
     <span id="counts" class="counts"></span>
   </summary>

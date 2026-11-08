@@ -187,8 +187,8 @@ match_auditor 判定）→ Alma 館藏 → 冊數怎麼算。**只讀**，不核
 樣式表在獨立模組 `dashboard_css.py` 的 `CSS`（一般字串，不用在 f-string 裡把大括號寫兩遍），由 `dashboard.py` 放進 `<style>{CSS}</style>`。
 2026-11-08 用 frontend-design 重新設計，原則：
 
-- **採購表是主角**：頁首只有一行頂欄（購物車、標題、學系）、一行管線狀態、一行帳本式數字、兩條書脊比例帶，然後就是工作區。
-  管線的控制與終端機輸出收進 `<details id="pipeline">`，**平常收合，執行時（`/status` 回 running）由 JS 自動展開**；閒置時狀態列不顯示數字（和帳本重複）。
+- **採購表是主角**：頁首只有一行頂欄（購物車、標題、學系）、一行 pipeline 狀態、一行帳本式數字、兩條書脊比例帶，然後就是工作區。
+  pipeline 的控制與終端機輸出收進 `<details id="pipeline">`，**平常收合，執行時（`/status` 回 running）由 JS 自動展開**；閒置時狀態列不顯示數字（和帳本重複）。
 - **優先級是「書脊」**：每一列最左邊一條彩色竖條（`tr[data-priority]` 第一格的 `box-shadow: inset`；高＝氧化紅、中＝赭黃、低＝書架綠、略過＝石灰），
   取代每列一顆藥丸。**顏色不是唯一資訊**：旁邊的格子仍寫著「高／中／低／略過」。畫面用短標籤（`_PRIORITY_SHORT`），
   **匯出（CSV）仍用完整標籤「HIGH 高」**（`_PRIORITY_LABEL`，匯出時由 `tr.dataset.priority` 對應，不讀畫面上的短標籤）。

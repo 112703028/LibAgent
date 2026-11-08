@@ -183,6 +183,12 @@ def test_the_ui_says_purchase_suggestions_not_purchase_list():
     assert "加入採購建議" in html and "套用後，放行的書才會出現在採購建議" in html
 
 
+def test_the_pipeline_summary_is_labelled_pipeline_not_the_chinese_word():
+    html = markup(page())
+
+    assert re.search(r'<span class="pipe-name">pipeline</span>', html)
+    assert "管線" not in html                                                      # 畫面上統一寫 pipeline（按鈕、提示本來就是 pipeline）
+
 # ---------- 共用工具列 ----------
 
 def test_one_toolbar_with_search_filters_and_export_between_the_tab_bar_and_the_panels():

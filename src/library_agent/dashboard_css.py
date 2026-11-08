@@ -27,7 +27,7 @@ button, input, select { font-family:inherit; }
 :focus-visible { outline:2px solid var(--action); outline-offset:2px; }
 @media (prefers-reduced-motion:reduce) { * { transition:none !important; animation:none !important; } }
 
-/* ---- 頂欄：購物車、標題、學系、管線狀態 ---- */
+/* ---- 頂欄：購物車、標題、學系、pipeline 狀態 ---- */
 .topbar { display:flex; align-items:center; gap:14px; padding:16px 0 12px; flex-wrap:wrap; }
 .tb-spacer { flex:1; }
 .carttop { position:relative; display:inline-flex; align-items:center; justify-content:center; width:40px; height:40px;
@@ -38,7 +38,7 @@ button, input, select { font-family:inherit; }
   background:var(--action); color:#fff; font-size:12px; font-weight:600; line-height:20px; text-align:center; font-variant-numeric:tabular-nums; }
 .cartcount.zero { background:var(--ink-faint); }
 
-/* ---- 管線：平常只有一行狀態，展開才有控制與終端機輸出 ---- */
+/* ---- pipeline：平常只有一行狀態，展開才有控制與終端機輸出 ---- */
 .pipeline { border-top:1px solid var(--rule); border-bottom:1px solid var(--rule); background:var(--paper); }
 .pipe-sum { display:flex; align-items:center; gap:14px; flex-wrap:wrap; padding:8px 0; cursor:pointer; list-style:none; font-size:13px; }
 .pipe-sum::-webkit-details-marker { display:none; }
