@@ -11,6 +11,9 @@ from library_agent.db.models import HoldingCheck as HoldingCheckDB
 from library_agent.db.models import Recommendation as RecommendationDB
 from library_agent.db.models import VerifiedBook as VerifiedBookDB
 from library_agent.db.session import SessionLocal
+from library_agent.agents.match_auditor import _norm, bookstore_llm, pick_same_book
+from library_agent.integrations import eslite, taaze
+from library_agent.integrations.bookstore import StoreRecord, main_title
 from library_agent.integrations.google_books import QuotaExceededError, lookup as google_lookup
 from library_agent.integrations.loc import lookup as loc_lookup
 from library_agent.integrations.nla import lookup as nla_lookup
@@ -88,6 +91,58 @@ def _quota_exceeded_result(citation: BookCitation) -> VerifiedBook:
     )
 
 
+_STORES = {"taaze": lambda: taaze.search, "eslite": lambda: eslite.search}
+
+
+def _bookstore_fallback(citation: BookCitation, low_confidence: bool) -> VerifiedBook | None:
+    """原本的來源（NCL／LOC／Google）都查不到時，依 BOOKSTORE_SOURCES 的順序查書商。
+
+    每家最多兩次：完整書名；沒有採用的候選且有主書名時再用主書名。判斷一律拿課綱的完整書名與作者，
+    用 match_auditor 的 pick_same_book（字串規則＋LLM；LLM 失敗＝不同本）。判定同一本就當作驗證成功，
+    稽核結果一併寫下（match_auditor 之後不會再判一次）。書商出任何錯都當作這家沒找到。"""
+    names = [n.strip() for n in _settings.bookstore_sources.split(",") if n.strip()]
+    if not names:
+        return None
+    queries = [citation.title.strip()]
+    if (short := main_title(citation.title)):
+        queries.append(short)
+    llm = bookstore_llm()
+    for name in names:
+        search = _STORES.get(name)
+        if search is None:
+            continue
+        for query in queries:
+            try:
+                records = search()(query)
+            except Exception:  # noqa: BLE001 — 書商出錯不能讓 pipeline 中斷
+                break
+            records = _distinct_for_authorless(citation, records)
+            idx, reason = pick_same_book(citation.title, citation.authors,
+                                         [(r.title, r.authors) for r in records], llm)
+            if idx is not None:
+                r = records[idx]
+                return VerifiedBook(
+                    citation=citation,
+                    canonical_title=r.title,
+                    canonical_authors=r.authors or citation.authors,
+                    isbn_13=citation.isbn or r.isbn_13,
+                    source=r.source,
+                    verified=True,
+                    requires_human_review=low_confidence,
+                    pairing_verdict="same", pairing_judge="llm", pairing_reason=reason,
+                )
+    return None
+
+
+def _distinct_for_authorless(citation: BookCitation, records: list[StoreRecord]) -> list[StoreRecord]:
+    """課綱沒寫作者時，只靠書名無從分辨哪一本（通用教科書名如「經濟學」）：
+    正規化後書名與原書名相同的候選有兩筆以上就全部不採用。"""
+    if citation.authors:
+        return records
+    same = [r for r in records if _norm(r.title) == _norm(citation.title)]
+    return [] if len(same) >= 2 else records
+
+
 def _validate_english(citation: BookCitation, low_confidence: bool) -> VerifiedBook:
     kwargs = dict(title=citation.title, authors=citation.authors, isbn=citation.isbn)
 
@@ -109,6 +164,8 @@ def _validate_english(citation: BookCitation, low_confidence: bool) -> VerifiedB
             verified=True,
             requires_human_review=low_confidence,
         )
+    if (store := _bookstore_fallback(citation, low_confidence)) is not None:
+        return store
     return VerifiedBook(
         citation=citation,
         canonical_title=citation.title,
@@ -141,7 +198,9 @@ def _validate_chinese(citation: BookCitation, low_confidence: bool) -> VerifiedB
             verified=True,
             requires_human_review=low_confidence,
         )
-    # NCL 與 Google 都查不到：可能是冷門書/建檔延遲，標為待確認交人工審核
+    # NCL 與 Google 都查不到：再查書商（TAAZE、誠品）；仍然沒有才是冷門書/建檔延遲，標為待確認交人工審核
+    if (store := _bookstore_fallback(citation, low_confidence)) is not None:
+        return store
     return VerifiedBook(
         citation=citation,
         canonical_title=citation.title,
@@ -189,6 +248,9 @@ def _stage_save(session, verified: VerifiedBook, citation_id: int) -> None:
         verified=verified.verified,
         requires_human_review=verified.requires_human_review,
         review_status="pending" if verified.requires_human_review else None,
+        pairing_verdict=verified.pairing_verdict,
+        pairing_judge=verified.pairing_judge,
+        pairing_reason=verified.pairing_reason,
     ))
 
 
@@ -283,43 +345,46 @@ def validator_node(state: AgentState) -> AgentState:
     written = 0
     _BATCH = 200
 
-    # B1：worker 只做 I/O（查 cache / 打 API）並回傳結果；DB 寫入全部收到主執行緒，
-    # 用「同一個」session 分批 commit（Session 非 thread-safe，只有主執行緒能寫）。
-    with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as executor, SessionLocal() as session:
-        futures = {executor.submit(_process_one, c, cache, done_ids): c for c in citations}  # executor.submit(func, *args)：把函式丟進執行緒池執行，立刻回傳一個 Future 物件（代表「未來會完成的結果」）。
+    try:
+        # B1：worker 只做 I/O（查 cache / 打 API）並回傳結果；DB 寫入全部收到主執行緒，
+        # 用「同一個」session 分批 commit（Session 非 thread-safe，只有主執行緒能寫）。
+        with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as executor, SessionLocal() as session:
+            futures = {executor.submit(_process_one, c, cache, done_ids): c for c in citations}  # executor.submit(func, *args)：把函式丟進執行緒池執行，立刻回傳一個 Future 物件（代表「未來會完成的結果」）。
 
-        for future in as_completed(futures):
-            done += 1
-            c = futures[future]
-            try:
-                verified, error, from_cache = future.result()
-            except Exception as e:
-                msg = f"[validator] {c.id} {c.title}: {e}"
-                errors.append(msg)
-                print(f"  ERROR [{done:>5}/{total}] {c.title} → {e}")
-                continue
+            for future in as_completed(futures):
+                done += 1
+                c = futures[future]
+                try:
+                    verified, error, from_cache = future.result()
+                except Exception as e:
+                    msg = f"[validator] {c.id} {c.title}: {e}"
+                    errors.append(msg)
+                    print(f"  ERROR [{done:>5}/{total}] {c.title} → {e}")
+                    continue
 
-            if error:
-                errors.append(error)
-                print(f"  ERROR [{done:>5}/{total}] {c.title} → {error}")
-            elif verified is None:
-                print(f"  SKIP  [{done:>5}/{total}] {c.title}")
-            else:
-                # 主執行緒寫入（先刪再寫），每 _BATCH 筆才 commit 一次
-                _stage_save(session, verified, c.id)
-                written += 1
-                if written % _BATCH == 0:
-                    session.commit()
-
-                if from_cache:
-                    status = "CACHE"
-                elif verified.verified:
-                    status = "OK   "
+                if error:
+                    errors.append(error)
+                    print(f"  ERROR [{done:>5}/{total}] {c.title} → {error}")
+                elif verified is None:
+                    print(f"  SKIP  [{done:>5}/{total}] {c.title}")
                 else:
-                    status = "MISS "
-                print(f"  {status} [{done:>5}/{total}] {c.title}")
+                    # 主執行緒寫入（先刪再寫），每 _BATCH 筆才 commit 一次
+                    _stage_save(session, verified, c.id)
+                    written += 1
+                    if written % _BATCH == 0:
+                        session.commit()
 
-        session.commit()  # 收尾：把最後不足一批的寫入 commit
+                    if from_cache:
+                        status = "CACHE"
+                    elif verified.verified:
+                        status = "OK   "
+                    else:
+                        status = "MISS "
+                    print(f"  {status} [{done:>5}/{total}] {c.title}")
+
+            session.commit()  # 收尾：把最後不足一批的寫入 commit
+    finally:
+        eslite.close()    # 誠品的瀏覽器（有開才會有東西可關）；順便解除這次執行內的停用
 
     return {"errors": errors, "discovery_iteration": state.get("discovery_iteration", 0) + 1}
 
