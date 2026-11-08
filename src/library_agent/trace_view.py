@@ -66,6 +66,14 @@ class Pairing:
     verified: bool = True  # False＝驗證階段查無此書，matched_* 只是原書名的占位
 
 
+# 驗證來源的顯示名稱：只有書商後備需要翻成人看得懂的字，其他來源代碼（nla、google_books…）維持原樣
+SOURCE_LABEL = {"taaze": "TAAZE（書商）", "eslite": "誠品（書商）"}
+
+
+def source_label(code: str | None) -> str:
+    return SOURCE_LABEL.get(code, code) if code else "—"
+
+
 @dataclass(frozen=True)
 class HoldingInfo:
     status: str
@@ -386,7 +394,7 @@ def _sec3(t: Trace) -> str:
         review = f' <span class="tr-tag">{_e(_REVIEW.get(p.review_status, p.review_status))}</span>' if p.review_status else ""
         cls = "tr-pair tr-bad" if p.verdict == "mismatch" else "tr-pair"
         if p.verified:
-            matched = (f'<h5>配到的書（{_e(p.source)}）</h5>{_e(p.matched_title)} '
+            matched = (f'<h5>配到的書（{_e(source_label(p.source))}）</h5>{_e(p.matched_title)} '
                        f'<span class="tr-dim">／</span> {_names(p.matched_authors)}'
                        f'<div class="tr-dim">ISBN {_e(p.isbn)}</div>')
             verdict = (f'稽核判定：<b>{_e(_VERDICT.get(p.verdict, p.verdict))}</b>{judge}{reason}{review}')

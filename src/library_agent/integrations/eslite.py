@@ -26,7 +26,7 @@ log = logging.getLogger(__name__)
 
 HOME_URL = "https://www.eslite.com/"
 API_URL = "https://holmes.eslite.com/v1/search"
-_PACER = Pacer(min_interval=1.0)
+_PACER = Pacer(min_interval=2.0)
 
 # 在誠品的頁面裡呼叫接口：參數以物件傳入、用 URLSearchParams 組（不手拼字串）
 _FETCH_JS = """async ({url, params}) => {

@@ -496,3 +496,30 @@ def test_endpoint_accepts_decided_ids(isolated_db, monkeypatch):
     resp = client.get(f"/trace/pending?ids={v}")
 
     assert resp.status_code == 200 and "人工決定" in resp.text
+
+
+# ---------- 來源標籤（書商後備）----------
+
+def _pairing(source):
+    return T.Pairing(matched_title="被討厭的勇氣", matched_authors=["岸見一郎"], isbn=None, source=source, verdict="same",
+                     judge="llm", reason="同一本", review_status=None, originals=[("被討厭的勇氣", [])])
+
+
+def _render_pairing(source):
+    return T.render_trace(T.Trace(rec_id=1, title="t", book_key=None, rationale=None, syllabi=[], sources=[],
+                                  pairings=[_pairing(source)], holding=None, calc=None))
+
+
+def test_source_label_names_the_bookstores_and_leaves_other_codes_alone():
+    assert T.source_label("taaze") == "TAAZE（書商）" and T.source_label("eslite") == "誠品（書商）"
+    assert T.source_label("nla") == "nla" and T.source_label(None) == "—"
+
+
+def test_trace_shows_the_bookstore_label_instead_of_the_code():
+    html = _render_pairing("taaze")
+
+    assert "配到的書（TAAZE（書商））" in html and "配到的書（taaze）" not in html
+
+
+def test_trace_still_shows_other_source_codes_as_they_are():
+    assert "配到的書（nla）" in _render_pairing("nla")

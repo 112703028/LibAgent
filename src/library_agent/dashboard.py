@@ -42,6 +42,7 @@ from library_agent.db.session import SessionLocal
 from library_agent import demand, review_actions
 from library_agent.review_apply import pending_apply_ids
 from library_agent.purchase_reconcile import orphans, snapshot
+from library_agent.trace_view import source_label
 from library_agent.review_groups import KINDS, PendingItem, group_pending
 from library_agent.trace_view import _authors   # 作者欄位是 JSON 字串，與追溯畫面同一個解析（壞掉回 []）
 
@@ -575,7 +576,7 @@ def _review_row(g) -> str:
         searchable = [g.title or ""]
     else:
         matched = (f'<span class="bm">{html.escape(g.matched_title or "")}</span><div class="rdim">{_names(g.matched_authors)}'
-                   f' · {html.escape(g.source or "—")}</div>')
+                   f' · {html.escape(source_label(g.source))}</div>')
         searchable = [g.title or "", g.matched_title or ""]
     search = " ".join([*searchable, *(n for n, _ in g.courses)]).lower()
     ids = ",".join(str(i) for i in g.vb_ids)

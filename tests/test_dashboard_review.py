@@ -441,3 +441,13 @@ def test_action_area_escapes_untrusted_text():
 
     assert "<script>alert(1)</script>" not in html
     assert "&lt;script&gt;" in html
+
+
+def test_review_row_shows_the_bookstore_source_label():
+    html = panel(mismatch=[grp("mismatch", source="taaze")])
+
+    assert "TAAZE（書商）" in html and ">taaze<" not in html
+
+
+def test_review_row_keeps_unknown_source_codes_as_they_are():
+    assert "google_books" in panel(mismatch=[grp("mismatch", source="google_books")])

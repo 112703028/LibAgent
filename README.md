@@ -21,7 +21,7 @@ crawler → parser → discoverer → validator → match_auditor → librarian 
 | **crawler** | 從 Excel 課程大綱檔讀取課程資料，存入資料庫 |
 | **parser** | 用 LLM 從課綱文字解析出書目（書名、作者、ISBN 等） |
 | **discoverer** | 對完全沒有書目的課程，用 LLM 根據課綱內容推薦書目 |
-| **validator** | 驗證書目真實性並補齊 ISBN：英文書查 LOC、Google Books；中文書查國家圖書館 NCL／NBINet SRU |
+| **validator** | 驗證書目真實性並補齊 ISBN：英文書查 LOC、Google Books；中文書查國家圖書館 NCL／NBINet SRU；都查不到再查書商（目前是 TAAZE），確認是同一本才算驗證成功 |
 | **match_auditor** | 稽核驗證器配到的記錄是不是原書（常見錯誤：書名相同但作者不同的教科書）。配錯的書送人工審核並擋下採購 |
 | **librarian** | 查詢 Alma 館藏，確認每本書的館藏狀態與冊數 |
 | **recommender** | 以規則算出每本書的採購優先級與建議冊數，再由 LLM 撰寫理由。**同一本書被多門課用到只產生一筆建議**（人數加總、現有館藏只扣一次） |

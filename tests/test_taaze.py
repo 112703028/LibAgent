@@ -13,6 +13,7 @@ FIX = Path(__file__).parent / "fixtures"
 @pytest.fixture(autouse=True)
 def no_wait(monkeypatch):
     monkeypatch.setattr(taaze, "_PACER", Pacer(min_interval=0))
+    monkeypatch.setattr(taaze, "_cool_until", 0.0)
 
 
 def test_parse_hit_page():
@@ -77,3 +78,63 @@ def test_ssl_context_loads_the_extra_intermediate():
     subjects = [dict(x[0] for x in c["subject"]).get("commonName") for c in taaze._ssl_context().get_ca_certs()]
 
     assert "Sectigo Public Server Authentication CA EV R36" in subjects
+
+
+# ---------- 被限流時退讓（試跑時 TAAZE 回過 429）----------
+
+def counting_client(status, headers=None):
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(status, headers=headers or {}, text="slow down")
+
+    return calls, fake_client(handler)
+
+
+def test_a_429_makes_us_back_off_instead_of_hammering_on(monkeypatch):
+    calls, client = counting_client(429)
+    monkeypatch.setattr(taaze, "_client", client)
+    now = [1000.0]
+    monkeypatch.setattr(taaze, "_now", lambda: now[0])
+
+    assert taaze.search("甲") == []
+    assert taaze.search("乙") == [] and taaze.search("丙") == []
+
+    assert len(calls) == 1                                    # 冷卻期間不再送出任何請求
+
+
+def test_requests_resume_after_the_cooldown(monkeypatch):
+    calls, client = counting_client(429)
+    monkeypatch.setattr(taaze, "_client", client)
+    now = [1000.0]
+    monkeypatch.setattr(taaze, "_now", lambda: now[0])
+    taaze.search("甲")
+
+    now[0] += taaze.DEFAULT_COOLDOWN + 1
+    taaze.search("乙")
+
+    assert len(calls) == 2
+
+
+def test_retry_after_is_honored_but_capped(monkeypatch):
+    calls, client = counting_client(429, {"Retry-After": "99999"})
+    monkeypatch.setattr(taaze, "_client", client)
+    now = [1000.0]
+    monkeypatch.setattr(taaze, "_now", lambda: now[0])
+    taaze.search("甲")
+
+    now[0] += taaze.MAX_COOLDOWN + 1                          # 網站要求等很久，我們最多等 MAX_COOLDOWN
+    taaze.search("乙")
+
+    assert len(calls) == 2
+
+
+def test_other_errors_do_not_start_a_cooldown(monkeypatch):
+    calls, client = counting_client(500)
+    monkeypatch.setattr(taaze, "_client", client)
+
+    taaze.search("甲")
+    taaze.search("乙")
+
+    assert len(calls) == 2
