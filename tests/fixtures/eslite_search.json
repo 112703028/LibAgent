@@ -1,0 +1,50 @@
+{
+ "_note": "誠品 holmes /v1/search 的真實回應（2026-11-08，查「被討厭的勇氣」），只保留 3 筆與用得到的欄位；第 3 筆 is_book 手改成 no",
+ "results": [
+  {
+   "name": "被討厭的勇氣: 自我啟發之父阿德勒的教導",
+   "authors": [
+    "岸見一郎/ 古賀史健"
+   ],
+   "isbn10": "9861371958",
+   "is_book": "yes",
+   "is_ebook": "no",
+   "manufacturers": [
+    "究竟出版社股份有限公司"
+   ],
+   "publish_time": "2014-10-30T00:00:00Z",
+   "eslite_sn": "2680913219003",
+   "availability": "IN_STOCK"
+  },
+  {
+   "name": "被討厭的勇氣 二部曲完結篇: 人生幸福的行動指南",
+   "authors": [
+    "岸見一郎/ 古賀史健"
+   ],
+   "isbn10": "986137227X",
+   "is_book": "yes",
+   "is_ebook": "no",
+   "manufacturers": [
+    "究竟出版社股份有限公司"
+   ],
+   "publish_time": "2016-11-01T00:00:00Z",
+   "eslite_sn": "2681384307008",
+   "availability": "IN_STOCK"
+  },
+  {
+   "name": "被討厭的勇氣：自我啟發之父「阿德勒」的教導 (電子書)",
+   "authors": [
+    "岸見一郎/ 古賀史健"
+   ],
+   "isbn10": "",
+   "is_book": "no",
+   "is_ebook": "yes",
+   "manufacturers": [
+    "究竟出版社股份有限公司"
+   ],
+   "publish_time": "2014-10-30T00:00:00Z",
+   "eslite_sn": "2682680026006",
+   "availability": "IN_STOCK"
+  }
+ ]
+}
