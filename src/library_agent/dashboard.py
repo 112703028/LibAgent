@@ -41,6 +41,7 @@ from library_agent.db.models import (
 from library_agent.db.session import SessionLocal
 from library_agent import demand, review_actions
 from library_agent.review_apply import pending_apply_ids
+from library_agent.dashboard_css import CSS
 from library_agent.purchase_reconcile import orphans, snapshot
 from library_agent.trace_view import source_label
 from library_agent.review_groups import KINDS, PendingItem, group_pending
@@ -67,7 +68,9 @@ _STATUS_META = [
     ("unknown", "未知", "#898781"),
 ]
 _PRIORITY_COLOR = {k: c for k, _, c in _PRIORITY_META}
-_PRIORITY_LABEL = {k: n for k, n, _ in _PRIORITY_META}
+_PRIORITY_LABEL = {k: n for k, n, _ in _PRIORITY_META}      # 匯出（CSV）用的完整標籤，維持原樣
+# 畫面上用短標籤：優先級的顏色（書脊）已經在列的最左邊，不必再用「HIGH 高」這種大藥丸
+_PRIORITY_SHORT = {"high": "高", "medium": "中", "low": "低", "skip": "略過"}
 _PRIORITY_RANK = {k: i for i, (k, _, _) in enumerate(_PRIORITY_META)}
 _STATUS_COLOR = {k: c for k, _, c in _STATUS_META}
 _STATUS_LABEL = {k: n for k, n, _ in _STATUS_META}
@@ -364,18 +367,18 @@ def _load_data(departments: list[str] | None = None) -> dict:
 
 # ---------- 呈現 ----------
 
-def _bars(items: list[tuple[str, int, str]]) -> str:
-    maxv = max((v for _, v, _ in items), default=0) or 1
-    rows = []
-    for label, value, color in items:
-        pct = round(value / maxv * 100, 1)
-        rows.append(
-            f'<div class="bar-row" title="{html.escape(label)}: {value}">'
-            f'<span class="bar-label">{html.escape(label)}</span>'
-            f'<span class="bar-track"><span class="bar-fill" style="width:{pct}%;background:{color}"></span></span>'
-            f'<span class="bar-value">{value}</span></div>'
-        )
-    return "\n".join(rows)
+def _strip(title: str, items: list[tuple[str, int, str]]) -> str:
+    """一條按比例切開的長條加圖例：整批書的分布一眼看完。items＝(標籤, 數量, 顏色類別)；顏色由 CSS 類別決定。"""
+    segs = "".join(
+        f'<span class="seg {cls}" style="flex:{max(value, 0)}" title="{html.escape(label)} {value}"></span>'
+        for label, value, cls in items if value > 0
+    )
+    key = "".join(
+        f'<li><i class="sw {cls}"></i>{html.escape(label)} <b>{value}</b></li>' for label, value, cls in items
+    )
+    return (f'<div class="strip"><div class="strip-h">{html.escape(title)}</div>'
+            f'<div class="strip-bar" role="img" aria-label="{html.escape(title)}">{segs}</div>'
+            f'<ul class="strip-key">{key}</ul></div>')
 
 
 def _kpi_tiles(k: dict) -> str:
@@ -403,7 +406,8 @@ def _rec_row(priority: str, course: str, title: str, btype: str, status_html: st
              copies_html: str, rationale: str, btypes: str, course_html: str | None = None,
              rec_id: int | None = None, unverified: bool = False, book_key: str | None = None,
              need: int = 0, cut: bool = False, decided: int | None = None, stale_from: int | None = None,
-             final: int = 0, in_cart: bool = False, suggested: int = 0, search: str = "") -> str:
+             final: int = 0, in_cart: bool = False, suggested: int = 0, search: str = "",
+             course_title: str = "") -> str:
     """btypes：類別 token（required / optional / ai），以空白分隔的清單（一本書涵蓋多個類別時有多個，
     前端用「包含」比對）。rec_id：採購建議的 id，有值才有展開鈕（取 GET /trace/{rec_id}）。
     展開鈕與「未驗證」標記內都不放任何文字（由 CSS 畫），因為匯出 CSV 是讀每格的 textContent。
@@ -412,8 +416,7 @@ def _rec_row(priority: str, course: str, title: str, btype: str, status_html: st
     留空＝還沒決定（不在購物車），填 0＝這次不買，填大於 0＝加入購物車。系統建議為 0 時不能直接「加入」（沒有東西可加）。
     in_cart：這本書在購物車裡（決定 > 0）；search：這一列可被搜尋的文字（小寫，這裡負責逸出）。
     「需求 N」（被上限截斷時）與「建議已從 A 變成 B」都由 CSS 用 data-* 畫，輸入框的值也不是文字節點。"""
-    pcolor = _PRIORITY_COLOR.get(priority, _PENDING_COLOR)
-    plabel = _PRIORITY_LABEL.get(priority, _PENDING_LABEL)
+    plabel = _PRIORITY_SHORT.get(priority, _PENDING_LABEL)
     data_id = f' data-rec="{rec_id}"' if rec_id is not None else ""
     toggle = ('<button class="tbtn" type="button" aria-expanded="false" aria-label="展開決策過程"></button>'
               if data_id else "")
@@ -439,13 +442,15 @@ def _rec_row(priority: str, course: str, title: str, btype: str, status_html: st
         f'<tr data-priority="{html.escape(priority)}" data-btypes="{html.escape(btypes)}" '
         f'data-final="{final}" data-search="{html.escape(search)}"{incart_attr}{data_id}{unv_attr}>'
         f'<td class="chk"><input type="checkbox" class="rowchk"></td>'
-        f'<td><span class="pill" style="background:{pcolor}">{html.escape(plabel)}</span></td>'
-        f'<td>{course_html if course_html is not None else html.escape(course or "")}</td>'
-        f'<td>{toggle}{html.escape(title or "")}{marker}</td>'
+        f'<td><span class="pill p-{html.escape(priority)}">{html.escape(plabel)}</span></td>'
+        f'<td><div class="clamp clamp3" title="{html.escape(course_title)}">'
+        f'{course_html if course_html is not None else html.escape(course or "")}</div></td>'
+        f'<td>{toggle}<span class="bt">{html.escape(title or "")}</span>{marker}</td>'
         f'<td>{btype}</td>'
         f'<td>{status_html}</td>'
         f'<td class="{"num cut" if cut else "num"}" data-need="{need}">{copies_html}</td>'
-        f'<td class="rationale">{html.escape(rationale or "")}</td>'
+        f'<td class="rationale"><div class="clamp" title="{html.escape(rationale or "")}">'
+        f'{html.escape(rationale or "")}</div></td>'
         f'{dec_cell}</tr>'
     )
 
@@ -488,10 +493,9 @@ def _rec_table(recs: list) -> str:
         return '<p class="empty">尚無採購建議，請先執行 pipeline。</p>'
     body = []
     for r in recs:
-        scolor = _STATUS_COLOR.get(r.status, "#898781")
         slabel = _STATUS_LABEL.get(r.status, r.status)
         keys = sorted({c.key for c in r.courses}, key=_KEY_RANK.get)   # 這本書涵蓋的所有類別
-        status_html = f'<span class="pill" style="background:{scolor}">{html.escape(slabel)}</span>'
+        status_html = f'<span class="pill s-{html.escape(r.status)}">{html.escape(slabel)}</span>'
         body.append(_rec_row(
             r.priority, "", r.title, "".join(_tag_for_key(k) for k in keys), status_html,
             str(r.copies), r.rationale, " ".join(keys), course_html=_course_cell(r.courses),
@@ -499,6 +503,7 @@ def _rec_table(recs: list) -> str:
             cut=r.need > r.copies, decided=r.decided, stale_from=r.stale_from, final=r.final,
             in_cart=r.in_cart, suggested=r.copies,
             search=" ".join([*(c.name for c in r.courses), r.title or ""]).lower(),
+            course_title="、".join(c.name for c in r.courses),
         ))
     return (
         '<table id="rectable"><thead><tr>'
@@ -534,9 +539,8 @@ def _review_reason(g) -> str:
 def _review_list_status(g) -> str:
     """這組在採購建議裡的狀況：有建議就顯示優先級與冊數；配錯的被擋下。"""
     if g.priority is not None:
-        color = _PRIORITY_COLOR.get(g.priority, _PENDING_COLOR)
-        label = _PRIORITY_LABEL.get(g.priority, g.priority)
-        return f'<span class="pill" style="background:{color}">{html.escape(label)}</span> {g.copies} 冊'
+        label = _PRIORITY_SHORT.get(g.priority, g.priority)
+        return f'<span class="pill p-{html.escape(g.priority)}">{html.escape(label)}</span> {g.copies} 冊'
     return "已擋下，不在採購建議" if g.kind == "mismatch" else "不在採購建議"
 
 
@@ -544,7 +548,7 @@ _CHOICE_LABEL = {"matched": "買配對到的書", "original": "買原書", "cust
 
 
 def _abtn(act: str, label: str, *, negative: bool = False) -> str:
-    cls = "abtn abtn-no" if negative else "abtn"
+    cls = "abtn abtn-no" if negative else ("abtn abtn-primary" if act == "custom" else "abtn")
     return f'<button class="{cls}" type="button" data-act="{act}">{label}</button>'
 
 
@@ -566,7 +570,8 @@ def _action_cell(g) -> str:
 def _courses_cell(g) -> str:
     courses = "、".join(f"{html.escape(n)} {e}" for n, e in g.courses)
     items_note = f' <span class="rdim">（{g.items} 個書目）</span>' if g.items > 1 else ""
-    return f"{courses}{items_note}"
+    plain = "、".join(f"{n} {e}" for n, e in g.courses) + (f"（{g.items} 個書目）" if g.items > 1 else "")
+    return f'<div class="clamp clamp3" title="{html.escape(plain)}">{courses}{items_note}</div>'
 
 
 def _review_row(g) -> str:
@@ -587,7 +592,8 @@ def _review_row(g) -> str:
         f'<td>{_courses_cell(g)}</td>'
         '<td><button class="tbtn" type="button" aria-expanded="false" aria-label="展開決策過程"></button>'
         f'<span class="bt">{html.escape(g.title or "")}</span><div class="rdim">{_names(g.authors)}</div></td>'
-        f'<td>{matched}</td><td>{_review_reason(g)}</td>'
+        f'<td>{matched}</td><td><div class="clamp clamp3" title="{html.escape(html.unescape(_review_reason(g)))}">'
+        f'{_review_reason(g)}</div></td>'
         f'<td class="num">{g.enrolled_total}</td>'
         f'{_action_cell(g)}</tr>'
     )
@@ -728,15 +734,13 @@ def _render(data: dict) -> str:
     # 延後 import：graph 會把所有 agent 模組拉進來，與本檔其他用到 graph 的地方一致
     from library_agent.graph import _MAX_DISCOVERY_ITERATIONS
 
-    prio_bars = _bars(
-        [(_PRIORITY_LABEL[k], data["priority"].get(k, 0), _PRIORITY_COLOR[k])
-         for k, _, _ in _PRIORITY_META]
-        + [(_PENDING_LABEL, data["kpis"]["pending"], _PENDING_COLOR)]
-    )
-    status_bars = _bars([(_STATUS_LABEL[k], data["status"].get(k, 0), _STATUS_COLOR[k])
-                        for k, _, _ in _STATUS_META])
+    prio_strip = _strip("採購優先級", [(_PRIORITY_SHORT[k], data["priority"].get(k, 0), f"p-{k}")
+                                       for k, _, _ in _PRIORITY_META])
+    status_strip = _strip("館藏狀態", [(_STATUS_LABEL[k], data["status"].get(k, 0), f"s-{k}")
+                                       for k, _, _ in _STATUS_META])
     filter_btns = '<button class="fbtn active" data-f="all">全部</button>' + "".join(
-        f'<button class="fbtn" data-f="{k}">{html.escape(n)}</button>' for k, n, _ in _PRIORITY_META
+        f'<button class="fbtn" data-f="{k}">{html.escape(_PRIORITY_SHORT[k])}'
+        f' <span class="n">{data["priority"].get(k, 0)}</span></button>' for k, _, _ in _PRIORITY_META
     )
     # 採購建議與人工審核是同一張卡片的分頁；採購建議是第一個、預設開啟的分頁。
     # 工具列（搜尋、篩選、匯出）只有一條，對目前開著的分頁生效；篩選與匯出的欄位由面板的 data-filters／data-export 決定。
@@ -765,6 +769,7 @@ def _render(data: dict) -> str:
     cart = data.get("cart") or {}      # 全校的購物車合計（不隨學系篩選），頁首購物車圖示上的數字
     # 抽屜的 CSV 要把代碼翻成畫面上同樣的字，標籤只在 Python 這裡有一份
     _plabel_json = json.dumps(_PRIORITY_LABEL, ensure_ascii=False)
+    _pshort_json = json.dumps(_PRIORITY_SHORT, ensure_ascii=False)
     _slabel_json = json.dumps(_STATUS_LABEL, ensure_ascii=False)
     cart_header = (
         '<div class="topbar">'
@@ -774,7 +779,11 @@ def _render(data: dict) -> str:
         'stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/>'
         '<path d="M2 3h3l2.7 12.4a1 1 0 0 0 1 .8h8.9a1 1 0 0 0 1-.8L20.5 7H6"/></svg>'
         f'<span id="cartcount" class="cartcount{" zero" if not cart.get("books") else ""}">{int(cart.get("books") or 0)}</span>'
-        '</button><h1>圖書館採購決策儀表板</h1></div>'
+        '</button><h1>政大圖書館採購決策</h1><span class="tb-spacer"></span>'
+        '<div class="ffwrap">'
+        '<button id="deptbtn" class="uploadbtn" type="button">學系（全部）</button>'
+        '<div id="deptfilter" class="filefilter" hidden></div></div>'
+        '</div>'
     )
     cart_drawer = (
         '<div id="cartshade" hidden></div>'
@@ -791,228 +800,36 @@ def _render(data: dict) -> str:
     return f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>採購決策儀表板</title>
-<style>
-:root {{
-  color-scheme: light;                /* 強制淺色，不隨 OS 深色模式變黑 */
-  --page:#f4f5f7; --surface:#ffffff; --text-primary:#1f2328; --text-secondary:#57606a;
-  --muted:#8a8f98; --gridline:#eaecef; --track:#eef1f4; --border:#e2e5ea;
-  --critical:#d03b3b; --warning:#e0900a;
-}}
-* {{ box-sizing:border-box; }}
-body {{ margin:0; background:var(--page); color:var(--text-primary);
-  font-family:system-ui,-apple-system,"Segoe UI","Microsoft JhengHei",sans-serif; line-height:1.5; }}
-.wrap {{ max-width:1180px; margin:0 auto; padding:24px 20px 60px; }}
-h1 {{ font-size:22px; margin:0 0 4px; }}
-.sub {{ color:var(--text-secondary); font-size:13px; margin-bottom:20px; }}
-h2 {{ font-size:15px; margin:0 0 12px; color:var(--text-secondary); }}
-.card {{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 18px; margin-bottom:16px; }}
-/* 終端文字 log：深色底、等寬字，空的時候顯示提示 */
-.runlog {{ margin:0; padding:12px 14px; border-radius:8px; background:#1f2328; color:#e6edf3;
-  font:12px/1.55 ui-monospace,SFMono-Regular,Consolas,"Microsoft JhengHei",monospace;
-  max-height:340px; min-height:120px; overflow:auto; white-space:pre-wrap; word-break:break-all; }}
-.runlog:empty::before {{ content:"（尚無執行紀錄；按「執行」後這裡會即時顯示終端機的輸出）"; color:#8b949e; }}
-.flownote {{ margin:8px 0 0; text-align:center; font-size:12px; line-height:1.6;
-  color:var(--text-secondary); }}
-.flownote b {{ color:var(--text-primary); font-weight:600; }}
-.runbar {{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; }}
-.runbtn {{ font:inherit; font-size:14px; font-weight:600; padding:8px 18px; border-radius:8px; cursor:pointer;
-  border:1px solid var(--border); background:var(--text-primary); color:var(--surface); }}
-.runbtn:disabled {{ opacity:.45; cursor:not-allowed; }}
-.runstatus {{ font-size:13px; font-weight:600; color:var(--text-secondary); }}
-.runstatus.running {{ color:var(--warning); }}
-.runstatus.done {{ color:#0ca30c; }}
-.runstatus.error {{ color:var(--critical); }}
-.counts {{ font-size:12.5px; color:var(--muted); font-variant-numeric:tabular-nums; }}
-.uploadbtn {{ font-size:13px; padding:6px 12px; border-radius:8px; cursor:pointer;
-  border:1px solid var(--border); background:transparent; color:var(--text-secondary); }}
-.uploadbtn:hover {{ background:var(--track); }}
-.ffwrap {{ position:relative; }}
-.filefilter {{ position:absolute; top:calc(100% + 4px); left:0; z-index:20; min-width:220px;
-  max-height:280px; overflow-y:auto; display:flex; flex-direction:column; gap:6px;
-  padding:10px 12px; font-size:12.5px; color:var(--text-secondary);
-  background:var(--surface); border:1px solid var(--border); border-radius:8px;
-  box-shadow:0 4px 14px rgba(0,0,0,.1); }}
-.filefilter[hidden] {{ display:none; }}
-.filefilter label {{ display:flex; align-items:center; gap:6px; cursor:pointer; white-space:nowrap; }}
-.filefilter .ff-actions {{ display:flex; gap:10px; padding-bottom:6px; margin-bottom:2px;
-  border-bottom:1px solid var(--gridline); }}
-.filefilter .ff-actions a {{ color:var(--text-secondary); cursor:pointer; text-decoration:underline; }}
-.filefilter .ff-empty {{ color:var(--muted); }}
-.dept-college {{ margin-top:4px; padding-top:4px; border-top:1px solid var(--gridline); }}
-.dept-col-lbl {{ font-size:12.5px; }}
-.dept-item {{ padding-left:18px; color:var(--text-secondary); }}
-.kpi-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin-bottom:16px; }}
-.kpi {{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px 16px; }}
-.kpi .val {{ font-size:30px; font-weight:700; letter-spacing:-.5px; }}
-.kpi .val.accent {{ color:var(--critical); }}
-.kpi .val.warn {{ color:var(--warning); }}
-.kpi .lbl {{ font-size:12px; color:var(--text-secondary); margin-top:2px; }}
-.charts {{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }}
-@media (max-width:720px) {{ .charts {{ grid-template-columns:1fr; }} }}
-.tables {{ display:block; }}
-.bar-row {{ display:flex; align-items:center; gap:10px; margin:8px 0; }}
-.bar-label {{ width:96px; flex:none; text-align:right; font-size:13px; color:var(--text-secondary); }}
-.bar-track {{ flex:1; height:20px; background:var(--track); border-radius:4px; }}
-.bar-fill {{ height:100%; border-radius:0 4px 4px 0; min-width:2px; display:block; }}
-.bar-value {{ width:44px; flex:none; font-weight:600; font-variant-numeric:tabular-nums; }}
-.bar-row:hover .bar-fill {{ filter:brightness(1.08); }}
-.filters {{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }}
-.fsep {{ width:1px; height:18px; background:var(--border); margin:0 6px; }}
-.fbtn, .cbtn, .rtab {{ font:inherit; font-size:12.5px; padding:4px 12px; border-radius:99px; cursor:pointer;
-  border:1px solid var(--border); background:transparent; color:var(--text-secondary); }}
-.fbtn.active, .cbtn.active, .rtab.active {{ background:var(--text-primary); color:var(--surface); border-color:var(--text-primary); }}
-a.kpi {{ display:block; text-decoration:none; color:inherit; }}
-.unv {{ display:inline-block; margin-left:6px; padding:0 6px; border-radius:5px; border:1px solid #e0900a;
-  color:#a05f00; font-size:11px; vertical-align:middle; cursor:help; }}
-.unv::after {{ content:"未驗證"; }}
-.rnote {{ margin:0 0 10px; font-size:12.5px; color:var(--text-secondary); }}
-.rtbl td {{ font-size:12.5px; }}
-.rdim {{ color:var(--text-secondary); }}
-.toolbar {{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:0 0 12px; }}
-.tb-prio, .tb-cat {{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }}
-.tb-prio[hidden], .tb-cat[hidden], .exp-prio[hidden] {{ display:none; }}
-.tb-export {{ margin-left:auto; }}
-.cartbtn {{ display:block; width:100%; margin:4px 0 0; white-space:nowrap; text-align:center; }}
-.topbar {{ display:flex; align-items:center; gap:14px; margin:0 0 4px; }}
-.topbar h1 {{ margin:0; }}
-.carttop {{ position:relative; display:inline-flex; align-items:center; justify-content:center; width:42px; height:42px;
-  padding:0; border:1px solid var(--border); border-radius:10px; background:var(--surface); color:var(--text-primary); cursor:pointer; }}
-.carttop:hover {{ border-color:var(--text-secondary); }}
-.carttop svg {{ width:22px; height:22px; }}
-.cartcount {{ position:absolute; top:-7px; right:-7px; min-width:20px; height:20px; padding:0 5px; border-radius:10px;
-  background:#1f6feb; color:#fff; font-size:12px; font-weight:700; line-height:20px; text-align:center; }}
-.cartcount.zero {{ background:var(--muted); }}
-#cartshade {{ position:fixed; inset:0; background:rgba(0,0,0,.28); z-index:40; }}
-.cartdrawer {{ position:fixed; top:0; left:0; bottom:0; width:min(460px,100vw); background:var(--surface);
-  border-right:1px solid var(--border); box-shadow:2px 0 16px rgba(0,0,0,.18); z-index:50; display:flex; flex-direction:column; }}
-.cartdrawer[hidden], #cartshade[hidden] {{ display:none; }}
-.cdhead {{ display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid var(--gridline); }}
-.cdhead h2 {{ margin:0; font-size:17px; }}
-.cdclose {{ font:inherit; font-size:24px; line-height:1; border:none; background:none; cursor:pointer; color:var(--text-secondary); }}
-.cdlist {{ flex:1; overflow-y:auto; padding:4px 16px; }}
-.ci {{ display:grid; grid-template-columns:1fr auto auto; gap:4px 10px; align-items:center; padding:10px 0; border-bottom:1px solid var(--gridline); }}
-.ci-title {{ font-size:13.5px; font-weight:600; overflow-wrap:anywhere; }}
-.ci-sub {{ grid-column:1; font-size:11.5px; color:var(--text-secondary); }}
-.ci-in {{ width:72px; font:inherit; font-size:13px; font-weight:700; padding:4px 6px; border:1px solid #1f6feb; border-radius:6px; }}
-.ci .abtn {{ margin:0; }}
-.ci .aerr {{ grid-column:1 / -1; }}
-.cdfoot {{ padding:12px 16px; border-top:1px solid var(--gridline); display:flex; align-items:center; gap:10px; flex-wrap:wrap; }}
-.cdtotal {{ flex:1 1 100%; font-size:14px; font-weight:700; }}
-.cdorph {{ margin:0 16px; padding:8px 0 4px; border-top:1px dashed var(--border); }}
-.cdorph[hidden] {{ display:none; }}
-.cdorph-h {{ font-size:13.5px; font-weight:700; color:#a05f00; }}
-.ci-n {{ font-size:13px; font-weight:700; }}
-td.num.cut::after {{ content:"（需求 " attr(data-need) "）"; font-weight:400; font-size:11px; color:#a05f00; white-space:nowrap; }}
-td.dec {{ width:132px; min-width:132px; }}
-.dec-in {{ display:block; width:100%; box-sizing:border-box; font:inherit; font-size:12.5px; padding:3px 6px; border:1px solid var(--border); border-radius:6px; }}
-.dec-in.has {{ border-color:#1f6feb; font-weight:700; }}
-td.dec[data-stale]::after {{ content:"建議已從 " attr(data-stale) " 變成 " attr(data-now); display:block; font-size:11px; color:#a05f00; }}
-.maintabs {{ margin-bottom:14px; padding-bottom:10px; border-bottom:1px solid var(--gridline); }}
-.tabspacer {{ flex:1; }}
-.toplevel {{ display:flex; gap:4px; margin:0 0 14px; border-bottom:2px solid var(--gridline); }}
-.toptab {{ font:inherit; font-size:15px; font-weight:600; padding:9px 20px; margin-bottom:-2px; border:none;
-  border-bottom:3px solid transparent; background:none; color:var(--text-secondary); cursor:pointer; }}
-.toptab:hover {{ color:var(--text-primary); }}
-.toptab.active {{ color:var(--text-primary); border-bottom-color:#1f6feb; }}
-.applyhint {{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin:0 0 12px; padding:8px 12px;
-  border-radius:8px; border:1px solid #e0900a; background:rgba(224,144,10,.10); font-size:13px; }}
-.applyhint .abtn {{ margin:0; }}
-.maintabs[hidden], .rtab[hidden], .rapply[hidden], .applyhint[hidden] {{ display:none; }}
-.ract {{ min-width:230px; }}
-.abtn {{ font:inherit; font-size:12px; padding:3px 10px; margin:0 4px 4px 0; border-radius:6px; cursor:pointer;
-  border:1px solid var(--border); background:var(--surface); color:var(--text-primary); }}
-.abtn:hover {{ border-color:var(--text-secondary); }}
-.abtn:disabled {{ opacity:.5; cursor:not-allowed; }}
-.abtn-no {{ color:#a33; }}
-.atitle {{ display:block; width:100%; font:inherit; font-size:12.5px; padding:3px 6px; margin-bottom:4px;
-  border:1px solid var(--border); border-radius:6px; }}
-.aisbn {{ display:block; width:100%; font:inherit; font-size:12.5px; padding:3px 6px; margin-bottom:4px;
-  border:1px solid var(--border); border-radius:6px; }}
-.aerr {{ color:var(--critical); font-size:12px; margin-top:2px; }}
-.rbatch {{ margin:0 0 8px; font-size:12.5px; color:var(--text-secondary); }}
-.rapply {{ margin:0 0 10px; padding:8px 12px; border-radius:8px; border:1px solid #e0900a;
-  background:rgba(224,144,10,.10); font-size:13px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }}
-tr.rdone td {{ opacity:.45; transition:opacity .4s; }}
-table {{ border-collapse:collapse; width:100%; font-size:13px; }}
-th,td {{ border-bottom:1px solid var(--gridline); padding:8px 10px; text-align:left; vertical-align:top; }}
-th {{ color:var(--text-secondary); font-weight:600; white-space:nowrap; }}
-td.num {{ text-align:right; font-variant-numeric:tabular-nums; font-weight:600; }}
-td.rationale {{ color:var(--text-secondary); font-size:12px; min-width:190px; max-width:340px; }}
-#rectable td:nth-child(3) {{ min-width:170px; }}
-.pill {{ display:inline-block; padding:1px 9px; border-radius:99px; font-size:11.5px; font-weight:600; color:#fff; white-space:nowrap; }}
-.tag {{ display:inline-block; padding:1px 7px; border-radius:5px; font-size:11.5px; border:1px solid var(--border); color:var(--text-secondary); white-space:nowrap; }}
-.tag-ai {{ border-color:#e0900a; color:#fff; background:#e0900a; }}
-.c-in {{ font-weight:700; color:var(--text-primary); }}
-.tbtn {{ width:18px; height:18px; margin-right:6px; padding:0; border:1px solid var(--border);
-  border-radius:4px; background:var(--surface); color:var(--text-secondary); cursor:pointer; vertical-align:middle; }}
-.tbtn::before {{ content:"▸"; font-size:11px; line-height:1; }}
-.tbtn[aria-expanded="true"]::before {{ content:"▾"; }}
-tr.trace-row > td {{ background:var(--gridline); padding:14px 18px; }}
-.trace {{ font-size:13px; line-height:1.55; max-width:1100px; }}
-.tr-title {{ margin:0 0 4px; font-size:15px; }}
-.tr-rationale {{ color:var(--text-secondary); margin-bottom:8px; }}
-.tr-sec {{ background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:8px 14px 10px; margin-top:10px; }}
-.tr-sec h4 {{ margin:0 0 6px; font-size:13px; }}
-.tr-dim {{ color:var(--text-secondary); }}
-.tr-mention {{ margin:4px 0; padding:4px 10px; border-left:3px solid var(--border); color:var(--text-secondary); }}
-.tr-pre {{ white-space:pre-wrap; max-height:240px; overflow:auto; font:inherit; font-size:12px; }}
-.tr-tbl th, .tr-tbl td {{ padding:4px 8px; font-size:12px; }}
-.tr-pair {{ display:flex; gap:12px; flex-wrap:wrap; align-items:flex-start; padding:8px; border:1px solid var(--border); border-radius:6px; margin-bottom:6px; }}
-.tr-side {{ flex:1 1 280px; }}
-.tr-side h5 {{ margin:0 0 4px; font-size:12px; color:var(--text-secondary); }}
-.tr-mid {{ align-self:center; color:var(--text-secondary); }}
-.tr-verdict {{ flex-basis:100%; }}
-.tr-bad {{ border-color:#c0392b; background:rgba(192,57,43,.08); }}
-.tr-tag {{ display:inline-block; padding:0 6px; border-radius:5px; border:1px solid var(--border); font-size:11.5px; }}
-.tr-note {{ padding:6px 10px; border-radius:6px; border:1px solid var(--border); background:var(--gridline); }}
-.tr-calc {{ margin:4px 0 0; padding-left:20px; }}
-.tr-drift {{ margin-top:8px; padding:6px 10px; border-radius:6px; border:1px solid #e0900a; background:rgba(224,144,10,.12); }}
-.empty {{ color:var(--muted); font-size:13px; }}
-.cardhead {{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; }}
-.cardhead h2 {{ margin:0; }}
-.headtools {{ display:flex; align-items:center; gap:8px; }}
-.searchbox {{ font:inherit; font-size:13px; padding:5px 10px; border:1px solid var(--border);
-  border-radius:6px; width:180px; }}
-th.chk, td.chk {{ width:28px; text-align:center; padding-left:6px; padding-right:6px; }}
-.exp-sec {{ font-weight:600; color:var(--text-secondary); padding-top:4px;
-  margin-top:2px; border-top:1px solid var(--gridline); }}
-.exp-sec:first-child {{ border-top:none; margin-top:0; padding-top:0; }}
-#exppanel {{ right:0; left:auto; }}
-</style></head><body><div class="wrap">
+<style>{CSS}</style></head><body><div class="wrap">
 {cart_header}
-<div class="sub">缺口分析 · 資料來自當下資料庫</div>
 
-<div class="card runbar">
-  <button id="runbtn" class="runbtn">▶ 執行 pipeline</button>
-  <label class="uploadbtn">上傳 xlsx<input id="fileupload" type="file" accept=".xlsx" multiple hidden></label>
-  <div class="ffwrap">
-    <button id="ffbtn" class="uploadbtn" type="button">檔案 (全部)</button>
-    <div id="filefilter" class="filefilter" hidden></div>
+<details class="pipeline" id="pipeline">
+  <summary class="pipe-sum">
+    <span class="pipe-name">pipeline</span>
+    <span id="runstatus" class="runstatus">—</span>
+    <span id="counts" class="counts"></span>
+  </summary>
+  <div class="pipe-body">
+    <div class="runbar">
+      <button id="runbtn" class="runbtn">執行 pipeline</button>
+      <label class="uploadbtn">上傳 xlsx<input id="fileupload" type="file" accept=".xlsx" multiple hidden></label>
+      <div class="ffwrap">
+        <button id="ffbtn" class="uploadbtn" type="button">檔案（全部）</button>
+        <div id="filefilter" class="filefilter" hidden></div>
+      </div>
+    </div>
+    <pre id="runlog" class="runlog"></pre>
+    <p class="flownote">
+      <b>validator</b> 之後若有 AI 推薦書驗證失敗，會回到 discoverer 重推（最多 {_MAX_DISCOVERY_ITERATIONS - 1} 輪）；
+      <b>match_auditor</b> 會把配對可疑、或抽取信心度不足的書送進 human_review 佇列，
+      並排除在採購建議之外。
+    </p>
   </div>
-  <div class="ffwrap">
-    <button id="deptbtn" class="uploadbtn" type="button">學系 (全部)</button>
-    <div id="deptfilter" class="filefilter" hidden></div>
-  </div>
-  <span id="runstatus" class="runstatus">—</span>
-  <span id="counts" class="counts"></span>
-</div>
-
-<div class="card">
-  <h2>Pipeline 執行紀錄</h2>
-  <pre id="runlog" class="runlog"></pre>
-  <p class="flownote">
-    <b>validator</b> 之後若有 AI 推薦書驗證失敗，會回到 discoverer 重推（最多 {_MAX_DISCOVERY_ITERATIONS - 1} 輪）；
-    <b>match_auditor</b> 會把配對可疑、或抽取信心度不足的書送進 human_review 佇列，
-    並排除在採購建議之外。
-  </p>
-</div>
+</details>
 
 <div class="kpi-grid">{_kpi_tiles(data["kpis"])}</div>
 
-<div class="charts">
-  <div class="card"><h2>採購優先級分布</h2>{prio_bars}</div>
-  <div class="card"><h2>館藏狀態分布</h2>{status_bars}</div>
-</div>
+<div class="overview">{prio_strip}{status_strip}</div>
 
 <div class="tables">
   {main_card}
@@ -1090,6 +907,13 @@ function _applyRecFilters() {{
 }}
 
 // 切換分頁時：重設搜尋、按鈕與勾選，並依面板宣告的 data-filters 顯示或隱藏優先級／類別篩選與匯出的優先級勾選項
+// 工具列吸頂，表頭要貼在它下面：高度會隨分頁（篩選多寡）與視窗寬度改變，所以量出來放進 CSS 變數
+function _syncToolbarHeight() {{
+  const tb = document.getElementById('toolbar');
+  if (tb) document.documentElement.style.setProperty('--tbh', tb.offsetHeight + 'px');
+}}
+window.addEventListener('resize', _syncToolbarHeight);
+
 function _resetToolbar() {{
   const box = document.getElementById('recsearch');
   if (box) box.value = '';
@@ -1102,6 +926,7 @@ function _resetToolbar() {{
     if (el) el.hidden = !filters.includes(pair[1]);
   }});
   document.querySelectorAll('.rowchk, .rchk, .rchkall, #rowchkall').forEach(function(c){{ c.checked = false; }});
+  _syncToolbarHeight();
 }}
 
 // 第一層（採購｜審核）：屬於某一層的元素（子分頁按鈕、套用橫幅、待套用提示）只在那一層顯示；
@@ -1459,7 +1284,8 @@ function _cartToggle(btn) {{
 // ---- 購物車抽屜（頁首左上角的購物車圖示）----
 // 顯示整個購物車（全校，不隨學系篩選），資料來自 GET /cart；改冊數、移出、清空都沿用 /purchase/*，
 // 並把結果同步回採購表上有出現的列。標題與書名一律用 textContent 放進去（不用 innerHTML）。
-const _PLABEL = {_plabel_json};
+const _PLABEL = {_plabel_json};       // 匯出用的完整標籤
+const _PSHORT = {_pshort_json};       // 畫面上用的短標籤
 const _SLABEL = {_slabel_json};
 let _cartData = {{items: [], books: 0, copies: 0}};
 
@@ -1477,6 +1303,7 @@ function _renderCart(d) {{
     const row = document.createElement('div');
     row.className = 'ci';
     row.dataset.key = it.book_key;
+    row.dataset.p = it.priority;                 // 書脊顏色
     const title = document.createElement('div');
     title.className = 'ci-title';
     title.textContent = it.title;
@@ -1491,14 +1318,14 @@ function _renderCart(d) {{
     rm.textContent = '移出';
     const sub = document.createElement('div');
     sub.className = 'ci-sub';
-    sub.textContent = (_PLABEL[it.priority] || it.priority) + '・' + (_SLABEL[it.status] || it.status) + '・系統建議 ' + it.suggested + ' 冊';
+    sub.textContent = (_PSHORT[it.priority] || it.priority) + '優先，' + (_SLABEL[it.status] || it.status) + '，系統建議 ' + it.suggested + ' 冊';
     const err = document.createElement('div');
     err.className = 'aerr'; err.hidden = true;
     row.append(title, input, rm, sub, err);
     list.appendChild(row);
   }});
   _renderOrphans(d.orphans || []);
-  document.getElementById('carttotal').textContent = (d.books || 0) + ' 本 · ' + (d.copies || 0) + ' 冊';
+  document.getElementById('carttotal').textContent = (d.books || 0) + ' 本，共 ' + (d.copies || 0) + ' 冊';
   document.getElementById('cartexport').disabled = !items.length;
   document.getElementById('cartclear').disabled = !items.length;
 }}
@@ -1700,13 +1527,15 @@ async function _poll() {{
     const d = await (await fetch('/status')).json();
     const c = d.counts;
     _el('counts').textContent =
-      `課程 ${{c.courses}} · 書目 ${{c.citations}} · 已驗證 ${{c.verified}} · 館藏 ${{c.holdings}} · 建議 ${{c.recommendations}}`;
+      `課程 ${{c.courses}}　書目 ${{c.citations}}　已驗證 ${{c.verified}}　館藏 ${{c.holdings}}　建議 ${{c.recommendations}}`;
     const label = {{idle:'閒置中', running:`執行中… ${{d.elapsed||0}}s`, done:`完成（${{d.elapsed||0}}s）`, error:'錯誤：'+(d.error||'')}};
     _el('runstatus').textContent = label[d.status] || d.status;
     _el('runstatus').className = 'runstatus ' + d.status;
     _el('runbtn').disabled = (d.status === 'running');
     _logLoop = (d.status === 'running');  // 只在執行中輪詢 /log，閒置時不要讓終端機被 GET /log 洗版
     if (d.status === 'running') {{
+      const pipe = document.getElementById('pipeline');
+      if (pipe) pipe.open = true;                 // 執行中自動展開，看得到終端機的輸出
       _sawRunning = true;
       _pollLog();
       setTimeout(_poll, 3000);
@@ -1951,7 +1780,9 @@ _el('expgo').addEventListener('click', function(){{
       const input = tr.querySelector('.dec-in');
       const copies = numCell.textContent.trim();
       const decided = input ? input.value.trim() : '';
-      return Array.from(tr.querySelectorAll('td')).slice(1, 6).map(td => td.textContent)
+      // 畫面上的優先級是短標籤（高／中／低），匯出維持原本的完整標籤
+      return Array.from(tr.querySelectorAll('td')).slice(1, 6)
+        .map((td, i) => i === 0 ? (_PLABEL[tr.dataset.priority] || td.textContent) : td.textContent)
         .concat([copies, numCell.dataset.need || '', decided, decided !== '' ? decided : '0',
                  tr.querySelector('td.rationale').textContent]);
     }};

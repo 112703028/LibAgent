@@ -9,12 +9,9 @@ AI Agent 驅動的課程大綱分析與圖書館採購決策支援系統，專�
 
 本系統以 [LangGraph](https://github.com/langchain-ai/langgraph) 建構多 Agent Pipeline：
 
-```
-crawler → parser → discoverer → validator → match_auditor → librarian → recommender
-                       ↑            │              ↓
-                       └────────────┘         human_review（有待審書目時才執行）
-              AI 推薦的書驗證失敗時回到 discoverer 重推（有輪數上限）
-```
+![整體架構：課程大綱 Excel 經過 crawler、parser、discoverer、validator、match_auditor、librarian、recommender 七個 Agent，結果存進 PostgreSQL，由儀表板呈現；validator 查不到的 AI 推薦書會回到 discoverer 重推，存疑的書送 human_review](docs/images/architecture.png)
+
+七個 Agent 依序執行；validator 之後若有 AI 推薦的書驗證失敗，會回到 discoverer 重推（有輪數上限）；存疑的書由 human_review 交給人，在儀表板上處理。
 
 | Agent | 功能 |
 |-------|------|
@@ -26,6 +23,16 @@ crawler → parser → discoverer → validator → match_auditor → librarian 
 | **librarian** | 查詢 Alma 館藏，確認每本書的館藏狀態與冊數 |
 | **recommender** | 以規則算出每本書的採購優先級與建議冊數，再由 LLM 撰寫理由。**同一本書被多門課用到只產生一筆建議**（人數加總、現有館藏只扣一次） |
 | **human_review** | 列出信心不足或配對可疑的書目，等待人工處理 |
+
+## 一本書怎麼走到購物車
+
+![一本書的路徑：課綱上的一行書目先驗證，再判斷配到的是不是同一本；是的話查館藏、算冊數、進採購建議，由人決定放進購物車；配錯或查無此書則進審核，人決定後套用，再回到採購建議](docs/images/book-journey.png)
+
+系統只負責**算出建議**，要不要買、買幾本由人決定：採購表上填冊數或按「加入購物車」才算要買，購物車匯出的 CSV 才是最後的下單清單。
+人的決定存在資料庫裡，重跑 pipeline 不會被洗掉。
+
+> 兩張圖的原始檔在 [`docs/images/`](docs/images/)（`.drawio`），用 [diagrams.net](https://app.diagrams.net) 開啟就能編輯。
+> 改完內容後可用 `python experiments/render_drawio.py docs/images/<檔名>.drawio` 重新畫成 PNG。
 
 ## 環境需求
 

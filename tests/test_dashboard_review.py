@@ -157,7 +157,7 @@ def test_review_panel_notfound_shows_no_record_and_the_priority_it_still_has():
                                priority="high", copies=4)])
 
     assert "查無記錄" in html and "ncl_not_found" in html
-    assert dashboard._PRIORITY_LABEL["high"] in html and "4" in html
+    assert dashboard._PRIORITY_SHORT["high"] in html and 'class="pill p-high"' in html and "4" in html
 
 
 def test_review_panel_empty_states():
