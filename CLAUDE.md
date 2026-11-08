@@ -52,12 +52,14 @@ python src/library_agent/agents/librarian.py
 
 ### 書商後備驗證（validator 查不到時）
 
-NCL／LOC／Google 都查不到的書，validator 依 `BOOKSTORE_SOURCES`（預設 `taaze,sanmin`，逗號分隔、依序查，空字串＝關閉）再查書商。
+NCL／LOC／Google 都查不到的書，validator 依 `BOOKSTORE_SOURCES`（預設 `sanmin,taaze`，逗號分隔、依序查，空字串＝關閉）再查書商。
 `_bookstore_fallback`（`agents/validator.py`）：每家先用完整書名，沒有採用的候選且有主書名（`bookstore.main_title`）時再用主書名；
 判斷一律拿課綱的完整書名與作者，用 match_auditor 的 `pick_same_book`（字串規則＋LLM，最多問前 3 名，**LLM 失敗＝不同本**）。
 判定同一本就是驗證成功：`source` 記 `taaze`／`eslite`、`verified=True`，並把稽核結果寫進 `pairing_verdict/judge/reason`
 （match_auditor 之後不會再判）。課綱沒寫作者、書商有兩筆以上同名候選時不採用；Google 配額爆掉的書不查書商；書商出任何錯都當作沒找到。
 
+- **順序為什麼是三民先**（2026-11-08 隨機 100 本「查無此書」、`experiments/bookstore_compare.py`）：三民完整跑完命中 36%、0 次 429；TAAZE 回過 429 後冷卻、其餘書被跳過，所以它的 5% 不可信。三民先查，TAAZE 只需要查剩下的約六成，請求量少三分之一，也比較不會被限流。
+  命中裡約 8 本是寬鬆判斷（第 2 冊 vs 第 1 冊、英文版、簡體版、合訂本配單冊）：書存在，但不一定是要買的那一本，`pairing_reason` 看得到理由。
 - **TAAZE**（`integrations/taaze.py`）：純 HTTP，解析搜尋頁的 `div.media`（沒有 ISBN）。伺服器的 TLS 憑證鏈設定錯誤，
   在 certifi 之外額外載入 `integrations/certs/` 裡 Sectigo 官方的中繼憑證，**憑證檢查保持開啟**。每次請求間隔約 2 秒；
   回 **429 就依 `Retry-After`（最多 30 分鐘，沒有就 5 分鐘）冷卻**（共用的 `bookstore.Cooldown`），冷卻期間不送請求。

@@ -227,7 +227,8 @@ def test_saved_pairing_fields_keep_match_auditor_from_judging_again(isolated_db)
         assert s.execute(M._pending_query(None, 0)).all() == []                              # 不會被挑去稽核
 
 
-def test_default_sources_are_taaze_and_sanmin_in_that_order():
+def test_default_sources_are_sanmin_then_taaze():
     from library_agent.config import Settings
 
-    assert Settings.model_fields["bookstore_sources"].default == "taaze,sanmin"            # 誠品被擋，預設不啟用
+    # 隨機 100 本實測：三民命中 36%、沒被限流；TAAZE 會限流。三民先查，TAAZE 只需要查剩下的約六成
+    assert Settings.model_fields["bookstore_sources"].default == "sanmin,taaze"            # 誠品被擋，預設不啟用
