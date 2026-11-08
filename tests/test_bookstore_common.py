@@ -2,7 +2,9 @@
 import threading
 import time
 
-from library_agent.integrations.bookstore import Pacer, main_title, split_authors
+import httpx
+
+from library_agent.integrations.bookstore import Cooldown, Pacer, main_title, split_authors
 
 
 def test_main_title_cuts_at_the_first_separator():
@@ -44,3 +46,37 @@ def test_pacer_spaces_calls_from_two_threads():
     stamps.sort()
     gaps = [b - a for a, b in zip(stamps, stamps[1:])]
     assert len(stamps) == 4 and min(gaps) >= 0.13, gaps          # 0.2 × 0.7 = 0.14，留一點計時誤差
+
+
+# ---------- Cooldown：書商回 429 時退讓 ----------
+
+def clocked():
+    now = [1000.0]
+    return Cooldown(default=300.0, maximum=1800.0, clock=lambda: now[0]), now
+
+
+def test_cooldown_is_inactive_until_started():
+    cd, _now = clocked()
+
+    assert cd.active() is False
+
+
+def test_cooldown_without_retry_after_uses_the_default_then_expires():
+    cd, now = clocked()
+
+    wait = cd.start(httpx.Response(429))
+
+    assert wait == 300.0 and cd.active() is True
+    now[0] += 299
+    assert cd.active() is True
+    now[0] += 2
+    assert cd.active() is False
+
+
+def test_cooldown_honors_retry_after_but_caps_it():
+    cd, now = clocked()
+
+    assert cd.start(httpx.Response(429, headers={"Retry-After": "60"})) == 60.0
+    assert cd.start(httpx.Response(429, headers={"Retry-After": "99999"})) == 1800.0
+    assert cd.start(httpx.Response(429, headers={"Retry-After": "-5"})) == 0.0          # 負數當作不用等
+    assert cd.start(httpx.Response(429, headers={"Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT"})) == 300.0   # 看不懂的格式用預設

@@ -67,7 +67,7 @@ class Pairing:
 
 
 # 驗證來源的顯示名稱：只有書商後備需要翻成人看得懂的字，其他來源代碼（nla、google_books…）維持原樣
-SOURCE_LABEL = {"taaze": "TAAZE（書商）", "eslite": "誠品（書商）"}
+SOURCE_LABEL = {"taaze": "TAAZE（書商）", "sanmin": "三民（書商）", "eslite": "誠品（書商）"}
 
 
 def source_label(code: str | None) -> str:

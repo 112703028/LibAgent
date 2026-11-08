@@ -7,6 +7,7 @@ import random
 import re
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 
 
@@ -36,6 +37,29 @@ class Pacer:
             self._next = start + self.min_interval * random.uniform(0.7, 1.3)
         if start > now:
             time.sleep(start - now)
+
+
+class Cooldown:
+    """書商回 429（太頻繁）時退讓：照 Retry-After 冷卻（最多 maximum 秒；沒有或看不懂就用 default），
+    冷卻期間呼叫端不送任何請求。clock 可替換，測試用。"""
+
+    def __init__(self, default: float = 300.0, maximum: float = 1800.0,
+                 clock: Callable[[], float] = time.monotonic):
+        self.default, self.maximum, self.clock = default, maximum, clock
+        self.until = 0.0
+
+    def active(self) -> bool:
+        return self.clock() < self.until
+
+    def start(self, response) -> float:
+        """依這個回應開始冷卻，回傳冷卻秒數。"""
+        try:
+            wait = float(response.headers.get("Retry-After", ""))
+        except ValueError:
+            wait = self.default
+        wait = min(max(wait, 0.0), self.maximum)
+        self.until = self.clock() + wait
+        return wait
 
 
 _SEPARATORS = re.compile(r"\s*(?:——|──|—|–|:|：| - |/|／)\s*")

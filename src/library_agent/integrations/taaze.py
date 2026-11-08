@@ -9,7 +9,6 @@ import functools
 import logging
 import re
 import ssl
-import time
 from pathlib import Path
 
 import certifi
@@ -17,23 +16,15 @@ import httpx
 from bs4 import BeautifulSoup
 
 from library_agent.config import get_settings
-from library_agent.integrations.bookstore import Pacer, StoreRecord, split_authors
+from library_agent.integrations.bookstore import Cooldown, Pacer, StoreRecord, split_authors
 
 log = logging.getLogger(__name__)
 
 SEARCH_URL = "https://www.taaze.tw/rwd_searchResult.html"
 _CERT = Path(__file__).parent / "certs" / "sectigo_public_server_auth_ca_ev_r36.pem"
 _PACER = Pacer(min_interval=2.0)
-# 被限流（429）時退讓：照 Retry-After 冷卻（最多 MAX_COOLDOWN 秒），沒有就用預設；冷卻期間不送任何請求
-DEFAULT_COOLDOWN = 300.0
-MAX_COOLDOWN = 1800.0
-_cool_until = 0.0
-
-
-def _now() -> float:
-    return time.monotonic()
-
-
+# 被限流（429）時退讓：照 Retry-After 冷卻，冷卻期間不送任何請求
+_COOLDOWN = Cooldown()
 _TIMEOUT = 20.0
 # 書名結尾的商品標記，例如「(二手書)」：不是書名的一部分
 _TAG = re.compile(r"\s*[\(（][^)）]*(?:二手書|電子書|套書|限量|特價|平裝|精裝|預購)[^)）]*[\)）]\s*$")
@@ -78,26 +69,15 @@ def parse_search_html(html: str) -> list[StoreRecord]:
     return records
 
 
-def _cool_down(response: httpx.Response) -> None:
-    global _cool_until
-    try:
-        wait = float(response.headers.get("Retry-After", ""))
-    except ValueError:
-        wait = DEFAULT_COOLDOWN
-    wait = min(max(wait, 0.0), MAX_COOLDOWN)
-    _cool_until = _now() + wait
-    log.warning("TAAZE 回 429（太頻繁），%d 秒內不再查詢", wait)
-
-
 def search(query: str) -> list[StoreRecord]:
-    if _now() < _cool_until:
+    if _COOLDOWN.active():
         return []
     try:
         _PACER.wait()
         with _client() as client:
             response = client.get(SEARCH_URL, params={"keyType[]": "0", "keyword[]": query})
             if response.status_code == 429:
-                _cool_down(response)
+                log.warning("TAAZE 回 429（太頻繁），%d 秒內不再查詢", _COOLDOWN.start(response))
                 return []
             response.raise_for_status()
             return parse_search_html(response.text)

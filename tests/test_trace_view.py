@@ -512,6 +512,7 @@ def _render_pairing(source):
 
 def test_source_label_names_the_bookstores_and_leaves_other_codes_alone():
     assert T.source_label("taaze") == "TAAZE（書商）" and T.source_label("eslite") == "誠品（書商）"
+    assert T.source_label("sanmin") == "三民（書商）"
     assert T.source_label("nla") == "nla" and T.source_label(None) == "—"
 
 

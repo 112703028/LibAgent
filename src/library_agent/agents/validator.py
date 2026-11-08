@@ -13,7 +13,7 @@ from library_agent.db.models import Recommendation as RecommendationDB
 from library_agent.db.models import VerifiedBook as VerifiedBookDB
 from library_agent.db.session import SessionLocal
 from library_agent.agents.match_auditor import _norm, bookstore_llm, pick_same_book
-from library_agent.integrations import eslite, taaze
+from library_agent.integrations import eslite, sanmin, taaze
 from library_agent.integrations.bookstore import StoreRecord, main_title
 from library_agent.integrations.google_books import QuotaExceededError, lookup as google_lookup
 from library_agent.integrations.loc import lookup as loc_lookup
@@ -93,7 +93,7 @@ def _quota_exceeded_result(citation: BookCitation) -> VerifiedBook:
     )
 
 
-_STORES = {"taaze": lambda: taaze.search, "eslite": lambda: eslite.search}
+_STORES = {"taaze": lambda: taaze.search, "sanmin": lambda: sanmin.search, "eslite": lambda: eslite.search}
 
 
 def _bookstore_fallback(citation: BookCitation, low_confidence: bool) -> VerifiedBook | None:

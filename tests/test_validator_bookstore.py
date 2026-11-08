@@ -22,7 +22,7 @@ class Stores:
     """假的書商：依查詢字串回傳預先放好的結果，並記錄每次查詢。"""
 
     def __init__(self):
-        self.answers = {"taaze": {}, "eslite": {}}
+        self.answers = {"taaze": {}, "sanmin": {}, "eslite": {}}
         self.queries = []
 
     def search_for(self, name):
@@ -36,11 +36,12 @@ class Stores:
 def stores(monkeypatch):
     s = Stores()
     monkeypatch.setattr(V.taaze, "search", s.search_for("taaze"))
+    monkeypatch.setattr(V.sanmin, "search", s.search_for("sanmin"))
     monkeypatch.setattr(V.eslite, "search", s.search_for("eslite"))
     monkeypatch.setattr(V, "nla_lookup", lambda **kw: None)
     monkeypatch.setattr(V, "loc_lookup", lambda **kw: None)
     monkeypatch.setattr(V, "google_lookup", lambda **kw: None)
-    monkeypatch.setattr(V._settings, "bookstore_sources", "taaze,eslite", raising=False)
+    monkeypatch.setattr(V._settings, "bookstore_sources", "taaze,sanmin,eslite", raising=False)
     calls = []
 
     def llm(orig_title, orig_authors, cand_title, cand_authors):
@@ -69,7 +70,7 @@ def test_eslite_is_tried_when_taaze_has_no_same_book(stores):
     out = V._validate_chinese(cn("被討厭的勇氣", ("岸見一郎",)), low_confidence=False)
 
     assert out.verified and out.source == "eslite" and out.isbn_13 == "9789861371955"
-    assert [q[0] for q in stores.queries] == ["taaze", "eslite"]                       # TAAZE 先，沒有才誠品
+    assert [q[0] for q in stores.queries] == ["taaze", "sanmin", "eslite"]            # 依設定的順序，前一家沒有才換下一家
 
 
 def test_citation_isbn_wins_over_the_bookstore_isbn(stores):
@@ -224,3 +225,9 @@ def test_saved_pairing_fields_keep_match_auditor_from_judging_again(isolated_db)
         row = s.query(VB).one()
         assert (row.source, row.pairing_verdict, row.pairing_judge, row.pairing_reason) == ("taaze", "same", "llm", "同一本")
         assert s.execute(M._pending_query(None, 0)).all() == []                              # 不會被挑去稽核
+
+
+def test_default_sources_are_taaze_and_sanmin_in_that_order():
+    from library_agent.config import Settings
+
+    assert Settings.model_fields["bookstore_sources"].default == "taaze,sanmin"            # 誠品被擋，預設不啟用

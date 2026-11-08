@@ -13,7 +13,7 @@ FIX = Path(__file__).parent / "fixtures"
 @pytest.fixture(autouse=True)
 def no_wait(monkeypatch):
     monkeypatch.setattr(taaze, "_PACER", Pacer(min_interval=0))
-    monkeypatch.setattr(taaze, "_cool_until", 0.0)
+    monkeypatch.setattr(taaze._COOLDOWN, "until", 0.0)
 
 
 def test_parse_hit_page():
@@ -96,7 +96,7 @@ def test_a_429_makes_us_back_off_instead_of_hammering_on(monkeypatch):
     calls, client = counting_client(429)
     monkeypatch.setattr(taaze, "_client", client)
     now = [1000.0]
-    monkeypatch.setattr(taaze, "_now", lambda: now[0])
+    monkeypatch.setattr(taaze._COOLDOWN, "clock", lambda: now[0])
 
     assert taaze.search("甲") == []
     assert taaze.search("乙") == [] and taaze.search("丙") == []
@@ -108,10 +108,10 @@ def test_requests_resume_after_the_cooldown(monkeypatch):
     calls, client = counting_client(429)
     monkeypatch.setattr(taaze, "_client", client)
     now = [1000.0]
-    monkeypatch.setattr(taaze, "_now", lambda: now[0])
+    monkeypatch.setattr(taaze._COOLDOWN, "clock", lambda: now[0])
     taaze.search("甲")
 
-    now[0] += taaze.DEFAULT_COOLDOWN + 1
+    now[0] += taaze._COOLDOWN.default + 1
     taaze.search("乙")
 
     assert len(calls) == 2
@@ -121,10 +121,10 @@ def test_retry_after_is_honored_but_capped(monkeypatch):
     calls, client = counting_client(429, {"Retry-After": "99999"})
     monkeypatch.setattr(taaze, "_client", client)
     now = [1000.0]
-    monkeypatch.setattr(taaze, "_now", lambda: now[0])
+    monkeypatch.setattr(taaze._COOLDOWN, "clock", lambda: now[0])
     taaze.search("甲")
 
-    now[0] += taaze.MAX_COOLDOWN + 1                          # 網站要求等很久，我們最多等 MAX_COOLDOWN
+    now[0] += taaze._COOLDOWN.maximum + 1                          # 網站要求等很久，我們最多等 MAX_COOLDOWN
     taaze.search("乙")
 
     assert len(calls) == 2

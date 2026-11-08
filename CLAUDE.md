@@ -52,7 +52,7 @@ python src/library_agent/agents/librarian.py
 
 ### 書商後備驗證（validator 查不到時）
 
-NCL／LOC／Google 都查不到的書，validator 依 `BOOKSTORE_SOURCES`（預設只有 `taaze`，逗號分隔、依序查，空字串＝關閉）再查書商。
+NCL／LOC／Google 都查不到的書，validator 依 `BOOKSTORE_SOURCES`（預設 `taaze,sanmin`，逗號分隔、依序查，空字串＝關閉）再查書商。
 `_bookstore_fallback`（`agents/validator.py`）：每家先用完整書名，沒有採用的候選且有主書名（`bookstore.main_title`）時再用主書名；
 判斷一律拿課綱的完整書名與作者，用 match_auditor 的 `pick_same_book`（字串規則＋LLM，最多問前 3 名，**LLM 失敗＝不同本**）。
 判定同一本就是驗證成功：`source` 記 `taaze`／`eslite`、`verified=True`，並把稽核結果寫進 `pairing_verdict/judge/reason`
@@ -60,14 +60,17 @@ NCL／LOC／Google 都查不到的書，validator 依 `BOOKSTORE_SOURCES`（預�
 
 - **TAAZE**（`integrations/taaze.py`）：純 HTTP，解析搜尋頁的 `div.media`（沒有 ISBN）。伺服器的 TLS 憑證鏈設定錯誤，
   在 certifi 之外額外載入 `integrations/certs/` 裡 Sectigo 官方的中繼憑證，**憑證檢查保持開啟**。每次請求間隔約 2 秒；
-  回 **429 就依 `Retry-After`（最多 30 分鐘，沒有就 5 分鐘）冷卻**，冷卻期間不送請求。
+  回 **429 就依 `Retry-After`（最多 30 分鐘，沒有就 5 分鐘）冷卻**（共用的 `bookstore.Cooldown`），冷卻期間不送請求。
+- **三民**（`integrations/sanmin.py`）：純 HTTP，`GET /search/?ct=k&qu=關鍵字`（`ct=k` 是關鍵字搜尋），解析 `div.Prod`（沒有 ISBN），只取前 20 筆。
+  **三民是模糊比對、按相關性排序：搜不存在的書名也會回字面上有點像的不相關書**，所以一定靠 `pick_same_book` 判斷，不能因為「有結果」就算找到。
+  請求用專案自己的 User-Agent（不偽裝成瀏覽器），間隔約 2 秒，同樣有 429 冷卻。試驗時工具學到的 `?ct=all&qu=`、`?all=` 都不是正確的組合。
 - **誠品**（`integrations/eslite.py`）：Playwright 驅動這台電腦的 Edge、在頁面裡呼叫 JSON 接口，查詢集中在專用執行緒，失敗一次就在這次執行內停用。
   **2026-11-08 實測：誠品的 Cloudflare 對誠實的無頭 Edge 回 403，所以目前查不到東西，預設不啟用。**
   API Anything 能通是因為它把 User-Agent 的 `HeadlessChrome` 改寫成 `Chrome`、讓網站認不出是無頭瀏覽器，那是繞過存取限制，**不要照做**。
 - 現有的查無此書不用另外處理：validator 每次執行都會重查 not_found 的書。真的重跑會刪掉並重建這些書的館藏與建議
   （`_stage_save`），之後要接著跑 match_auditor（不會重判書商命中的書）、librarian、recommender。
 - 只讀試跑：`python experiments/bookstore_dryrun.py 30`（呼叫書商與 LLM，不寫資料庫）。
-- 畫面上來源顯示成「TAAZE（書商）」「誠品（書商）」（`trace_view.source_label`）。
+- 畫面上來源顯示成「TAAZE（書商）」「三民（書商）」「誠品（書商）」（`trace_view.source_label`）。
 
 ### 配對稽核（match_auditor）
 
