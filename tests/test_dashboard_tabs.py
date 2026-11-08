@@ -245,7 +245,7 @@ def test_review_log_has_checkbox_expand_and_a_course_column():
 def test_the_review_priority_cell_shows_the_priority_pill_or_why_it_is_not_in_the_list():
     pn = panels(page([rec()], reviews()))
 
-    assert dashboard._PRIORITY_LABEL["high"] in pn["notfound"][1]                 # 查無此書：有採購建議的優先級
+    assert dashboard._PRIORITY_SHORT["high"] in pn["notfound"][1]                 # 查無此書：有採購建議的優先級
     assert "已擋下，不在採購建議" in pn["mismatch"][1]                               # 配錯：被擋下
 
 
@@ -303,15 +303,15 @@ def test_legacy_row_has_no_cart_button():
     assert "data-cart" not in panels(page([rec(book_key=None)]))["recs"][1]
 
 
-def test_the_cart_column_is_wide_enough_that_the_button_never_wraps_and_input_and_button_line_up():
+def test_the_cart_column_keeps_input_and_button_on_one_line_and_never_wraps_the_label():
     css = re.search(r"<style>(.*?)</style>", page(), re.S).group(1)
 
     btn = re.search(r"\.cartbtn \{([^}]*)\}", css).group(1)
-    assert "white-space:nowrap" in btn and "width:100%" in btn                      # 「移出購物車」不能折成兩行
+    assert "white-space:nowrap" in btn and "inline-block" in btn                    # 「移出購物車」不能折成兩行，與輸入框同一行
     inp = re.search(r"\.dec-in \{([^}]*)\}", css).group(1)
-    assert "width:100%" in inp and "box-sizing:border-box" in inp                  # 輸入框與按鈕同寬
-    assert re.search(r"td\.dec \{[^}]*min-width:1[3-9]\d+px", css)                  # 採購冊數欄有固定寬度
-
+    assert "inline-block" in inp and re.search(r"width:\d+px", inp)                 # 輸入框固定寬度（放得下「尚未決定」）
+    col = re.search(r"td\.dec \{([^}]*)\}", css).group(1)
+    assert "white-space:nowrap" in col and int(re.search(r"min-width:(\d+)px", col).group(1)) >= 190   # 放得下同一行
 
 # ---------- 批次列 ----------
 
