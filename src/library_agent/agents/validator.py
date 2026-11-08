@@ -1,4 +1,5 @@
 import json
+import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 
@@ -25,6 +26,7 @@ def _is_chinese(text: str) -> bool:
 
 _settings = get_settings()
 _MAX_WORKERS = 2
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -113,12 +115,12 @@ def _bookstore_fallback(citation: BookCitation, low_confidence: bool) -> Verifie
             continue
         for query in queries:
             try:
-                records = search()(query)
-            except Exception:  # noqa: BLE001 — 書商出錯不能讓 pipeline 中斷
+                records = _distinct_for_authorless(citation, search()(query))
+                idx, reason = pick_same_book(citation.title, citation.authors,
+                                             [(r.title, r.authors) for r in records], llm)
+            except Exception as e:  # noqa: BLE001 — 書商或判斷出任何錯都當作這家沒找到，不能讓這本書被跳過或讓流程中斷
+                log.warning("書商後備（%s）失敗，視為沒找到（%s）：%r", name, citation.title[:40], e)
                 break
-            records = _distinct_for_authorless(citation, records)
-            idx, reason = pick_same_book(citation.title, citation.authors,
-                                         [(r.title, r.authors) for r in records], llm)
             if idx is not None:
                 r = records[idx]
                 return VerifiedBook(

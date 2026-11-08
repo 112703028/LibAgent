@@ -181,6 +181,20 @@ def test_a_failing_store_is_treated_as_not_found(stores, monkeypatch):
     assert out.verified is False and out.source == "ncl_not_found"                      # 不往外丟，流程照跑
 
 
+def test_a_failing_llm_client_is_treated_as_not_found_not_as_a_skipped_book(stores, monkeypatch):
+    from library_agent.agents import match_auditor as M
+
+    def no_client():
+        raise RuntimeError("沒有 API key")
+
+    stores.answers["taaze"]["被討厭的勇氣"] = [rec("被討厭的勇氣", ("岸見一郎",))]
+    monkeypatch.setattr(V, "bookstore_llm", M.bookstore_llm)        # 用真的（它在第一次判斷時才建立 client）
+    monkeypatch.setattr(M, "_new_client", no_client)
+
+    out = V._validate_chinese(cn("被討厭的勇氣", ("岸見一郎",)), low_confidence=False)
+
+    assert out.verified is False and out.source == "ncl_not_found"          # 書商這邊出錯＝沒找到，書照常存成查無此書
+
 def test_eslite_browser_is_closed_when_the_node_finishes(monkeypatch):
     closed = []
     monkeypatch.setattr(V.eslite, "close", lambda: closed.append(1))
