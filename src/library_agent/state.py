@@ -54,6 +54,10 @@ class VerifiedBook(BaseModel):
     source: str  # google_books | nla
     verified: bool = False
     requires_human_review: bool = False
+    # 驗證時就已經判斷過「是不是同一本」的來源（書商後備）才有值；其他來源留 None，由 match_auditor 事後稽核
+    pairing_verdict: str | None = None
+    pairing_judge: str | None = None
+    pairing_reason: str | None = None
 
 
 class HoldingCheck(BaseModel):

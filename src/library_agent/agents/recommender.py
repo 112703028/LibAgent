@@ -19,6 +19,7 @@ from library_agent.db.models import (
     VerifiedBook as VerifiedBookDB,
 )
 from library_agent.db.session import SessionLocal
+from library_agent.purchase_reconcile import reconcile
 from library_agent.integrations.nccu_syllabus import fetch_student_number
 from library_agent.prompts.recommender_prompts import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE
 from library_agent.state import AgentState, HoldingStatus, PurchasePriority
@@ -371,6 +372,10 @@ def recommend(only_citation_ids: set[int] | None = None) -> AgentState:
             legacy_count = session.execute(
                 delete(RecommendationDB).where(RecommendationDB.book_key.is_(None))).rowcount
         session.commit()
+        # 書的識別鍵可能變了（書商補上 ISBN、審核改書名、重新驗證）：購物車的決定依課綱書目跟著搬
+        reconciled = reconcile(session)
+        session.commit()
+    print(f"購物車對帳：搬移 {reconciled.moved} 筆、更新 {reconciled.refreshed} 筆、找不到 {reconciled.orphaned} 筆")
 
     print(f"  SKIP {skipped} 本（建議未變），重算 {total - skipped} 本；"
           f"清掉不再存在 {len(stale_ids)} 筆、舊格式 {legacy_count} 筆")

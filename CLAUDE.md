@@ -50,6 +50,30 @@ python src/library_agent/agents/match_auditor.py 20   # 測試用，只跑前 N 
 python src/library_agent/agents/librarian.py
 ```
 
+### 書商後備驗證（validator 查不到時）
+
+NCL／LOC／Google 都查不到的書，validator 依 `BOOKSTORE_SOURCES`（預設 `sanmin,taaze`，逗號分隔、依序查，空字串＝關閉）再查書商。
+`_bookstore_fallback`（`agents/validator.py`）：每家先用完整書名，沒有採用的候選且有主書名（`bookstore.main_title`）時再用主書名；
+判斷一律拿課綱的完整書名與作者，用 match_auditor 的 `pick_same_book`（字串規則＋LLM，最多問前 3 名，**LLM 失敗＝不同本**）。
+判定同一本就是驗證成功：`source` 記 `taaze`／`eslite`、`verified=True`，並把稽核結果寫進 `pairing_verdict/judge/reason`
+（match_auditor 之後不會再判）。課綱沒寫作者、書商有兩筆以上同名候選時不採用；Google 配額爆掉的書不查書商；書商出任何錯都當作沒找到。
+
+- **順序為什麼是三民先**（2026-11-08 隨機 100 本「查無此書」、`experiments/bookstore_compare.py`）：三民完整跑完命中 36%、0 次 429；TAAZE 回過 429 後冷卻、其餘書被跳過，所以它的 5% 不可信。三民先查，TAAZE 只需要查剩下的約六成，請求量少三分之一，也比較不會被限流。
+  命中裡約 8 本是寬鬆判斷（第 2 冊 vs 第 1 冊、英文版、簡體版、合訂本配單冊）：書存在，但不一定是要買的那一本，`pairing_reason` 看得到理由。
+- **TAAZE**（`integrations/taaze.py`）：純 HTTP，解析搜尋頁的 `div.media`（沒有 ISBN）。伺服器的 TLS 憑證鏈設定錯誤，
+  在 certifi 之外額外載入 `integrations/certs/` 裡 Sectigo 官方的中繼憑證，**憑證檢查保持開啟**。每次請求間隔約 2 秒；
+  回 **429 就依 `Retry-After`（最多 30 分鐘，沒有就 5 分鐘）冷卻**（共用的 `bookstore.Cooldown`），冷卻期間不送請求。
+- **三民**（`integrations/sanmin.py`）：純 HTTP，`GET /search/?ct=k&qu=關鍵字`（`ct=k` 是關鍵字搜尋），解析 `div.Prod`（沒有 ISBN），只取前 20 筆。
+  **三民是模糊比對、按相關性排序：搜不存在的書名也會回字面上有點像的不相關書**，所以一定靠 `pick_same_book` 判斷，不能因為「有結果」就算找到。
+  請求用專案自己的 User-Agent（不偽裝成瀏覽器），間隔約 2 秒，同樣有 429 冷卻。試驗時工具學到的 `?ct=all&qu=`、`?all=` 都不是正確的組合。
+- **誠品**（`integrations/eslite.py`）：Playwright 驅動這台電腦的 Edge、在頁面裡呼叫 JSON 接口，查詢集中在專用執行緒，失敗一次就在這次執行內停用。
+  **2026-11-08 實測：誠品的 Cloudflare 對誠實的無頭 Edge 回 403，所以目前查不到東西，預設不啟用。**
+  API Anything 能通是因為它把 User-Agent 的 `HeadlessChrome` 改寫成 `Chrome`、讓網站認不出是無頭瀏覽器，那是繞過存取限制，**不要照做**。
+- 現有的查無此書不用另外處理：validator 每次執行都會重查 not_found 的書。真的重跑會刪掉並重建這些書的館藏與建議
+  （`_stage_save`），之後要接著跑 match_auditor（不會重判書商命中的書）、librarian、recommender。
+- 只讀試跑：`python experiments/bookstore_dryrun.py 30`（呼叫書商與 LLM，不寫資料庫）。
+- 畫面上來源顯示成「TAAZE（書商）」「三民（書商）」「誠品（書商）」（`trace_view.source_label`）。
+
 ### 配對稽核（match_auditor）
 
 validator 只要查得到記錄就算 `verified=True`，實測有相當比例配到的是別的書
@@ -137,7 +161,7 @@ match_auditor 判定）→ Alma 館藏 → 冊數怎麼算。**只讀**，不核
   回傳 `results` 供前端就地更新；找不到建議或建議為 0 的 key 略過）。
 - **存在獨立的 `purchase_decisions`（以 `book_key` 為鍵）**，不放在 `recommendations` 上：librarian／recommender 會刪掉重建建議，決定不能跟著消失
   （有測試）。另存「決定當時的系統建議」，之後系統建議變了就在該格標「建議已從 A 變成 B」。
-  **限制**：決定以 `book_key` 對應，書的認定改變（例如在審核裡改成「買原書」，鍵會變）時，原本的決定就對不上；不記是誰決定，只記時間。
+  **書的識別鍵改變時，決定跟著搬**（`purchase_reconcile.py`）：決定時另記 `title` 與 `citation_ids`（這本書由哪些課綱書目組成；citation 在重新驗證時不變）。`recommender.recommend()`（全校與限縮）結束時對帳：鍵還在→更新快照；鍵不在→記下的書目中仍屬於某筆建議者全部指向同一本、且那本還沒有決定→搬過去（冊數、決定當時的建議、決定時間不動）；新書已有決定、拆成兩本、書不見了、沒有快照→不動，成為「找不到的決定」：`/cart` 的 `orphans`（只列冊數 ≥ 1），抽屜清單下方「找不到對應的書（N）」可移除，不算進合計、不匯出。決定時間新的先處理。不記是誰決定，只記時間。
 - **「需求 N」**：被單本上限（`max_purchase_copies`，預設 5）截斷的書，冊數旁標「（需求 26）」。需求是**讀取時**用 `demand.py` 算的，不存：
   `demand.need_copies / uncapped_copies` 是唯一一份需求算式，recommender 的 `_decide`、追溯畫面、儀表板都用它，
   並有測試鎖住 `min(uncapped, 上限)` 等於 `_decide` 的冊數。

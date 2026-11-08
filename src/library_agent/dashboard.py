@@ -41,6 +41,8 @@ from library_agent.db.models import (
 from library_agent.db.session import SessionLocal
 from library_agent import demand, review_actions
 from library_agent.review_apply import pending_apply_ids
+from library_agent.purchase_reconcile import orphans, snapshot
+from library_agent.trace_view import source_label
 from library_agent.review_groups import KINDS, PendingItem, group_pending
 from library_agent.trace_view import _authors   # 作者欄位是 JSON 字串，與追溯畫面同一個解析（壞掉回 []）
 
@@ -574,7 +576,7 @@ def _review_row(g) -> str:
         searchable = [g.title or ""]
     else:
         matched = (f'<span class="bm">{html.escape(g.matched_title or "")}</span><div class="rdim">{_names(g.matched_authors)}'
-                   f' · {html.escape(g.source or "—")}</div>')
+                   f' · {html.escape(source_label(g.source))}</div>')
         searchable = [g.title or "", g.matched_title or ""]
     search = " ".join([*searchable, *(n for n, _ in g.courses)]).lower()
     ids = ",".join(str(i) for i in g.vb_ids)
@@ -780,6 +782,7 @@ def _render(data: dict) -> str:
         '<div class="cdhead"><h2>購物車（全校）</h2>'
         '<button id="cartclose" class="cdclose" type="button" aria-label="關閉">×</button></div>'
         '<div id="cartlist" class="cdlist"></div>'
+        '<div id="cartorphans" class="cdorph" hidden></div>'
         '<div class="cdfoot"><div id="carttotal" class="cdtotal"></div>'
         '<button id="cartexport" class="runbtn" type="button" style="font-size:13px;padding:6px 14px;">匯出購物車 CSV</button>'
         '<button id="cartclear" class="abtn abtn-no" type="button">清空購物車</button></div>'
@@ -895,6 +898,10 @@ a.kpi {{ display:block; text-decoration:none; color:inherit; }}
 .ci .aerr {{ grid-column:1 / -1; }}
 .cdfoot {{ padding:12px 16px; border-top:1px solid var(--gridline); display:flex; align-items:center; gap:10px; flex-wrap:wrap; }}
 .cdtotal {{ flex:1 1 100%; font-size:14px; font-weight:700; }}
+.cdorph {{ margin:0 16px; padding:8px 0 4px; border-top:1px dashed var(--border); }}
+.cdorph[hidden] {{ display:none; }}
+.cdorph-h {{ font-size:13.5px; font-weight:700; color:#a05f00; }}
+.ci-n {{ font-size:13px; font-weight:700; }}
 td.num.cut::after {{ content:"（需求 " attr(data-need) "）"; font-weight:400; font-size:11px; color:#a05f00; white-space:nowrap; }}
 td.dec {{ width:132px; min-width:132px; }}
 .dec-in {{ display:block; width:100%; box-sizing:border-box; font:inherit; font-size:12.5px; padding:3px 6px; border:1px solid var(--border); border-radius:6px; }}
@@ -1490,9 +1497,43 @@ function _renderCart(d) {{
     row.append(title, input, rm, sub, err);
     list.appendChild(row);
   }});
+  _renderOrphans(d.orphans || []);
   document.getElementById('carttotal').textContent = (d.books || 0) + ' 本 · ' + (d.copies || 0) + ' 冊';
   document.getElementById('cartexport').disabled = !items.length;
   document.getElementById('cartclear').disabled = !items.length;
+}}
+
+// 找不到對應的書的決定（書目更新後識別鍵對不上、又搬不了）：列在清單下方讓人移除，不算進合計、不匯出
+function _renderOrphans(os) {{
+  const box = document.getElementById('cartorphans');
+  box.textContent = '';
+  box.hidden = !os.length;
+  if (!os.length) return;
+  const h = document.createElement('div');
+  h.className = 'cdorph-h';
+  h.textContent = '找不到對應的書（' + os.length + '）';
+  const note = document.createElement('div');
+  note.className = 'ci-sub';
+  note.textContent = '這些決定的書已不在採購建議裡，可能是書目更新後對不上。';
+  box.append(h, note);
+  os.forEach(function(o){{
+    const row = document.createElement('div');
+    row.className = 'ci';
+    row.dataset.key = o.book_key;
+    const title = document.createElement('div');
+    title.className = 'ci-title';
+    title.textContent = o.title || o.book_key;
+    const n = document.createElement('div');
+    n.className = 'ci-n';
+    n.textContent = o.copies + ' 冊';
+    const rm = document.createElement('button');
+    rm.className = 'abtn'; rm.type = 'button'; rm.dataset.orphanRemove = '1';
+    rm.textContent = '移除';
+    const err = document.createElement('div');
+    err.className = 'aerr'; err.hidden = true;
+    row.append(title, n, rm, err);
+    box.appendChild(row);
+  }});
 }}
 
 async function _loadCart() {{
@@ -1592,6 +1633,12 @@ document.getElementById('cartlist').addEventListener('change', function(ev){{
   if (!input) return;
   const row = input.closest('.ci');
   return _cartAct(row, function(){{ return _cartSetCopies(row, input); }});
+}});
+document.getElementById('cartorphans').addEventListener('click', function(ev){{
+  const rm = ev.target.closest('[data-orphan-remove]');
+  if (!rm) return;
+  const row = rm.closest('.ci');
+  return _cartAct(row, function(){{ return _cartRemove(row); }});
 }});
 document.getElementById('cartlist').addEventListener('click', function(ev){{
   const rm = ev.target.closest('[data-cart-remove]');
@@ -2137,7 +2184,8 @@ def cart() -> dict:
     """整個購物車（全校）給頁首購物車抽屜；打開抽屜時才取。"""
     with SessionLocal() as s:
         items = _load_cart(s)
-    return {"ok": True, "items": items, "books": len(items), "copies": sum(i["copies"] for i in items)}
+        lost = orphans(s)              # 找不到對應的書的決定：顯示給人處理，不算進合計
+    return {"ok": True, "items": items, "books": len(items), "copies": sum(i["copies"] for i in items), "orphans": lost}
 
 
 @app.post("/purchase/decide")
@@ -2164,11 +2212,13 @@ def purchase_decide(body: dict = Body(...)):
             return JSONResponse({"ok": False, "message": "找不到這本書的採購建議（可能已被重算移除，請重新整理頁面）"},
                                 status_code=404)
         now = datetime.now(timezone.utc)
+        title, citation_ids = snapshot(s, key)        # 書的識別鍵之後改變時，對帳靠它搬移
+        snap = {"title": title, "citation_ids": json.dumps(citation_ids)}
         s.execute(
             pg_insert(PurchaseDecision)
-            .values(book_key=key, copies=copies, suggested_at_decision=suggested, decided_at=now)
+            .values(book_key=key, copies=copies, suggested_at_decision=suggested, decided_at=now, **snap)
             .on_conflict_do_update(index_elements=["book_key"], set_={
-                "copies": copies, "suggested_at_decision": suggested, "decided_at": now})
+                "copies": copies, "suggested_at_decision": suggested, "decided_at": now, **snap})
         )
         s.commit()
     return {"ok": True, "copies": copies, "suggested": suggested, "final": copies}
@@ -2212,13 +2262,16 @@ def purchase_decide_many(body: dict = Body(...)):
                 skipped.append(k)                 # 找不到建議，或沒有東西可加（系統建議為 0）
                 continue
             copies = suggested if mode == "suggested" else 0
-            values.append({"book_key": k, "copies": copies, "suggested_at_decision": suggested, "decided_at": now})
+            title, citation_ids = snapshot(s, k)
+            values.append({"book_key": k, "copies": copies, "suggested_at_decision": suggested, "decided_at": now,
+                           "title": title, "citation_ids": json.dumps(citation_ids)})
             results[k] = {"copies": copies, "final": copies}
         if values:
             stmt = pg_insert(PurchaseDecision).values(values)
             s.execute(stmt.on_conflict_do_update(index_elements=["book_key"], set_={
                 "copies": stmt.excluded.copies, "suggested_at_decision": stmt.excluded.suggested_at_decision,
-                "decided_at": stmt.excluded.decided_at}))
+                "decided_at": stmt.excluded.decided_at, "title": stmt.excluded.title,
+                "citation_ids": stmt.excluded.citation_ids}))
         s.commit()
     return {"ok": True, "changed": len(values), "skipped": skipped, "results": results}
 

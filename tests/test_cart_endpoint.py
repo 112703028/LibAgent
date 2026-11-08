@@ -30,7 +30,7 @@ def decide(S, key, copies, suggested_at=1):
 def test_empty_cart(client, isolated_db):
     body = client.get("/cart").json()
 
-    assert body == {"ok": True, "items": [], "books": 0, "copies": 0}
+    assert body == {"ok": True, "items": [], "books": 0, "copies": 0, "orphans": []}
 
 
 def test_only_books_decided_above_zero_are_in_the_cart(client, isolated_db):
@@ -111,3 +111,38 @@ def test_load_data_reports_the_school_wide_cart_totals(client, isolated_db, monk
     data = dashboard._load_data()
 
     assert data["cart"] == {"books": 1, "copies": 12}
+
+
+def test_cart_lists_orphans_with_title_and_copies_but_does_not_count_them(client, isolated_db):
+    add_rec(isolated_db, A, suggested=5, n=1)
+    decide(isolated_db, A, 2)
+    with isolated_db() as s:                       # 兩筆鍵對不上任何建議的決定：一筆要買、一筆「這次不買」
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        s.add(PurchaseDecision(book_key="title:舊書名", copies=5, suggested_at_decision=1, decided_at=now, title="舊書名"))
+        s.add(PurchaseDecision(book_key="title:不買", copies=0, suggested_at_decision=1, decided_at=now, title="不買"))
+        s.commit()
+
+    body = client.get("/cart").json()
+
+    assert body["books"] == 1 and body["copies"] == 2                       # 找不到的決定不算進合計
+    assert body["orphans"] == [{"book_key": "title:舊書名", "title": "舊書名", "copies": 5}]   # 0 冊的不列
+
+
+def test_cart_has_no_orphans_when_everything_matches(client, isolated_db):
+    add_rec(isolated_db, A, suggested=5, n=1)
+    decide(isolated_db, A, 2)
+
+    assert client.get("/cart").json()["orphans"] == []
+
+
+def test_a_decision_on_a_blocked_book_is_an_orphan(client, isolated_db):
+    add_rec(isolated_db, A, suggested=5, n=1)
+    decide(isolated_db, A, 4)
+    with isolated_db() as s:
+        s.query(VerifiedBook).update({"pairing_verdict": "mismatch", "review_status": "pending"})
+        s.commit()
+
+    body = client.get("/cart").json()
+
+    assert body["items"] == [] and [o["book_key"] for o in body["orphans"]] == [A]   # 與購物車同一個可採購條件

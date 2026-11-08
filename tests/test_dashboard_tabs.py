@@ -94,6 +94,12 @@ def test_the_cart_is_a_header_button_with_a_school_wide_count_and_a_hidden_drawe
         assert part in html, part
 
 
+def test_the_drawer_has_a_hidden_orphan_section_after_the_list():
+    html = markup(page([rec()]))
+
+    orph = re.search(r'<div[^>]*id="cartorphans"[^>]*>', html).group(0)
+    assert "hidden" in orph and html.index('id="cartlist"') < html.index('id="cartorphans"')
+
 def test_the_cart_button_shows_zero_when_nothing_is_in_the_cart():
     html = markup(page([rec()]))
 

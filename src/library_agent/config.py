@@ -39,6 +39,10 @@ class Settings(BaseSettings):
 
     # 採購建議政策（recommender 用；由程式端確定性計算冊數）
     students_per_copy: int = 25    # 每幾位選課學生配 1 本
+    # 書商後備驗證（權威書目與 Google 都查不到時）：逗號分隔、依序查；空字串＝關閉。
+    # 順序：三民先（隨機 100 本實測命中 36%、沒被限流），TAAZE 只需要查剩下的約六成（它會限流）。
+    # 誠品目前被 Cloudflare 擋掉誠實的無頭瀏覽器（見 integrations/eslite.py），所以預設不開。
+    bookstore_sources: str = "sanmin,taaze"
     max_purchase_copies: int = 5   # 單本書單次建議採購冊數上限
 
 

@@ -27,6 +27,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# 誠品後備驗證需要（用這台電腦的 Edge）；預設的 BOOKSTORE_SOURCES 沒有開，所以不放進必裝依賴
+eslite = ["playwright>=1.45"]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
